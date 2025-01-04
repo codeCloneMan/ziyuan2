@@ -4,12 +4,15 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   // lang: 'en-US',
   title: "字源系列输入法",
-  description: "一种简单的形码输入法",
+  description: "力求入门简单且提速快的输入法系列",
   themeConfig: {
     // https://vitepress.dev/reference/default-theme-config
     nav: [
       { text: '首页', link: '/' },
-      { text: '短拼', link: '/duanpin' }
+      { text: '字源', link: '/ziyuan' },
+      { text: '短拼', link: '/duanpin' },
+      { text: '三拼', link: '/sanpin' },
+      { text: '速记', link: '/suji' }
     ],
 
     sidebar: [
@@ -17,7 +20,9 @@ export default defineConfig({
         text: '字源系列',
         items: [
           { text: '字源形码输入法', link: '/ziyuan' },
-          { text: '短拼拼音输入法', link: '/duanpin' }
+          { text: '短拼拼音输入法', link: '/duanpin' },
+          { text: '字源三拼输入法', link: '/sanpin' },
+          { text: '字源速记输入法', link: '/suji' }
         ]
       }
     ],
