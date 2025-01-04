@@ -29,7 +29,7 @@ export default defineConfig({
 
     socialLinks: [
       { icon: 'qq', link: 'https://qm.qq.com/cgi-bin/qm/qr?k=oSH8W7FCjCnNp-S_BABVNrQwA9hrKvew&jump_from=webapi&authKey=BW7EkPl3QLb9lO65Pyao0EF5tmIxcoa1wWME7Dsh8qW06kws8BCZ5rUb3PXxz+Yj' },
-      { icon: 'github', link: 'https://github.com/codeCloneMan/ziyuan2' },
+      { icon: 'github', link: 'https://github.com/codeCloneMan/ziyuan2' }
       // { icon: 'github', link: 'https://github.com/vuejs/vitepress' }
     ],
 
