@@ -17,5 +17,9 @@
 
 V型结构：横折点撇竖（Q-D-V-M-L）
 
-更多内容请参考 [字源网站](https://ziyuan.chaifen.app/){target="_blank"}
+更多内容请参考字源网站：https://ziyuan.chaifen.app/
+
+更多内容请参考[字源网站](https://ziyuan.chaifen.app/ "此页面跳转字源网站")
+
+更多内容请参考<a href="https://ziyuan.chaifen.app/" target="_blank">字源网站</a>
 
