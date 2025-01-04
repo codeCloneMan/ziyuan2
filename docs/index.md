@@ -73,7 +73,7 @@ pK热火的跟打网站：https://www.jsxiaoshi.com/
 
 打字最全且归并易学的天码双编方案：https://yuhao.forfudan.com/sky/
 
-手感一流且二十五键的顶级双编方案：https://yuhao.forfudan.com/
+手感一流且适用五笔转码的双编方案：https://yuhao.forfudan.com/
 
 ## 友情推荐一流两笔方案
 
