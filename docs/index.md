@@ -106,3 +106,11 @@ pK热火的跟打网站：https://www.jsxiaoshi.com/
 双拼测评优化生成：https://macroxue.github.io/shuangpin/eval.html
 
 多种方案简略详见：https://dieken.gitlab.io/posts/chinese-input-methods/
+
+## 输入法方案中的璀璨明星
+
+并击、速录，排行榜上的无冕之王：http://srkmm.ysepan.com/
+
+## 字源输入法相关技术专利文章
+
+详细内容请进入网站查看：http://www.xjishu.com/zhuanli/55/201811240508.html
