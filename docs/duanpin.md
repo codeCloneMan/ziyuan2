@@ -43,7 +43,7 @@ duf pin syg bu quo d su ru fa
 
 ## 下载地址
 
-下载：http://ziyuan.ysepan.com/
+下载：[点这里](http://ziyuan.ysepan.com/ "http://ziyuan.ysepan.com/")
 
 <!-- The main `useData()` API can be used to access site, theme, and page data for the current page. It works in both `.md` and `.vue` files:
 
