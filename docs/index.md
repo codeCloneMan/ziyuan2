@@ -100,3 +100,9 @@ pK热火的跟打网站：https://www.jsxiaoshi.com/
 ## 友情推荐一流双拼入门工具
 
 各种有名的双拼方案跟打的网站：https://api.ihint.me/shuang/
+
+## 拼音方案测试工具
+
+双拼测评优化生成：https://macroxue.github.io/shuangpin/eval.html
+
+多种方案简略详见：https://dieken.gitlab.io/posts/chinese-input-methods/
