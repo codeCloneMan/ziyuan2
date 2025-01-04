@@ -20,7 +20,7 @@ hero:
       text: 字源速记
       link: /suji
     - theme: brand
-      text: 峰芸整句
+      text: 风云整句
       link: /fengyun
 
 features:
@@ -36,7 +36,7 @@ features:
   - title: 字源速记
     details: 单手速记选重少
     link: /suji
-  - title: 峰芸整句
+  - title: 风云整句
     details: 一流且强悍的整句输入
     link: /fengyun
 ---

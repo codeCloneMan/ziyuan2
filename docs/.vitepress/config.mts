@@ -13,7 +13,7 @@ export default defineConfig({
       { text: '短拼', link: '/duanpin' },
       { text: '三拼', link: '/sanpin' },
       { text: '速记', link: '/suji' },
-      { text: '峰芸', link: '/fengyun' }
+      { text: '风云', link: '/fengyun' }
     ],
 
     sidebar: [
@@ -24,7 +24,7 @@ export default defineConfig({
           { text: '短拼拼音输入法', link: '/duanpin' },
           { text: '字源三拼输入法', link: '/sanpin' },
           { text: '字源速记输入法', link: '/suji' },
-          { text: '峰芸整句输入法', link: '/fengyun' }
+          { text: '风云整句输入法', link: '/fengyun' }
         ]
       }
     ],
