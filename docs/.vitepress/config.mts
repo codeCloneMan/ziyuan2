@@ -7,7 +7,7 @@ export default defineConfig({
   description: "力求入门简单且提速快的输入法系列",
   themeConfig: {
     // siteTitle: 'My Custom Title',
-    logo: '../images/源-王铎.svg',
+    logo: '../images/源王铎.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',

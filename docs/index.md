@@ -8,7 +8,7 @@ hero:
   tagline: 简单、好学、一眼记住二十个字根！
   # tagline: Lorem ipsum...
   image: 
-    src: ./images/源-王铎.png
+    src: ./images/源王铎.png
     # alt: vitepress
 
   actions:
