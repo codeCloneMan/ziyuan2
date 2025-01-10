@@ -8,6 +8,7 @@ export default defineConfig({
   themeConfig: {
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
+    // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
     logo: '源王铎.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
@@ -43,13 +44,13 @@ export default defineConfig({
       // { text: '风云', link: '/fengyun' },
 
       {
-        text: '输入方案集',
+        text: '查看输入方案',
         items: [
-          { text: '字源输入法', link: '/ziyuan' },
-          { text: '短拼输入法', link: '/duanpin' },
-          { text: '三拼输入法', link: '/sanpin' },
-          { text: '速记输入法', link: '/suji' },
-          { text: '风云输入法', link: '/fengyun' },
+          { text: '字源形码', link: '/ziyuan' },
+          { text: '短拼拼音', link: '/duanpin' },
+          { text: '字源三拼', link: '/sanpin' },
+          { text: '字源速记', link: '/suji' },
+          { text: '风云整句', link: '/fengyun' },
         ]
       }
     ],
@@ -58,11 +59,11 @@ export default defineConfig({
       {
         text: '字源系列',
         items: [
-          { text: '字源形码输入法', link: '/ziyuan' },
-          { text: '短拼拼音输入法', link: '/duanpin' },
-          { text: '字源三拼输入法', link: '/sanpin' },
-          { text: '字源速记输入法', link: '/suji' },
-          { text: '风云整句输入法', link: '/fengyun' }
+          { text: '字源形码', link: '/ziyuan' },
+          { text: '短拼拼音', link: '/duanpin' },
+          { text: '字源三拼', link: '/sanpin' },
+          { text: '字源速记', link: '/suji' },
+          { text: '风云整句', link: '/fengyun' }
         ]
       }
     ],

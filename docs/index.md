@@ -29,21 +29,21 @@ hero:
       link: /fengyun
 
 features:
-  - title: 字源形码
+  - title: 字源
     details: 简单、好学、一眼记住二十个字根！
     link: /ziyuan
   - title: 短拼
     details: 记住8个键，提速50%
     link: /duanpin
-  - title: 字源三拼
+  - title: 三拼
     details: 更少选重的短拼音
     link: /sanpin
-  - title: 字源速记
+  - title: 速记
     details: 单手速记选重少
     link: /suji
-  - title: 风云整句
-    details: 一流且强悍的整句输入
-    link: /fengyun
+  # - title: 风云
+  #   details: 一流且强悍的整句输入
+  #   link: /fengyun
 ---
 
 ## 入群一对一答疑
