@@ -13,7 +13,7 @@ outline: deep
 
 **短拼展示图**
 
-![An image](短拼输入法.png)
+![An image](./images/短拼输入法.png)
 
 **简单介绍**
 
