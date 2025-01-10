@@ -8,7 +8,7 @@ export default defineConfig({
   themeConfig: {
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
-    logo: 'docs\images\源王铎.svg',
+    logo: '源王铎.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',
