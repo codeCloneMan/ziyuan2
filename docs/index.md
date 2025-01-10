@@ -6,6 +6,11 @@ hero:
   name: "字源形码"
   text: "最容易入门的形码"
   tagline: 简单、好学、一眼记住二十个字根！
+  # tagline: Lorem ipsum...
+  image: 
+    src: ./images/源-王铎.png
+    # alt: vitepress
+
   actions:
     - theme: brand # brand 选中色
       text: 字源形码

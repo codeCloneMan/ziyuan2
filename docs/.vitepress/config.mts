@@ -2,18 +2,55 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  // lang: 'en-US',
-  title: "字源系列输入法",
+  lang: 'zh-CN',
+  title: "字源形码",
   description: "力求入门简单且提速快的输入法系列",
   themeConfig: {
+    // siteTitle: 'My Custom Title',
+    logo: '../images/源-王铎.svg',
     // https://vitepress.dev/reference/default-theme-config
+    search: {
+      provider: 'local',
+      options: {
+        // locales: {
+          // zh: {
+        translations: {
+          button: {
+            buttonText: '请输入…',
+            buttonAriaLabel: '搜索文档'
+          },
+          modal: {
+            noResultsText: '无法找到相关结果：',
+            resetButtonTitle: '清除查询条件',
+            footer: {
+              selectText: '选择',
+              navigateText: '切换',
+              closeText: '关闭搜索'
+            }
+          }
+        }
+      }
+        // }
+      // }
+    },
     nav: [
       { text: '首页', link: '/' },
-      { text: '字源', link: '/ziyuan' },
-      { text: '短拼', link: '/duanpin' },
-      { text: '三拼', link: '/sanpin' },
-      { text: '速记', link: '/suji' },
-      { text: '风云', link: '/fengyun' }
+      // { text: '字源', link: '/ziyuan' },
+      // { text: '短拼', link: '/duanpin' },
+      // { text: '三拼', link: '/sanpin' },
+      // { text: '速记', link: '/suji' },
+      // { text: '风云', link: '/fengyun' },
+
+      {
+        text: '输入方案集',
+        items: [
+          { text: '字源输入法', link: '/ziyuan' },
+          { text: '短拼输入法', link: '/duanpin' },
+          { text: '三拼输入法', link: '/sanpin' },
+          { text: '速记输入法', link: '/suji' },
+          { text: '风云输入法', link: '/fengyun' },
+        ]
+      }
     ],
 
     sidebar: [
@@ -39,6 +76,5 @@ export default defineConfig({
     outline: {
       label: '大纲速览' // 将这里的文本修改为你想要的名称
     },
-
   }
 })
