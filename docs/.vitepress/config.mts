@@ -9,7 +9,7 @@ export default defineConfig({
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
     // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
-    logo: '源王铎.svg',
+    logo: '字源图标.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',
