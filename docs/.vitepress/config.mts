@@ -69,7 +69,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'qq', link: '点击链接加入群聊【字源输入法】：https://qm.qq.com/q/T87otScbio' },
+      { icon: 'qq', link: 'https://qm.qq.com/q/T87otScbio' },
       { icon: 'github', link: 'https://github.com/codeCloneMan/ziyuan2' }
       // { icon: 'github', link: 'https://github.com/vuejs/vitepress' }
     ],
