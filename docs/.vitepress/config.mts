@@ -9,7 +9,7 @@ export default defineConfig({
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
     // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
-    logo: '字源图标.svg',
+    logo: '字源.gif',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',
@@ -69,7 +69,7 @@ export default defineConfig({
     ],
 
     socialLinks: [
-      { icon: 'qq', link: 'https://qm.qq.com/cgi-bin/qm/qr?k=oSH8W7FCjCnNp-S_BABVNrQwA9hrKvew&jump_from=webapi&authKey=BW7EkPl3QLb9lO65Pyao0EF5tmIxcoa1wWME7Dsh8qW06kws8BCZ5rUb3PXxz+Yj' },
+      { icon: 'qq', link: '点击链接加入群聊【字源输入法】：https://qm.qq.com/q/T87otScbio' },
       { icon: 'github', link: 'https://github.com/codeCloneMan/ziyuan2' }
       // { icon: 'github', link: 'https://github.com/vuejs/vitepress' }
     ],
