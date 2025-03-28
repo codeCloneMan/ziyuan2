@@ -70,7 +70,7 @@ export default defineConfig({
 
     socialLinks: [
       { icon: 'qq', link: 'https://qm.qq.com/q/T87otScbio' },
-      { icon: 'github', link: 'https://github.com/codeCloneMan/ziyuan2' }
+      { icon: 'github', link: 'http://ziyuan.ysepan.com/' }
       // { icon: 'github', link: 'https://github.com/vuejs/vitepress' }
     ],
 

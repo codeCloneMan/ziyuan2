@@ -51,7 +51,3 @@ features:
 极致手感‘冰雪四拼’拼音方案：https://input.tansongchen.com/
 
 你能做自己的形码方案的工具：https://chaifen.app/
-
-## 友情推荐匠码
-
-匠码：https://jc.chiangma.com/
