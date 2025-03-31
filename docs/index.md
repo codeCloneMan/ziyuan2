@@ -2,13 +2,14 @@
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
+
 hero:
   name: "字源形码"
   text: "最容易入门的形码"
   tagline: 简单、好学、一眼记住二十个字根！
   # tagline: Lorem ipsum...
   image: 
-    src: ./images/字源图标.png
+    src: ./images/字源图标.svg
     # alt: vitepress
 
   actions:

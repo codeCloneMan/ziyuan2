@@ -5,11 +5,19 @@ export default defineConfig({
   lang: 'zh-CN',
   title: "字源形码",
   description: "力求入门简单且提速快的输入法系列",
+
+  markdown: {
+    image: {
+      // 默认禁用；设置为 true 可为所有图片启用懒加载。
+      lazyLoading: true
+    }
+  },
+
   themeConfig: {
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
     // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
-    logo: '字源图标.svg',
+    logo: './images/字源图标.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',
