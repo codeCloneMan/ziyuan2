@@ -9,7 +9,7 @@ hero:
   tagline: 简单、好学、一眼记住二十个字根！
   # tagline: Lorem ipsum...
   image: 
-    src: ./images/字源图标.svg
+    src: 字源图标.png
     # alt: vitepress
 
   actions:
