@@ -55,18 +55,18 @@ export default defineConfig({
       }
     ],
 
-    sidebar: [
-      {
-        text: '字源系列',
-        items: [
-          { text: '字源形码', link: '/ziyuan' },
-          { text: '短拼拼音', link: '/duanpin' },
-          { text: '字源三拼', link: '/sanpin' },
-          { text: '字源速记', link: '/suji' },
-          { text: '风云整句', link: '/fengyun' }
-        ]
-      }
-    ],
+    // sidebar: [
+    //   {
+    //     text: '字源系列',
+    //     items: [
+    //       { text: '字源形码', link: '/ziyuan' },
+    //       { text: '短拼拼音', link: '/duanpin' },
+    //       { text: '字源三拼', link: '/sanpin' },
+    //       { text: '字源速记', link: '/suji' },
+    //       { text: '风云整句', link: '/fengyun' }
+    //     ]
+    //   }
+    // ],
 
     socialLinks: [
       { icon: 'qq', link: 'https://qm.qq.com/q/T87otScbio' },
