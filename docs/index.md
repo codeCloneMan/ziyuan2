@@ -55,6 +55,11 @@ features:
 
 [1.30更新日志](./public/1.30更新日志.txt)
 
+[1.29安装包](./public/字源输入法1.29.zip)
+
+[1.29单字版](./public/字源单字加一简词版1.29.zip)
+
+
 ## 大唐输入法
 
 下载：https://wwba.lanzouq.com/b05kc9y2d
