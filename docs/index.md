@@ -57,9 +57,9 @@ features:
 
 ## 大唐输入法
 
-下载:https://wwba.lanzouq.com/b05kc9y2d
+下载：https://wwba.lanzouq.com/b05kc9y2d
 
-密码:dw51
+密码：dw51
 
 ## 友情推荐
 
