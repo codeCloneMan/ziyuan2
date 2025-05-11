@@ -51,6 +51,10 @@ features:
 
 [字源1.30安装包](./public/字源输入法1.30.zip)
 
+[字根练习工具](./public/字源1.30字根练习.zip)
+
+[更新日志](./public/1.30更新日志.txt)
+
 ## 友情推荐
 
 极致手感‘冰雪四拼’拼音方案：https://input.tansongchen.com/
