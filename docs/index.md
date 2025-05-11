@@ -55,6 +55,12 @@ features:
 
 [1.30更新日志](./public/1.30更新日志.txt)
 
+## 大唐输入法
+
+下载:https://wwba.lanzouq.com/b05kc9y2d
+
+密码:dw51
+
 ## 友情推荐
 
 极致手感‘冰雪四拼’拼音方案：https://input.tansongchen.com/
