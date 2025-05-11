@@ -47,7 +47,11 @@ features:
   #   link: /fengyun
 ---
 
-## 友情推荐大神“蓝落萧”网站
+## 下载exe
+
+[字源1.30安装包](./public/字源输入法1.30.zip)
+
+## 友情推荐
 
 极致手感‘冰雪四拼’拼音方案：https://input.tansongchen.com/
 
