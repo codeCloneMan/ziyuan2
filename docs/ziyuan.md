@@ -287,6 +287,6 @@ v1.29 - 20241005
 群号：261418302
 
 
-## 永硕E盘
+## 下载地址
 
-下载地址：[点这里](http://ziyuan.ysepan.com/ "http://ziyuan.ysepan.com/")
+永硕E盘：[点这里](http://ziyuan.ysepan.com/ "http://ziyuan.ysepan.com/")
