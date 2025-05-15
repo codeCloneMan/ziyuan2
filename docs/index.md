@@ -49,7 +49,7 @@ features:
 
 ## 下载exe
 
-[字源1.30安装包](./public/字源输入法1.30.exe)
+[字源1.30安装包](http://ziyuan.ysepan.com/)
 
 <!-- [1.30字根练习工具](./public/字源1.30字根练习.zip)
 
