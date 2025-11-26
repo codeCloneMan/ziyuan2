@@ -25,9 +25,9 @@ hero:
     - theme: brand
       text: 字源速记
       link: /suji
-    - theme: brand
-      text: 风云整句
-      link: /fengyun
+    # - theme: brand
+    #   text: 风云整句
+    #   link: /fengyun
 
 features:
   - title: 字源

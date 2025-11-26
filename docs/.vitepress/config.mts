@@ -58,7 +58,7 @@ export default defineConfig({
           { text: '短拼拼音', link: '/duanpin' },
           { text: '字源三拼', link: '/sanpin' },
           { text: '字源速记', link: '/suji' },
-          { text: '风云整句', link: '/fengyun' },
+          // { text: '风云整句', link: '/fengyun' },
         ]
       }
     ],
