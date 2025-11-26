@@ -5,7 +5,7 @@ layout: home
 
 hero:
   name: "字源形码"
-  text: "最容易入门的形码"
+  text: "最易入门的形码输入法"
   tagline: 简单、好学、一眼记住二十个字根！
   # tagline: Lorem ipsum...
   image: 

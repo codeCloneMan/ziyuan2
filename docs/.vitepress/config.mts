@@ -3,7 +3,7 @@ import { defineConfig } from 'vitepress'
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
   lang: 'zh-CN',
-  title: "字源形码",
+  title: "字源",
   description: "力求入门简单且提速快的输入法系列",
 
   markdown: {
