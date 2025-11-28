@@ -2,7 +2,7 @@
 outline: deep
 ---
 
-# 字根练习
+# 1.31版本字根练习：
 
 <!-- 模式切换按钮区域 -->
 <div style="text-align:center;margin:20px 0;">
