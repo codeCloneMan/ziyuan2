@@ -45,16 +45,10 @@ export default defineConfig({
     },
     nav: [
       { text: '首页', link: '/' },
-      // { text: '字源', link: '/ziyuan' },
-      // { text: '短拼', link: '/duanpin' },
-      // { text: '三拼', link: '/sanpin' },
-      // { text: '速记', link: '/suji' },
-      // { text: '风云', link: '/fengyun' },
-
       {
         text: '查看输入方案',
         items: [
-          { text: '字源形码', link: '/ziyuan' },
+          { text: '字源形码', link: '/ziyuan/index' },
           { text: '短拼拼音', link: '/duanpin' },
           { text: '字源三拼', link: '/sanpin' },
           { text: '字源速记', link: '/suji' },
@@ -63,18 +57,14 @@ export default defineConfig({
       }
     ],
 
-    // sidebar: [
-    //   {
-    //     text: '字源系列',
-    //     items: [
-    //       { text: '字源形码', link: '/ziyuan' },
-    //       { text: '短拼拼音', link: '/duanpin' },
-    //       { text: '字源三拼', link: '/sanpin' },
-    //       { text: '字源速记', link: '/suji' },
-    //       { text: '风云整句', link: '/fengyun' }
-    //     ]
-    //   }
-    // ],
+    sidebar: {
+        '/ziyuan': [{
+          text: '目录展示',
+          items: [
+            { text: '字根练习', link: '/ziyuan/zigen' },
+          ]
+        }]
+      },
 
     socialLinks: [
       { icon: 'qq', link: 'https://qm.qq.com/q/T87otScbio' },
