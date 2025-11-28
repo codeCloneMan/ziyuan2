@@ -26,7 +26,7 @@ outline: deep
 </div>
 
 <!-- 图片展示区：修正border为0px -->
-<div style="width:150px;height:150px;border:0px solid #333;padding:10px;margin:10px auto;background:#f9f9f9;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">
+<div style="width:150px;height:150px;border:0px solid #333;padding:10px;margin:30px auto;background:#f9f9f9;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">
     <img ref="ziGenImg" src="/dirpng/a(1).png" alt="字根图片" style="max-width:126px;max-height:126px;">
 </div>
 
@@ -138,7 +138,7 @@ const verifyCode = () => {
         tipText.value = `✅ 正确！已切换到下一个字根`;
         tipType.value = 'success';
         // 移除边框变色（因为外层border是0px）
-        // ziGenImg.value.style.border = '0px solid #00cc00';
+        // ziGenImg.value.style.border = '1px solid #00cc00';
         
         // 完成全部练习
         if (practiceCount.value === totalCount.value) {
