@@ -19,7 +19,7 @@ outline: deep
 
 V型结构：横折点撇竖（Q-D-V-M-L）
 
-![An image](./images/字源字根图.png)
+![An image](../images/ziyuanzigen.png)
 
 ## 简单介绍如何打字
 
