@@ -14,11 +14,12 @@ outline: deep
 **短拼展示图**
 
 <!-- ![An image](./images/短拼输入法.png) -->
-<ImageZoom 
+<!-- <ImageZoom 
   src="./images/短拼输入法.png"
   maxWidth="100%"
   maxHeight="500px"
-/>
+/> -->
+<ImageZoom src="./images/短拼输入法.png" alt="字根编码图" caption="字根图 - 点击可放大查看" />
 
 **简单介绍**
 

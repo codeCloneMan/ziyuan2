@@ -8,11 +8,13 @@ outline: deep
 
 <!-- ![An image](../images/1.31字源字根.webp) -->
 
-<ImageZoom 
+<ImageZoom src="../images/1.31字源字根.webp" alt="字根编码图" caption="字根图 - 点击可放大查看" />
+
+<!-- <ImageZoom 
   src="/images/1.31字源字根.webp"
   maxWidth="100%"
   maxHeight="500px"
-/>
+/> -->
 
 <!-- alt="字根对照图" -->
 <!-- caption="字根编码对照图 - 点击可放大查看" -->
