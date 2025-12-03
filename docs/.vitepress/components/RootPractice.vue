@@ -388,7 +388,7 @@ onUnmounted(() => {
 
 .root-practice {
   max-width: 600px;
-  margin: 2rem auto;
+  margin: 1.5rem auto;
   padding: 1.5rem;
   border: 1px solid #eaecef;
   border-radius: 8px;
@@ -398,11 +398,11 @@ onUnmounted(() => {
 
 .practice-area {
   text-align: center;
-  margin-bottom: 2rem;
-  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  padding: 1.2rem;
   border-radius: 8px;
   background: white;
-  min-height: 300px;
+  min-height: 280px;
   position: relative;
   transition: all 0.3s ease;
 }
@@ -415,7 +415,7 @@ onUnmounted(() => {
 .stats {
   display: flex;
   justify-content: space-around;
-  margin-bottom: 1rem;
+  margin-bottom: 0.8rem;
   font-weight: bold;
   color: #2c3e50;
 }
@@ -424,14 +424,14 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 2rem;
-  margin: 2rem 0;
+  gap: 1rem; /* 减少 gap 从 2rem 到 1rem */
+  margin: 1.2rem 0; /* 减少 margin 从 2rem 到 1.2rem */
   flex-direction: column;
 }
 
 .character-display {
   position: relative;
-  min-height: 4rem;
+  min-height: 3rem; /* 减少 min-height 从 4rem 到 3rem */
 }
 
 .character {
@@ -454,11 +454,11 @@ onUnmounted(() => {
   font-weight: bold;
   color: #3498db;
   background: #e3f2fd;
-  padding: 0.5rem 1rem;
+  padding: 0.4rem 1rem; /* 减少 padding */
   border-radius: 20px;
   min-width: 80px;
   text-align: center;
-  margin-top: 0.5rem;
+  margin-top: 0.3rem; /* 减少 margin-top 从 0.5rem 到 0.3rem */
 }
 
 .font-loading {
@@ -483,7 +483,7 @@ onUnmounted(() => {
 }
 
 .input-area {
-  margin: 1.5rem 0;
+  margin: 1rem 0; /* 减少 margin 从 1.5rem 到 1rem */
 }
 
 .code-input {
@@ -521,7 +521,7 @@ onUnmounted(() => {
 }
 
 .feedback {
-  margin: 1rem 0;
+  margin: 0.8rem 0; /* 减少 margin 从 1rem 到 0.8rem */
   font-size: 1.3rem;
   font-weight: bold;
   min-height: 1.8rem;
@@ -546,7 +546,7 @@ onUnmounted(() => {
 .resume-dialog {
   background: white;
   border-radius: 12px;
-  padding: 2rem;
+  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
   text-align: center;
   max-width: 90%;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -554,29 +554,29 @@ onUnmounted(() => {
 }
 
 .resume-icon {
-  font-size: 3rem;
-  margin-bottom: 1rem;
+  font-size: 2.5rem; /* 减少 font-size 从 3rem 到 2.5rem */
+  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
   color: #3498db;
 }
 
 .resume-dialog h2 {
-  font-size: 1.8rem;
+  font-size: 1.6rem; /* 减少 font-size 从 1.8rem 到 1.6rem */
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .resume-dialog p {
   color: #7f8c8d;
-  margin-bottom: 1.5rem;
-  font-size: 1.1rem;
+  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
+  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
 }
 
 .progress-info {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-  padding: 1rem;
+  gap: 0.4rem; /* 减少 gap 从 0.5rem 到 0.4rem */
+  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
+  padding: 0.8rem; /* 减少 padding 从 1rem 到 0.8rem */
   background: #f8f9fa;
   border-radius: 8px;
   text-align: left;
@@ -589,15 +589,15 @@ onUnmounted(() => {
 
 .dialog-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
   justify-content: center;
 }
 
 .resume-btn, .restart-btn {
-  padding: 0.8rem 1.5rem;
+  padding: 0.7rem 1.2rem; /* 减少 padding */
   border: none;
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem; /* 减少 font-size 从 1rem 到 0.95rem */
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
@@ -641,7 +641,7 @@ onUnmounted(() => {
 
 .completion-content {
   text-align: center;
-  padding: 2rem;
+  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -649,98 +649,96 @@ onUnmounted(() => {
 }
 
 .completion-icon {
-  font-size: 4rem;
-  margin-bottom: 1rem;
+  font-size: 3.5rem; /* 减少 font-size 从 4rem 到 3.5rem */
+  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
   color: #27ae60;
   animation: bounce 1s infinite;
 }
 
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  50% { transform: translateY(-8px); } /* 减少 bounce 幅度 */
 }
 
 .completion-content h2 {
-  font-size: 2rem;
+  font-size: 1.8rem; /* 减少 font-size 从 2rem 到 1.8rem */
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .completion-content p {
-  font-size: 1.2rem;
+  font-size: 1.1rem; /* 减少 font-size 从 1.2rem 到 1.1rem */
   color: #3498db;
-  margin: 0.5rem 0;
+  margin: 0.4rem 0; /* 减少 margin 从 0.5rem 到 0.4rem */
   font-weight: bold;
 }
 
 .completion-buttons {
   display: flex;
-  gap: 1rem;
+  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
   justify-content: center;
-  margin-top: 1.5rem;
+  margin-top: 1.2rem; /* 减少 margin-top 从 1.5rem 到 1.2rem */
 }
 
 .completion-restart-btn {
-  padding: 0.8rem 2rem;
+  padding: 0.7rem 1.8rem; /* 减少 padding */
   background: #27ae60;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1.1rem;
+  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 3px 10px rgba(39, 174, 96, 0.4);
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4); /* 减少 shadow */
 }
 
 .completion-restart-btn:hover {
   background: #219653;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(39, 174, 96, 0.6);
+  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6); /* 减少 shadow */
 }
 
 .completion-clear-btn {
-  padding: 0.8rem 2rem;
+  padding: 0.7rem 1.8rem; /* 减少 padding */
   background: #95a5a6;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1.1rem;
+  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 3px 10px rgba(149, 165, 166, 0.4);
+  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4); /* 减少 shadow */
 }
 
 .completion-clear-btn:hover {
   background: #7f8c8d;
   transform: translateY(-2px);
-  box-shadow: 0 5px 15px rgba(149, 165, 166, 0.6);
+  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6); /* 减少 shadow */
 }
 
 .controls {
   display: flex;
   justify-content: center;
-  gap: 10px;
-  margin-top: 1rem;
+  gap: 8px; /* 减少 gap 从 10px 到 8px */
+  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
   flex-wrap: wrap;
 }
 
 .mode-btn {
-  padding: 0.6rem 1rem;
+  padding: 0.55rem 0.9rem; /* 减少 padding */
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  background: #95a5a6;
-  color: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
 }
 
 .mode-btn:hover {
-  transform: translateY(-2px);
+  transform: translateY(-1px); /* 减少 transform 幅度 */
 }
 
 .mode-btn.mode-active {
@@ -760,21 +758,19 @@ onUnmounted(() => {
 }
 
 .restart-btn {
-  padding: 0.6rem 1rem;
+  padding: 0.55rem 0.9rem; /* 减少 padding */
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.9rem;
+  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-  background: #e74c3c;
-  color: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
 }
 
 .restart-btn:hover {
   background: #c0392b;
-  transform: translateY(-2px);
+  transform: translateY(-1px); /* 减少 transform 幅度 */
 }
 
 .restart-btn:disabled {
@@ -785,11 +781,11 @@ onUnmounted(() => {
 }
 
 .font-info {
-  margin-top: 1rem;
-  padding: 0.5rem;
+  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
+  padding: 0.4rem; /* 减少 padding 从 0.5rem 到 0.4rem */
   background: #f8f9fa;
   border-radius: 4px;
-  font-size: 0.85rem;
+  font-size: 0.8rem; /* 减少 font-size 从 0.85rem 到 0.8rem */
   color: #7f8c8d;
   text-align: center;
 }

@@ -26,6 +26,8 @@ V型结构：横折点撇竖（Q-D-V-M-L）。
   maxWidth="100%"
   maxHeight="500px"
 />
+<!-- 或如下一行展示 -->
+<!-- <ImageZoom src="/images/1.31字源字根.webp" alt="字根编码图" caption="字根编码总表" /> -->
 
 
 ## 简单介绍如何打字
