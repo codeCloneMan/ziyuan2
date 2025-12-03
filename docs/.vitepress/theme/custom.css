@@ -1,0 +1,34 @@
+/* 自定义样式 */
+.root-practice-container {
+  margin: 2rem 0;
+}
+
+.character-display {
+  margin: 2rem 0;
+}
+
+.code-input {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.reference-grid {
+  margin-top: 1rem;
+}
+
+/* 响应式调整 */
+@media (max-width: 768px) {
+  .reference-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .stats {
+    flex-direction: column;
+    gap: 5px;
+  }
+  
+  .character {
+    font-size: 48px;
+  }
+}

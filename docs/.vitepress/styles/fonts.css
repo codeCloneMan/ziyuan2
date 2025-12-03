@@ -1,0 +1,24 @@
+/* 支持CJK扩展字符的字体族 */
+@font-face {
+  font-family: 'CJK-Extended';
+  src: url('https://cdn.jsdelivr.net/npm/cjk-ext-fonts@1.0.0/fonts/cjk-ext.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Noto Sans CJK SC';
+  src: url('https://cdn.jsdelivr.net/npm/noto-sans-cjk-sc@1.0.0/fonts/NotoSansCJKsc-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Han Sans SC';
+  src: url('https://cdn.jsdelivr.net/npm/source-han-sans-sc@1.0.0/fonts/SourceHanSansSC-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}

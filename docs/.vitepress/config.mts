@@ -45,10 +45,12 @@ export default defineConfig({
     },
     nav: [
       { text: '首页', link: '/' },
+      // { text: '字根练习', link: '/practice' },
+      { text: '字源形码', link: '/ziyuan/index' },
       {
         text: '查看输入方案',
         items: [
-          { text: '字源形码', link: '/ziyuan/index' },
+
           { text: '短拼拼音', link: '/duanpin' },
           { text: '字源三拼', link: '/sanpin' },
           { text: '字源速记', link: '/suji' },
@@ -58,11 +60,12 @@ export default defineConfig({
     ],
 
     sidebar: {
-        '/ziyuan': [{
+        '/ziyuan/': [{
           text: '目录展示',
           items: [
             { text: '字源了解', link: '/ziyuan/ziyuan' },
             { text: '字根练习', link: '/ziyuan/zigen' },
+            { text: '新字根工具', link: '/ziyuan/zigenlianxi' },
           ]
         }]
       },

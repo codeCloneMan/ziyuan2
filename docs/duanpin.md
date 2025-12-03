@@ -13,7 +13,12 @@ outline: deep
 
 **短拼展示图**
 
-![An image](./images/短拼输入法.png)
+<!-- ![An image](./images/短拼输入法.png) -->
+<ImageZoom 
+  src="./images/短拼输入法.png"
+  maxWidth="100%"
+  maxHeight="500px"
+/>
 
 **简单介绍**
 
