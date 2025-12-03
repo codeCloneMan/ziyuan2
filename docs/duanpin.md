@@ -13,12 +13,12 @@ outline: deep
 
 **短拼展示图**
 
-![An image](./images/duanpinzigentu.png)
-<!-- <ImageZoom 
-  src="./images/短拼输入法.png"
+<!-- ![An image](./images/duanpinzigentu.png) -->
+<ImageZoom 
+  src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/37dc02668c7447d0b5c3cf67e856bfaa.png~tplv-a9rns2rl98-image-qvalue.image?rcl=20251203232949B880C7A67B0E92B0D362&rk3s=8e244e95&rrcfp=b669a9d6&x-expires=1764862189&x-signature=grobyd8x6GYWuvKNCiLH0NjxYdI%3D"
   maxWidth="100%"
   maxHeight="500px"
-/> -->
+/>
 <!-- <ImageZoom src="./images/duanpinzigentu.png" alt="字根编码图" caption="字根图 - 点击可放大查看" /> -->
 
 **简单介绍**
