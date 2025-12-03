@@ -5,7 +5,7 @@
 
 简单、好学、一眼记住二十个字根！
 
-![An image](./docs/images/字源字根图.png)
+![An image](./docs/images/1.31zigentu.webp)
 
 上排：一二三四五六七八九十
 
