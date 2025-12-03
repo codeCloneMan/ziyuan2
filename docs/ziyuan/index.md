@@ -8,7 +8,7 @@ outline: deep
 
 <!-- ![An image](../images/1.31字源字根.webp) -->
 
-<ImageZoom src="../images/1.31字源字根.webp" alt="字根编码图" caption="字根图 - 点击可放大查看" />
+<ImageZoom src="../images/1.31zigentu.webp" alt="字根编码图" caption="字根图 - 点击可放大查看" />
 
 <!-- <ImageZoom 
   src="/images/1.31字源字根.webp"
