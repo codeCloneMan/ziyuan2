@@ -825,8 +825,8 @@ onUnmounted(() => {
     </div>
     
     <div class="font-info" v-if="fontLoaded">
-      <p v-if="!isCrossPractice">💡 提示：前500字练习进度会永久保存到本地，关闭页面后仍可继续。</p>
-      <p v-else>💡 提示：十字练习将字根分为每组10个，每组需乱序练习3遍才能进入下一组。进度永久保存。</p>
+      <p v-if="!isCrossPractice">💡 提示：前500字字根练习进度会永久保存到本地，关闭页面后仍可继续。</p>
+      <p v-else>💡 提示：十字练习将字根分为每组10个，每组需练习3遍才能进入下一组。进度永久保存。</p>
     </div>
   </div>
 </template>
