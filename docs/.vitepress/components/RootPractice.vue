@@ -15,9 +15,18 @@ const isComplete = ref(false)
 const fontLoaded = ref(false)
 const progressRestored = ref(false)
 const showResumeDialog = ref(false)
+const showCrossResumeDialog = ref(false) // 新增：十字练习恢复对话框
 const savedProgress = ref(null)
+const savedCrossState = ref(null) // 保存十字练习状态
 // 添加：追踪中文输入状态
 const isComposing = ref(false)
+// 新增：十字练习相关状态
+const isCrossPractice = ref(false) // 是否启用十字练习模式
+const currentGroup = ref(0) // 当前组别
+const groupRepetitions = ref(0) // 当前组已练习的遍数
+const groupRoots = ref([]) // 当前组的字根
+const totalGroups = ref(0) // 总组数
+const completedGroups = ref(0) // 已完成的组数
 
 const totalRoots = computed(() => practiceRoots.value.length)
 const accuracy = computed(() => {
@@ -25,6 +34,12 @@ const accuracy = computed(() => {
 })
 const progress = computed(() => {
   return `${correctCount.value}/${totalRoots.value}`
+})
+
+// 新增：计算十字练习的进度
+const crossPracticeProgress = computed(() => {
+  if (!isCrossPractice.value) return ''
+  return `第 ${currentGroup.value + 1}/${totalGroups.value} 组 (已练习 ${groupRepetitions.value}/3 遍)`
 })
 
 const shuffleArray = (array) => {
@@ -36,6 +51,104 @@ const shuffleArray = (array) => {
     result[randomIndex] = temp
   }
   return result
+}
+
+// 新增：初始化十字练习
+const initCrossPractice = () => {
+  if (!fontLoaded.value) return
+  
+  const roots = [...allRoots]
+  totalGroups.value = Math.ceil(roots.length / 10)
+  
+  // 从保存的进度中恢复
+  const savedCrossProgress = loadCrossPracticeProgress()
+  if (savedCrossProgress) {
+    completedGroups.value = savedCrossProgress.completedGroups || 0
+    currentGroup.value = savedCrossProgress.currentGroup || 0
+    groupRepetitions.value = savedCrossProgress.groupRepetitions || 0
+    
+    // 确保值是数字类型
+    completedGroups.value = Number(completedGroups.value)
+    currentGroup.value = Number(currentGroup.value)
+    groupRepetitions.value = Number(groupRepetitions.value)
+    
+    // 如果已完成所有组，直接标记完成
+    if (completedGroups.value >= totalGroups.value) {
+      isComplete.value = true
+      feedback.value = '🎉 恭喜完成所有十字练习！'
+      return
+    }
+  } else {
+    completedGroups.value = 0
+    currentGroup.value = 0
+    groupRepetitions.value = 0
+  }
+  
+  loadCurrentGroup()
+}
+
+// 新增：加载当前组的字根
+const loadCurrentGroup = () => {
+  const roots = [...allRoots]
+  const startIdx = currentGroup.value * 10
+  const endIdx = Math.min(startIdx + 10, roots.length)
+  groupRoots.value = roots.slice(startIdx, endIdx)
+  
+  // 根据当前模式设置练习顺序
+  if (practiceMode.value === 'order') {
+    practiceRoots.value = [...groupRoots.value]
+  } else {
+    practiceRoots.value = shuffleArray([...groupRoots.value])
+  }
+  
+  correctCount.value = 0
+  answeredRoots.value = 0
+  isComplete.value = false
+  
+  nextRoot()
+}
+
+// 新增：处理组内练习完成
+const handleGroupCompleted = () => {
+  groupRepetitions.value++
+  
+  // 保存当前组的进度
+  saveCrossPracticeProgress({
+    completedGroups: completedGroups.value,
+    currentGroup: currentGroup.value,
+    groupRepetitions: groupRepetitions.value,
+    lastCompletedTime: new Date().toISOString()
+  })
+  
+  if (groupRepetitions.value >= 3) {
+    // 完成当前组
+    completedGroups.value++
+    saveCrossPracticeProgress({
+      completedGroups: completedGroups.value,
+      currentGroup: currentGroup.value,
+      groupRepetitions: 0,
+      lastCompletedTime: new Date().toISOString()
+    })
+    
+    if (completedGroups.value >= totalGroups.value) {
+      // 所有组都已完成
+      isComplete.value = true
+      feedback.value = '🎉 恭喜完成所有十字练习！'
+      return
+    }
+    
+    // 进入下一组
+    currentGroup.value = completedGroups.value
+    groupRepetitions.value = 0
+    feedback.value = `✅ 完成第 ${completedGroups.value} 组！进入第 ${currentGroup.value + 1} 组`
+  } else {
+    // 重新练习当前组
+    feedback.value = `✅ 完成第 ${groupRepetitions.value}/3 遍练习，继续下一遍！`
+  }
+  
+  setTimeout(() => {
+    loadCurrentGroup()
+  }, 1500)
 }
 
 const initPractice = (mode, roots, correct, answered, complete) => {
@@ -57,13 +170,24 @@ const startPractice = (ignoreSavedProgress = false) => {
   
   // 清除之前的进度
   if (ignoreSavedProgress) {
-    clearProgress()
+    if (isCrossPractice.value) {
+      clearCrossPracticeProgress()
+      clearCrossPracticeState()
+    } else {
+      clearProgress()
+    }
   }
   
   correctCount.value = 0
   answeredRoots.value = 0
   isComplete.value = false
   progressRestored.value = false
+  
+  if (isCrossPractice.value) {
+    // 如果是十字练习模式，重新初始化
+    initCrossPractice()
+    return
+  }
   
   if (practiceMode.value === 'order') {
     practiceRoots.value = [...allRoots]
@@ -76,18 +200,73 @@ const startPractice = (ignoreSavedProgress = false) => {
   // 注意：这里不保存进度，因为 answeredRoots = 0
 }
 
+// 新增：切换十字练习模式
+const toggleCrossPractice = () => {
+  if (!fontLoaded.value) return
+  
+  isCrossPractice.value = !isCrossPractice.value
+  
+  if (isCrossPractice.value) {
+    // 进入十字练习模式
+    // 保持当前的练习模式（顺序或乱序）
+    initCrossPractice()
+  } else {
+    // 退出十字练习模式，恢复普通练习
+    startPractice(true)
+  }
+  
+  // 保存十字练习状态
+  saveCrossPracticeState({
+    isCrossPractice: isCrossPractice.value,
+    practiceMode: practiceMode.value,
+    currentGroup: currentGroup.value,
+    groupRepetitions: groupRepetitions.value,
+    completedGroups: completedGroups.value
+  })
+}
+
 const toggleOrderMode = () => {
   if (!fontLoaded.value) return
   
   practiceMode.value = 'order'
-  startPractice(true) // 忽略保存的进度，重新开始
+  
+  if (isCrossPractice.value) {
+    // 在十字练习模式下，只重新加载当前组，不重置进度
+    loadCurrentGroup()
+    
+    // 保存状态
+    saveCrossPracticeState({
+      isCrossPractice: true,
+      practiceMode: 'order',
+      currentGroup: currentGroup.value,
+      groupRepetitions: groupRepetitions.value,
+      completedGroups: completedGroups.value
+    })
+  } else {
+    startPractice(true) // 忽略保存的进度，重新开始
+  }
 }
 
 const toggleShuffleMode = () => {
   if (!fontLoaded.value) return
   
   practiceMode.value = 'shuffle'
-  startPractice(true) // 忽略保存的进度，重新开始
+  
+  if (isCrossPractice.value) {
+    // 在十字练习模式下，只重新加载当前组，不重置进度
+    loadCurrentGroup()
+    
+    // 保存状态
+    saveCrossPracticeState({
+      isCrossPractice: true,
+      practiceMode: 'shuffle',
+      currentGroup: currentGroup.value,
+      groupRepetitions: groupRepetitions.value,
+      completedGroups: completedGroups.value
+    })
+  } else {
+    startPractice(true) // 忽略保存的进度，重新开始
+  }
 }
 
 const nextRoot = () => {
@@ -96,18 +275,88 @@ const nextRoot = () => {
     userInput.value = '' // 确保输入框清空
     feedback.value = ''
   } else {
+    if (isCrossPractice.value) {
+      handleGroupCompleted()
+      return
+    }
+    
     isComplete.value = true
     feedback.value = '🎉 恭喜完成所有字根练习！'
   }
   
-  // 保存进度 - 只有 answeredRoots >= 1 时才会真正保存
-  saveProgress(
-    practiceMode.value,
-    correctCount.value,
-    answeredRoots.value,
-    practiceRoots.value,
-    isComplete.value
-  )
+  // 保存进度
+  if (!isCrossPractice.value) {
+    saveProgress(
+      practiceMode.value,
+      correctCount.value,
+      answeredRoots.value,
+      practiceRoots.value,
+      isComplete.value
+    )
+  } else {
+    // 保存十字练习状态
+    saveCrossPracticeState({
+      isCrossPractice: true,
+      practiceMode: practiceMode.value,
+      currentGroup: currentGroup.value,
+      groupRepetitions: groupRepetitions.value,
+      completedGroups: completedGroups.value
+    })
+  }
+}
+
+// 新增：保存十字练习进度
+const saveCrossPracticeProgress = (progressData) => {
+  try {
+    localStorage.setItem('crossPracticeProgress_all', JSON.stringify(progressData))
+    console.log('十字练习进度已保存')
+  } catch (error) {
+    console.error('保存十字练习进度失败:', error)
+  }
+}
+
+// 新增：加载十字练习进度
+const loadCrossPracticeProgress = () => {
+  try {
+    const saved = localStorage.getItem('crossPracticeProgress_all')
+    return saved ? JSON.parse(saved) : null
+  } catch (error) {
+    console.error('加载十字练习进度失败:', error)
+    return null
+  }
+}
+
+// 新增：清除十字练习进度
+const clearCrossPracticeProgress = () => {
+  localStorage.removeItem('crossPracticeProgress_all')
+  console.log('十字练习进度已清除')
+}
+
+// 新增：清除十字练习状态
+const clearCrossPracticeState = () => {
+  localStorage.removeItem('crossPracticeState_all')
+  console.log('十字练习状态已清除')
+}
+
+// 新增：保存十字练习状态（包括是否启用、当前组等）
+const saveCrossPracticeState = (stateData) => {
+  try {
+    localStorage.setItem('crossPracticeState_all', JSON.stringify(stateData))
+    console.log('十字练习状态已保存')
+  } catch (error) {
+    console.error('保存十字练习状态失败:', error)
+  }
+}
+
+// 新增：加载十字练习状态
+const loadCrossPracticeState = () => {
+  try {
+    const saved = localStorage.getItem('crossPracticeState_all')
+    return saved ? JSON.parse(saved) : null
+  } catch (error) {
+    console.error('加载十字练习状态失败:', error)
+    return null
+  }
 }
 
 // 新增：封装输入处理逻辑
@@ -125,18 +374,42 @@ const handleProcessedInput = (input) => {
     if (userAnswer === correctAnswer) {
       correctCount.value++
       // 答对后保存进度
-      saveProgress(
-        practiceMode.value,
-        correctCount.value,
-        answeredRoots.value,
-        practiceRoots.value,
-        isComplete.value
-      )
+      if (!isCrossPractice.value) {
+        saveProgress(
+          practiceMode.value,
+          correctCount.value,
+          answeredRoots.value,
+          practiceRoots.value,
+          isComplete.value
+        )
+      } else {
+        // 保存十字练习状态
+        saveCrossPracticeState({
+          isCrossPractice: true,
+          practiceMode: practiceMode.value,
+          currentGroup: currentGroup.value,
+          groupRepetitions: groupRepetitions.value,
+          completedGroups: completedGroups.value
+        })
+        
+        // 也保存十字练习进度
+        saveCrossPracticeProgress({
+          completedGroups: completedGroups.value,
+          currentGroup: currentGroup.value,
+          groupRepetitions: groupRepetitions.value,
+          lastCompletedTime: new Date().toISOString()
+        })
+      }
       
       // 答对后直接清空输入框
       userInput.value = ''
       
       if (answeredRoots.value === practiceRoots.value.length) {
+        if (isCrossPractice.value) {
+          handleGroupCompleted()
+          return
+        }
+        
         isComplete.value = true
         feedback.value = '🎉 恭喜完成所有字根练习！'
       } else {
@@ -152,7 +425,7 @@ const handleProcessedInput = (input) => {
         answeredRoots.value--
         
         // 答错后，如果 answeredRoots 变为0，不保存进度
-        if (answeredRoots.value >= 1) {
+        if (answeredRoots.value >= 1 && !isCrossPractice.value) {
           saveProgress(
             practiceMode.value,
             correctCount.value,
@@ -160,6 +433,22 @@ const handleProcessedInput = (input) => {
             practiceRoots.value,
             isComplete.value
           )
+        } else if (answeredRoots.value >= 1 && isCrossPractice.value) {
+          saveCrossPracticeState({
+            isCrossPractice: true,
+            practiceMode: practiceMode.value,
+            currentGroup: currentGroup.value,
+            groupRepetitions: groupRepetitions.value,
+            completedGroups: completedGroups.value
+          })
+          
+          // 也保存十字练习进度
+          saveCrossPracticeProgress({
+            completedGroups: completedGroups.value,
+            currentGroup: currentGroup.value,
+            groupRepetitions: groupRepetitions.value,
+            lastCompletedTime: new Date().toISOString()
+          })
         }
       }, 500)
     }
@@ -223,7 +512,44 @@ const handleResume = () => {
     }
     
     feedback.value = `✅ 已恢复进度！已完成 ${answeredRoots.value}/${practiceRoots.value.length} 个字根`
+    
+    // 恢复十字练习状态
+    if (isCrossPractice.value) {
+      saveCrossPracticeState({
+        isCrossPractice: true,
+        practiceMode: practiceMode.value,
+        currentGroup: currentGroup.value,
+        groupRepetitions: groupRepetitions.value,
+        completedGroups: completedGroups.value
+      })
+    }
   }
+}
+
+const handleCrossResume = () => {
+  if (savedCrossState.value) {
+    isCrossPractice.value = true
+    practiceMode.value = savedCrossState.value.practiceMode || 'shuffle'
+    
+    // 确保值是数字类型
+    currentGroup.value = Number(savedCrossState.value.currentGroup) || 0
+    groupRepetitions.value = Number(savedCrossState.value.groupRepetitions) || 0
+    completedGroups.value = Number(savedCrossState.value.completedGroups) || 0
+    
+    progressRestored.value = true
+    showCrossResumeDialog.value = false
+    
+    // 初始化十字练习
+    initCrossPractice()
+    
+    feedback.value = `✅ 已恢复十字练习进度：第 ${currentGroup.value + 1}/${totalGroups.value} 组 (已练习 ${groupRepetitions.value}/3 遍)`
+  }
+}
+
+const handleCrossRestart = () => {
+  showCrossResumeDialog.value = false
+  isCrossPractice.value = true
+  startPractice(true)
 }
 
 const handleRestart = () => {
@@ -254,13 +580,31 @@ const loadFonts = async () => {
 // 监听页面卸载事件，确保进度保存
 const handleBeforeUnload = () => {
   if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
-    saveProgress(
-      practiceMode.value,
-      correctCount.value,
-      answeredRoots.value,
-      practiceRoots.value,
-      isComplete.value
-    )
+    if (!isCrossPractice.value) {
+      saveProgress(
+        practiceMode.value,
+        correctCount.value,
+        answeredRoots.value,
+        practiceRoots.value,
+        isComplete.value
+      )
+    } else {
+      // 保存十字练习进度和状态
+      saveCrossPracticeProgress({
+        completedGroups: completedGroups.value,
+        currentGroup: currentGroup.value,
+        groupRepetitions: groupRepetitions.value,
+        lastCompletedTime: new Date().toISOString()
+      })
+      
+      saveCrossPracticeState({
+        isCrossPractice: true,
+        practiceMode: practiceMode.value,
+        currentGroup: currentGroup.value,
+        groupRepetitions: groupRepetitions.value,
+        completedGroups: completedGroups.value
+      })
+    }
   }
 }
 
@@ -268,16 +612,50 @@ onMounted(async () => {
   // 加载字体
   await loadFonts()
   
-  // 加载保存的进度
-  const progressData = loadProgress()
-  savedProgress.value = progressData
+  // 检查是否有保存的十字练习状态
+  const crossState = loadCrossPracticeState()
+  const crossProgress = loadCrossPracticeProgress() // 确保同时加载进度
   
-  if (progressData && shouldRestoreProgress(progressData)) {
-    showResumeDialog.value = true
+  if (crossState && crossState.isCrossPractice) {
+    savedCrossState.value = crossState
+    
+    // 合并状态和进度数据
+    if (crossProgress) {
+      savedCrossState.value.currentGroup = Number(crossProgress.currentGroup || crossState.currentGroup) || 0
+      savedCrossState.value.groupRepetitions = Number(crossProgress.groupRepetitions || crossState.groupRepetitions) || 0
+      savedCrossState.value.completedGroups = Number(crossProgress.completedGroups || crossState.completedGroups) || 0
+    }
+    
+    // 检查是否有未完成的十字练习
+    if (crossProgress && Number(crossProgress.completedGroups) < Math.ceil(allRoots.length / 10)) {
+      showCrossResumeDialog.value = true
+    } else {
+      // 没有需要恢复的进度，直接初始化
+      isCrossPractice.value = true
+      practiceMode.value = crossState.practiceMode || 'shuffle'
+      
+      // 确保值是数字类型
+      currentGroup.value = savedCrossState.value.currentGroup
+      groupRepetitions.value = savedCrossState.value.groupRepetitions
+      completedGroups.value = savedCrossState.value.completedGroups
+      
+      progressRestored.value = true
+      
+      // 初始化十字练习
+      initCrossPractice()
+    }
   } else {
-    // 没有可恢复的进度，开始新练习
-    practiceMode.value = 'order'
-    startPractice(true)
+    // 加载保存的进度
+    const progressData = loadProgress()
+    savedProgress.value = progressData
+    
+    if (progressData && shouldRestoreProgress(progressData)) {
+      showResumeDialog.value = true
+    } else {
+      // 没有可恢复的进度，开始新练习
+      practiceMode.value = 'order'
+      startPractice(true)
+    }
   }
   
   // 添加页面卸载监听
@@ -290,24 +668,43 @@ onUnmounted(() => {
   
   // 离开页面时保存进度 - 只有 answeredRoots >= 1 时才保存
   if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
-    saveProgress(
-      practiceMode.value,
-      correctCount.value,
-      answeredRoots.value,
-      practiceRoots.value,
-      isComplete.value
-    )
+    if (!isCrossPractice.value) {
+      saveProgress(
+        practiceMode.value,
+        correctCount.value,
+        answeredRoots.value,
+        practiceRoots.value,
+        isComplete.value
+      )
+    } else {
+      // 保存十字练习进度
+      saveCrossPracticeProgress({
+        completedGroups: completedGroups.value,
+        currentGroup: currentGroup.value,
+        groupRepetitions: groupRepetitions.value,
+        lastCompletedTime: new Date().toISOString()
+      })
+      
+      // 保存十字练习状态
+      saveCrossPracticeState({
+        isCrossPractice: true,
+        practiceMode: practiceMode.value,
+        currentGroup: currentGroup.value,
+        groupRepetitions: groupRepetitions.value,
+        completedGroups: completedGroups.value
+      })
+    }
   }
 })
 </script>
 
 <template>
-  <!-- 模板部分保持不变 -->
   <div class="root-practice">
     <div class="practice-area" :class="{ 'fonts-loaded': fontLoaded }">
       <div class="stats">
         <span>🎯 正确率: {{ accuracy }}%</span>
         <span>📊 进度: {{ progress }}</span>
+        <span v-if="isCrossPractice" class="cross-progress">{{ crossPracticeProgress }}</span>
       </div>
       
       <div class="character-container">
@@ -345,8 +742,8 @@ onUnmounted(() => {
       
       <div class="feedback">{{ feedback }}</div>
 
-      <!-- 恢复进度对话框 -->
-      <div v-if="showResumeDialog" class="resume-overlay">
+      <!-- 恢复进度对话框（普通练习） -->
+      <div v-if="showResumeDialog && !isCrossPractice" class="resume-overlay">
         <div class="resume-dialog">
           <div class="resume-icon">💾</div>
           <h2>发现未完成的练习</h2>
@@ -367,6 +764,27 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- 恢复进度对话框（十字练习） -->
+      <div v-if="showCrossResumeDialog" class="resume-overlay">
+        <div class="resume-dialog">
+          <div class="resume-icon">✳️</div>
+          <h2>发现未完成的十字练习</h2>
+          <p>检测到您之前有未完成的十字练习，要继续吗？</p>
+          <div class="progress-info">
+            <!-- 修正：从合并数据中正确获取 groupRepetitions -->
+            <span>✅ 当前进度: 第 {{ Number(savedCrossState?.currentGroup) + 1 }}/{{ Math.ceil(allRoots.length / 10) }} 组 (已练习 {{ Number(savedCrossState?.groupRepetitions) || 0 }}/3 遍)</span>
+          </div>
+          <div class="dialog-buttons">
+            <button @click="handleCrossResume" class="resume-btn">
+              ✅ 继续练习
+            </button>
+            <button @click="handleCrossRestart" class="restart-btn">
+              🔄 重新开始
+            </button>
+          </div>
+        </div>
+      </div>
+
       <!-- 完成覆盖层 -->
       <div v-if="isComplete" class="completion-overlay">
         <div class="completion-content">
@@ -378,7 +796,14 @@ onUnmounted(() => {
             <button @click="startPractice" class="completion-restart-btn">
               🔄 再来一次
             </button>
-            <button @click="clearProgress" class="completion-clear-btn">
+            <button @click="() => {
+              if (isCrossPractice) {
+                clearCrossPracticeProgress()
+                clearCrossPracticeState()
+              } else {
+                clearProgress()
+              }
+            }" class="completion-clear-btn">
               🗑️ 清除进度
             </button>
           </div>
@@ -393,14 +818,17 @@ onUnmounted(() => {
       <button @click="toggleShuffleMode" class="mode-btn" :class="{ 'mode-active': practiceMode === 'shuffle' }">
         🎲 乱序练习
       </button>
+      <button @click="toggleCrossPractice" class="cross-btn" :class="{ 'cross-active': isCrossPractice }">
+        ✳️ 十字练习
+      </button>
       <button @click="startPractice(true)" class="restart-btn" :disabled="!fontLoaded">
         🔄 重新开始
       </button>
     </div>
     
     <div class="font-info" v-if="fontLoaded">
-      <p>💡 提示：练习进度会永久保存到本地，关闭页面后仍可继续。</p>
-      <p v-if="progressRestored">✅ 已恢复之前的练习进度</p>
+      <p v-if="!isCrossPractice">💡 提示：练习进度会永久保存到本地，关闭页面后仍可继续。</p>
+      <p v-else>💡 提示：十字练习将字根分为每组10个，每组需乱序练习3遍才能进入下一组。进度永久保存。</p>
     </div>
   </div>
 </template>
@@ -456,20 +884,27 @@ onUnmounted(() => {
   margin-bottom: 0.8rem;
   font-weight: bold;
   color: #2c3e50;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cross-progress {
+  color: #e74c3c;
+  font-size: 0.9rem;
 }
 
 .character-container {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 1rem; /* 减少 gap 从 2rem 到 1rem */
-  margin: 1.2rem 0; /* 减少 margin 从 2rem 到 1.2rem */
+  gap: 1rem;
+  margin: 1.2rem 0;
   flex-direction: column;
 }
 
 .character-display {
   position: relative;
-  min-height: 3rem; /* 减少 min-height 从 4rem 到 3rem */
+  min-height: 3rem;
 }
 
 .character {
@@ -492,11 +927,11 @@ onUnmounted(() => {
   font-weight: bold;
   color: #3498db;
   background: #e3f2fd;
-  padding: 0.4rem 1rem; /* 减少 padding */
+  padding: 0.4rem 1rem;
   border-radius: 20px;
   min-width: 80px;
   text-align: center;
-  margin-top: 0.3rem; /* 减少 margin-top 从 0.5rem 到 0.3rem */
+  margin-top: 0.3rem;
 }
 
 .font-loading {
@@ -521,7 +956,7 @@ onUnmounted(() => {
 }
 
 .input-area {
-  margin: 1rem 0; /* 减少 margin 从 1.5rem 到 1rem */
+  margin: 1rem 0;
 }
 
 .code-input {
@@ -559,7 +994,7 @@ onUnmounted(() => {
 }
 
 .feedback {
-  margin: 0.8rem 0; /* 减少 margin 从 1rem 到 0.8rem */
+  margin: 0.8rem 0;
   font-size: 1.3rem;
   font-weight: bold;
   min-height: 1.8rem;
@@ -584,7 +1019,7 @@ onUnmounted(() => {
 .resume-dialog {
   background: white;
   border-radius: 12px;
-  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
+  padding: 1.5rem;
   text-align: center;
   max-width: 90%;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -592,29 +1027,29 @@ onUnmounted(() => {
 }
 
 .resume-icon {
-  font-size: 2.5rem; /* 减少 font-size 从 3rem 到 2.5rem */
-  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
+  font-size: 2.5rem;
+  margin-bottom: 0.8rem;
   color: #3498db;
 }
 
 .resume-dialog h2 {
-  font-size: 1.6rem; /* 减少 font-size 从 1.8rem 到 1.6rem */
+  font-size: 1.6rem;
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .resume-dialog p {
   color: #7f8c8d;
-  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  margin-bottom: 1rem;
+  font-size: 1rem;
 }
 
 .progress-info {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem; /* 减少 gap 从 0.5rem 到 0.4rem */
-  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
-  padding: 0.8rem; /* 减少 padding 从 1rem 到 0.8rem */
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem;
   background: #f8f9fa;
   border-radius: 8px;
   text-align: left;
@@ -627,15 +1062,15 @@ onUnmounted(() => {
 
 .dialog-buttons {
   display: flex;
-  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
+  gap: 0.8rem;
   justify-content: center;
 }
 
 .resume-btn, .restart-btn {
-  padding: 0.7rem 1.2rem; /* 减少 padding */
+  padding: 0.7rem 1.2rem;
   border: none;
   border-radius: 8px;
-  font-size: 0.95rem; /* 减少 font-size 从 1rem 到 0.95rem */
+  font-size: 0.95rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
@@ -679,7 +1114,7 @@ onUnmounted(() => {
 
 .completion-content {
   text-align: center;
-  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
+  padding: 1.5rem;
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -687,96 +1122,96 @@ onUnmounted(() => {
 }
 
 .completion-icon {
-  font-size: 3.5rem; /* 减少 font-size 从 4rem 到 3.5rem */
-  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
+  font-size: 3.5rem;
+  margin-bottom: 0.8rem;
   color: #27ae60;
   animation: bounce 1s infinite;
 }
 
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); } /* 减少 bounce 幅度 */
+  50% { transform: translateY(-8px); }
 }
 
 .completion-content h2 {
-  font-size: 1.8rem; /* 减少 font-size 从 2rem 到 1.8rem */
+  font-size: 1.8rem;
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .completion-content p {
-  font-size: 1.1rem; /* 减少 font-size 从 1.2rem 到 1.1rem */
+  font-size: 1.1rem;
   color: #3498db;
-  margin: 0.4rem 0; /* 减少 margin 从 0.5rem 到 0.4rem */
+  margin: 0.4rem 0;
   font-weight: bold;
 }
 
 .completion-buttons {
   display: flex;
-  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
+  gap: 0.8rem;
   justify-content: center;
-  margin-top: 1.2rem; /* 减少 margin-top 从 1.5rem 到 1.2rem */
+  margin-top: 1.2rem;
 }
 
 .completion-restart-btn {
-  padding: 0.7rem 1.8rem; /* 减少 padding */
+  padding: 0.7rem 1.8rem;
   background: #27ae60;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4); /* 减少 shadow */
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
 }
 
 .completion-restart-btn:hover {
   background: #219653;
   transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6); /* 减少 shadow */
+  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6);
 }
 
 .completion-clear-btn {
-  padding: 0.7rem 1.8rem; /* 减少 padding */
+  padding: 0.7rem 1.8rem;
   background: #95a5a6;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4); /* 减少 shadow */
+  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4);
 }
 
 .completion-clear-btn:hover {
   background: #7f8c8d;
   transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6); /* 减少 shadow */
+  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6);
 }
 
 .controls {
   display: flex;
   justify-content: center;
-  gap: 8px; /* 减少 gap 从 10px 到 8px */
-  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
+  gap: 8px;
+  margin-top: 0.8rem;
   flex-wrap: wrap;
 }
 
 .mode-btn {
-  padding: 0.55rem 0.9rem; /* 减少 padding */
+  padding: 0.55rem 0.9rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
+  font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
 .mode-btn:hover {
-  transform: translateY(-1px); /* 减少 transform 幅度 */
+  transform: translateY(-1px);
 }
 
 .mode-btn.mode-active {
@@ -795,20 +1230,49 @@ onUnmounted(() => {
   background: #7f8c8d;
 }
 
-.restart-btn {
-  padding: 0.55rem 0.9rem; /* 减少 padding */
+/* 新增：十字练习按钮样式 */
+.cross-btn {
+  padding: 0.55rem 0.9rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
+  font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  background: #7f8c8d; /* 灰色 */
+  color: white;
+}
+
+.cross-btn:hover {
+  background: #95a5a6;
+  transform: translateY(-1px);
+}
+
+.cross-btn.cross-active {
+  background: #3498db; /* 蓝色 */
+  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.4);
+}
+
+.cross-btn.cross-active:hover {
+  background: #2980b9;
+  transform: translateY(-2px);
+}
+
+.restart-btn {
+  padding: 0.55rem 0.9rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: bold;
+  transition: all 0.3s;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
 .restart-btn:hover {
   background: #c0392b;
-  transform: translateY(-1px); /* 减少 transform 幅度 */
+  transform: translateY(-1px);
 }
 
 .restart-btn:disabled {
@@ -819,11 +1283,11 @@ onUnmounted(() => {
 }
 
 .font-info {
-  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
-  padding: 0.4rem; /* 减少 padding 从 0.5rem 到 0.4rem */
+  margin-top: 0.8rem;
+  padding: 0.4rem;
   background: #f8f9fa;
   border-radius: 4px;
-  font-size: 0.8rem; /* 减少 font-size 从 0.85rem 到 0.8rem */
+  font-size: 0.8rem;
   color: #7f8c8d;
   text-align: center;
 }
