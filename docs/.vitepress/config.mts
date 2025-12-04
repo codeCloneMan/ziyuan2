@@ -64,8 +64,9 @@ export default defineConfig({
           text: '目录展示',
           items: [
             { text: '字源了解', link: '/ziyuan/ziyuan' },
-            { text: '字根练习', link: '/ziyuan/zigen' },
+            { text: '图片字根', link: '/ziyuan/zigen' },
             { text: '新字根工具', link: '/ziyuan/zigenlianxi' },
+            { text: '常用字根', link: '/ziyuan/qianwubai' },
           ]
         }]
       },

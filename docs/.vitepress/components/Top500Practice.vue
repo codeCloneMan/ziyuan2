@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted } from 'vue'
-import { allRoots } from '../data/rootData.js'
-import { loadProgress, saveProgress, clearProgress, shouldRestoreProgress } from '../utils/progressManager.js'
+import { top500Roots } from '../data/YongData.js'
+import { loadProgress, saveProgress, clearProgress, shouldRestoreProgress } from '../utils/Top500ProgressManager.js'
 
 const currentRoot = ref(null)
 const userInput = ref('')
@@ -53,9 +53,9 @@ const initPractice = (mode, roots, correct, answered, complete) => {
 const startPractice = (ignoreSavedProgress = false) => {
   if (!fontLoaded.value) return
   
-  // 清除之前的进度
+  // 清除之前的进度 - 使用特定标识符
   if (ignoreSavedProgress) {
-    clearProgress()
+    clearProgress('top500')
   }
   
   correctCount.value = 0
@@ -64,9 +64,9 @@ const startPractice = (ignoreSavedProgress = false) => {
   progressRestored.value = false
   
   if (practiceMode.value === 'order') {
-    practiceRoots.value = [...allRoots]
+    practiceRoots.value = [...top500Roots] // 使用 top500Roots
   } else {
-    practiceRoots.value = shuffleArray([...allRoots])
+    practiceRoots.value = shuffleArray([...top500Roots]) // 使用 top500Roots
   }
   
   nextRoot()
@@ -98,13 +98,14 @@ const nextRoot = () => {
     feedback.value = '🎉 恭喜完成所有字根练习！'
   }
   
-  // 保存进度 - 只有 answeredRoots >= 1 时才会真正保存
+  // 保存进度 - 使用特定标识符 'top500'
   saveProgress(
     practiceMode.value,
     correctCount.value,
     answeredRoots.value,
     practiceRoots.value,
-    isComplete.value
+    isComplete.value,
+    'top500'
   )
 }
 
@@ -133,13 +134,14 @@ const handleInput = (e) => {
     
     if (userAnswer === correctAnswer) {
       correctCount.value++
-      // 答对后保存进度
+      // 答对后保存进度 - 使用特定标识符 'top500'
       saveProgress(
         practiceMode.value,
         correctCount.value,
         answeredRoots.value,
         practiceRoots.value,
-        isComplete.value
+        isComplete.value,
+        'top500'
       )
     } else {
       showFlash.value = true
@@ -157,7 +159,8 @@ const handleInput = (e) => {
             correctCount.value,
             answeredRoots.value,
             practiceRoots.value,
-            isComplete.value
+            isComplete.value,
+            'top500'
           )
         }
       }, 500)
@@ -199,6 +202,7 @@ const handleRestart = () => {
   startPractice(true)
 }
 
+// >>>>> 关键修正：在这里添加 loadFonts 函数定义 <<<<<
 const loadFonts = async () => {
   try {
     const testElement = document.createElement('div')
@@ -218,16 +222,19 @@ const loadFonts = async () => {
     fontLoaded.value = true
   }
 }
+// >>>>> loadFonts 函数结束 <<<<<
 
 // 监听页面卸载事件，确保进度保存
 const handleBeforeUnload = () => {
   if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
+    // 离开页面时保存进度 - 使用特定标识符 'top500'
     saveProgress(
       practiceMode.value,
       correctCount.value,
       answeredRoots.value,
       practiceRoots.value,
-      isComplete.value
+      isComplete.value,
+      'top500'
     )
   }
 }
@@ -236,8 +243,8 @@ onMounted(async () => {
   // 加载字体
   await loadFonts()
   
-  // 加载保存的进度
-  const progressData = loadProgress()
+  // 加载保存的进度 - 使用特定标识符 'top500'
+  const progressData = loadProgress('top500')
   savedProgress.value = progressData
   
   if (progressData && shouldRestoreProgress(progressData)) {
@@ -258,19 +265,20 @@ onUnmounted(() => {
   
   // 离开页面时保存进度 - 只有 answeredRoots >= 1 时才保存
   if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
+    // 使用特定标识符 'top500'
     saveProgress(
       practiceMode.value,
       correctCount.value,
       answeredRoots.value,
       practiceRoots.value,
-      isComplete.value
+      isComplete.value,
+      'top500'
     )
   }
 })
 </script>
 
 <template>
-  <!-- 模板部分保持不变 -->
   <div class="root-practice">
     <div class="practice-area" :class="{ 'fonts-loaded': fontLoaded }">
       <div class="stats">
@@ -319,7 +327,7 @@ onUnmounted(() => {
           <p>检测到您之前有未完成的练习，要继续吗？</p>
           <div class="progress-info">
             <span>📝 练习模式: {{ savedProgress?.mode === 'order' ? '顺序练习' : '乱序练习' }}</span>
-            <span>✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || allRoots.length }}</span>
+            <span>✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || top500Roots.length }}</span>
             <span>🎯 正确率: {{ savedProgress ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) : 0 }}%</span>
           </div>
           <div class="dialog-buttons">
@@ -344,7 +352,7 @@ onUnmounted(() => {
             <button @click="startPractice" class="completion-restart-btn">
               🔄 再来一次
             </button>
-            <button @click="clearProgress" class="completion-clear-btn">
+            <button @click="() => clearProgress('top500')" class="completion-clear-btn">
               🗑️ 清除进度
             </button>
           </div>
@@ -365,7 +373,7 @@ onUnmounted(() => {
     </div>
     
     <div class="font-info" v-if="fontLoaded">
-      <p>💡 提示：练习进度会永久保存到本地，关闭页面后仍可继续。</p>
+      <p>💡 提示：前500字练习进度会永久保存到本地，关闭页面后仍可继续。</p>
       <p v-if="progressRestored">✅ 已恢复之前的练习进度</p>
     </div>
   </div>
@@ -428,14 +436,14 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 1rem; /* 减少 gap 从 2rem 到 1rem */
-  margin: 1.2rem 0; /* 减少 margin 从 2rem 到 1.2rem */
+  gap: 1rem;
+  margin: 1.2rem 0;
   flex-direction: column;
 }
 
 .character-display {
   position: relative;
-  min-height: 3rem; /* 减少 min-height 从 4rem 到 3rem */
+  min-height: 3rem;
 }
 
 .character {
@@ -458,11 +466,11 @@ onUnmounted(() => {
   font-weight: bold;
   color: #3498db;
   background: #e3f2fd;
-  padding: 0.4rem 1rem; /* 减少 padding */
+  padding: 0.4rem 1rem;
   border-radius: 20px;
   min-width: 80px;
   text-align: center;
-  margin-top: 0.3rem; /* 减少 margin-top 从 0.5rem 到 0.3rem */
+  margin-top: 0.3rem;
 }
 
 .font-loading {
@@ -487,7 +495,7 @@ onUnmounted(() => {
 }
 
 .input-area {
-  margin: 1rem 0; /* 减少 margin 从 1.5rem 到 1rem */
+  margin: 1rem 0;
 }
 
 .code-input {
@@ -525,7 +533,7 @@ onUnmounted(() => {
 }
 
 .feedback {
-  margin: 0.8rem 0; /* 减少 margin 从 1rem 到 0.8rem */
+  margin: 0.8rem 0;
   font-size: 1.3rem;
   font-weight: bold;
   min-height: 1.8rem;
@@ -550,7 +558,7 @@ onUnmounted(() => {
 .resume-dialog {
   background: white;
   border-radius: 12px;
-  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
+  padding: 1.5rem;
   text-align: center;
   max-width: 90%;
   box-shadow: 0 4px 20px rgba(0,0,0,0.2);
@@ -558,29 +566,29 @@ onUnmounted(() => {
 }
 
 .resume-icon {
-  font-size: 2.5rem; /* 减少 font-size 从 3rem 到 2.5rem */
-  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
+  font-size: 2.5rem;
+  margin-bottom: 0.8rem;
   color: #3498db;
 }
 
 .resume-dialog h2 {
-  font-size: 1.6rem; /* 减少 font-size 从 1.8rem 到 1.6rem */
+  font-size: 1.6rem;
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .resume-dialog p {
   color: #7f8c8d;
-  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  margin-bottom: 1rem;
+  font-size: 1rem;
 }
 
 .progress-info {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem; /* 减少 gap 从 0.5rem 到 0.4rem */
-  margin-bottom: 1rem; /* 减少 margin-bottom 从 1.5rem 到 1rem */
-  padding: 0.8rem; /* 减少 padding 从 1rem 到 0.8rem */
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+  padding: 0.8rem;
   background: #f8f9fa;
   border-radius: 8px;
   text-align: left;
@@ -593,15 +601,15 @@ onUnmounted(() => {
 
 .dialog-buttons {
   display: flex;
-  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
+  gap: 0.8rem;
   justify-content: center;
 }
 
 .resume-btn, .restart-btn {
-  padding: 0.7rem 1.2rem; /* 减少 padding */
+  padding: 0.7rem 1.2rem;
   border: none;
   border-radius: 8px;
-  font-size: 0.95rem; /* 减少 font-size 从 1rem 到 0.95rem */
+  font-size: 0.95rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
@@ -645,7 +653,7 @@ onUnmounted(() => {
 
 .completion-content {
   text-align: center;
-  padding: 1.5rem; /* 减少 padding 从 2rem 到 1.5rem */
+  padding: 1.5rem;
   background: white;
   border-radius: 12px;
   box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -653,96 +661,96 @@ onUnmounted(() => {
 }
 
 .completion-icon {
-  font-size: 3.5rem; /* 减少 font-size 从 4rem 到 3.5rem */
-  margin-bottom: 0.8rem; /* 减少 margin-bottom 从 1rem 到 0.8rem */
+  font-size: 3.5rem;
+  margin-bottom: 0.8rem;
   color: #27ae60;
   animation: bounce 1s infinite;
 }
 
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); } /* 减少 bounce 幅度 */
+  50% { transform: translateY(-8px); }
 }
 
 .completion-content h2 {
-  font-size: 1.8rem; /* 减少 font-size 从 2rem 到 1.8rem */
+  font-size: 1.8rem;
   color: #2c3e50;
   margin-bottom: 0.5rem;
 }
 
 .completion-content p {
-  font-size: 1.1rem; /* 减少 font-size 从 1.2rem 到 1.1rem */
+  font-size: 1.1rem;
   color: #3498db;
-  margin: 0.4rem 0; /* 减少 margin 从 0.5rem 到 0.4rem */
+  margin: 0.4rem 0;
   font-weight: bold;
 }
 
 .completion-buttons {
   display: flex;
-  gap: 0.8rem; /* 减少 gap 从 1rem 到 0.8rem */
+  gap: 0.8rem;
   justify-content: center;
-  margin-top: 1.2rem; /* 减少 margin-top 从 1.5rem 到 1.2rem */
+  margin-top: 1.2rem;
 }
 
 .completion-restart-btn {
-  padding: 0.7rem 1.8rem; /* 减少 padding */
+  padding: 0.7rem 1.8rem;
   background: #27ae60;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4); /* 减少 shadow */
+  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
 }
 
 .completion-restart-btn:hover {
   background: #219653;
   transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6); /* 减少 shadow */
+  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6);
 }
 
 .completion-clear-btn {
-  padding: 0.7rem 1.8rem; /* 减少 padding */
+  padding: 0.7rem 1.8rem;
   background: #95a5a6;
   color: white;
   border: none;
   border-radius: 8px;
-  font-size: 1rem; /* 减少 font-size 从 1.1rem 到 1rem */
+  font-size: 1rem;
   font-weight: bold;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4); /* 减少 shadow */
+  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4);
 }
 
 .completion-clear-btn:hover {
   background: #7f8c8d;
   transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6); /* 减少 shadow */
+  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6);
 }
 
 .controls {
   display: flex;
   justify-content: center;
-  gap: 8px; /* 减少 gap 从 10px 到 8px */
-  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
+  gap: 8px;
+  margin-top: 0.8rem;
   flex-wrap: wrap;
 }
 
 .mode-btn {
-  padding: 0.55rem 0.9rem; /* 减少 padding */
+  padding: 0.55rem 0.9rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
+  font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
 .mode-btn:hover {
-  transform: translateY(-1px); /* 减少 transform 幅度 */
+  transform: translateY(-1px);
 }
 
 .mode-btn.mode-active {
@@ -762,19 +770,19 @@ onUnmounted(() => {
 }
 
 .restart-btn {
-  padding: 0.55rem 0.9rem; /* 减少 padding */
+  padding: 0.55rem 0.9rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 0.85rem; /* 减少 font-size 从 0.9rem 到 0.85rem */
+  font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1); /* 减少 shadow */
+  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
 }
 
 .restart-btn:hover {
   background: #c0392b;
-  transform: translateY(-1px); /* 减少 transform 幅度 */
+  transform: translateY(-1px);
 }
 
 .restart-btn:disabled {
@@ -785,11 +793,11 @@ onUnmounted(() => {
 }
 
 .font-info {
-  margin-top: 0.8rem; /* 减少 margin-top 从 1rem 到 0.8rem */
-  padding: 0.4rem; /* 减少 padding 从 0.5rem 到 0.4rem */
+  margin-top: 0.8rem;
+  padding: 0.4rem;
   background: #f8f9fa;
   border-radius: 4px;
-  font-size: 0.8rem; /* 减少 font-size 从 0.85rem 到 0.8rem */
+  font-size: 0.8rem;
   color: #7f8c8d;
   text-align: center;
 }

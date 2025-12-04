@@ -1,5 +1,7 @@
-// src/data/rootData.js
-export const matchedRoots = [
+// src/data/YongData.js
+
+// 前500字的字根数据
+export const top500Roots = [
   { character: '白', code: 'k', hint: '白色' },
   { character: '勹', code: 'a', hint: '包字头' },
   { character: '丶', code: 'v', hint: '点' },
@@ -192,7 +194,7 @@ export const matchedRoots = [
   { character: '求', code: 'c', hint: '请求' },
   { character: '⺇', code: 'o', hint: '几个' },
   { character: '万', code: 'l', hint: '万能' },
-  { character: 'ユ', code: 'i', hint: '单人旁' },
+  { character: 'ユ', code: 'i', hint: '侯左上旁' },
   { character: '车', code: 'g', hint: '车辆' },
   { character: '五', code: 't', hint: '数字五' },
   { character: '田', code: 'b', hint: '田地' },
@@ -210,7 +212,6 @@ export const matchedRoots = [
   { character: '专', code: 'u', hint: '专门' },
   { character: '民', code: 's', hint: '人民' },
   { character: '𧰨', code: 'w', hint: '豕底' },
-  { character: '', code: 'k', hint: '方框' },
   { character: '页', code: 'c', hint: '页码' },
   { character: '', code: 'g', hint: '充字头' },
   { character: '', code: 'c', hint: '川字型' },
@@ -230,7 +231,7 @@ export const matchedRoots = [
   { character: '罒', code: 'o', hint: '网字头' },
   { character: '七', code: 'u', hint: '数字七' },
   { character: '㐫', code: 'j', hint: '离字头' },
-  { character: '禸', code: 'w', hint: '犬字旁' },
+  { character: '禸', code: 'w', hint: '兽类践踏地面' },
   { character: '足', code: 'g', hint: '足部' },
   { character: '巳', code: 'j', hint: '巳时' },
   { character: '早', code: 'n', hint: '早晨' },
@@ -268,3 +269,12 @@ export const matchedRoots = [
   { character: '', code: 'a', hint: '久字头' },
   { character: '', code: 'r', hint: '段字旁' }
 ];
+
+// 如果需要，也可以导出 allRoots 以兼容其他页面
+export const allRoots = top500Roots;
+
+// 导出默认对象，以便兼容不同导入方式
+export default {
+  top500Roots,
+  allRoots
+};
