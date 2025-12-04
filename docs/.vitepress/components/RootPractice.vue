@@ -16,6 +16,8 @@ const fontLoaded = ref(false)
 const progressRestored = ref(false)
 const showResumeDialog = ref(false)
 const savedProgress = ref(null)
+// 添加：追踪中文输入状态
+const isComposing = ref(false)
 
 const totalRoots = computed(() => practiceRoots.value.length)
 const accuracy = computed(() => {
@@ -91,7 +93,7 @@ const toggleShuffleMode = () => {
 const nextRoot = () => {
   if (answeredRoots.value < practiceRoots.value.length) {
     currentRoot.value = practiceRoots.value[answeredRoots.value]
-    userInput.value = ''
+    userInput.value = '' // 确保输入框清空
     feedback.value = ''
   } else {
     isComplete.value = true
@@ -108,27 +110,16 @@ const nextRoot = () => {
   )
 }
 
-const handleInput = (e) => {
-  if (!fontLoaded.value || isComplete.value) return
-  
-  const input = e.target.value
-  // 只允许字母输入，且只取第一个字符
-  const letterMatch = input.match(/^[a-zA-Z]/)
-  if (!letterMatch) {
-    // 如果不是字母，清空输入
-    e.target.value = ''
-    userInput.value = ''
-    return
-  }
+// 新增：封装输入处理逻辑
+const handleProcessedInput = (input) => {
+  if (!fontLoaded.value || isComplete.value || isComposing.value) return
   
   // 只取第一个字母
-  const validInput = letterMatch[0]
-  e.target.value = validInput
-  userInput.value = validInput
+  const validInput = input.charAt(0).toLowerCase()
   
   if (validInput.length === 1 && !isComplete.value) {
     answeredRoots.value++
-    const userAnswer = validInput.toLowerCase()
+    const userAnswer = validInput
     const correctAnswer = currentRoot.value.code.toLowerCase()
     
     if (userAnswer === correctAnswer) {
@@ -141,6 +132,16 @@ const handleInput = (e) => {
         practiceRoots.value,
         isComplete.value
       )
+      
+      // 答对后直接清空输入框
+      userInput.value = ''
+      
+      if (answeredRoots.value === practiceRoots.value.length) {
+        isComplete.value = true
+        feedback.value = '🎉 恭喜完成所有字根练习！'
+      } else {
+        nextRoot()
+      }
     } else {
       showFlash.value = true
       feedback.value = `❌ 错误！正确答案是: ${correctAnswer}`
@@ -161,15 +162,46 @@ const handleInput = (e) => {
           )
         }
       }, 500)
-      return
     }
-    
-    if (answeredRoots.value === practiceRoots.value.length) {
-      isComplete.value = true
-      feedback.value = '🎉 恭喜完成所有字根练习！'
-    } else {
-      nextRoot()
-    }
+  }
+}
+
+// 修改：处理输入
+const handleInput = (e) => {
+  if (!fontLoaded.value || isComplete.value || isComposing.value) return
+  
+  const input = e.target.value
+  
+  // 只允许字母输入，且只取第一个字符
+  const letterMatch = input.match(/^[a-zA-Z]/)
+  if (!letterMatch) {
+    // 如果不是字母，清空输入
+    e.target.value = ''
+    userInput.value = ''
+    return
+  }
+  
+  // 处理输入
+  handleProcessedInput(letterMatch[0])
+  
+  // 确保输入框清空
+  if (!showFlash.value) {
+    userInput.value = ''
+    e.target.value = ''
+  }
+}
+
+// 新增：处理中文输入法开始
+const handleCompositionStart = () => {
+  isComposing.value = true
+}
+
+// 新增：处理中文输入法结束
+const handleCompositionEnd = (e) => {
+  isComposing.value = false
+  // 在中文输入结束后，尝试处理输入
+  if (e.data && /^[a-zA-Z]$/.test(e.data)) {
+    handleProcessedInput(e.data)
   }
 }
 
@@ -300,6 +332,8 @@ onUnmounted(() => {
         <input
           v-model="userInput"
           @input="handleInput"
+          @compositionstart="handleCompositionStart"
+          @compositionend="handleCompositionEnd"
           :placeholder="isComplete ? '练习完成' : '请输入字根编码'"
           class="code-input"
           :class="{ 'flash-red': showFlash }"
