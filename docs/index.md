@@ -27,10 +27,10 @@ hero:
     #   link: /suji
 
 features:
-  - title: 字源
+  - title: 字源形码
     details: 简单、好学、一眼记住二十个字根！
     link: /xingma
-  - title: 短拼
+  - title: 短拼拼音
     details: 记住8个键，提速50%
     link: /duanpin
   # - title: 三拼

@@ -47,7 +47,7 @@ export default defineConfig({
       { text: '首页', link: '/' },
       // { text: '字根练习', link: '/practice' },
       { text: '字源形码', link: '/xingma/index' },
-      { text: '字源短拼', link: '/duanpin' },
+      { text: '短拼拼音', link: '/duanpin' },
       // {
       //   text: '查看输入方案',
       //   items: [
