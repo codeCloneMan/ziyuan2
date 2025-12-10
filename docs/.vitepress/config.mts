@@ -46,27 +46,27 @@ export default defineConfig({
     nav: [
       { text: '首页', link: '/' },
       // { text: '字根练习', link: '/practice' },
-      { text: '字源形码', link: '/ziyuan/index' },
-      {
-        text: '查看输入方案',
-        items: [
+      { text: '字源形码', link: '/xingma/index' },
+      { text: '字源短拼', link: '/duanpin' },
+      // {
+      //   text: '查看输入方案',
+      //   items: [
 
-          { text: '短拼拼音', link: '/duanpin' },
-          { text: '字源三拼', link: '/sanpin' },
-          { text: '字源速记', link: '/suji' },
-          // { text: '风云整句', link: '/fengyun' },
-        ]
-      }
+      //     { text: '短拼拼音', link: '/duanpin' },
+      //     { text: '字源三拼', link: '/sanpin' },
+      //     { text: '字源速记', link: '/suji' },
+      //   ]
+      // }
     ],
 
     sidebar: {
-        '/ziyuan/': [{
+        '/xingma/': [{
           text: '目录展示',
           items: [
-            { text: '字源了解', link: '/ziyuan/ziyuan' },
-            { text: '图片字根', link: '/ziyuan/zigen' },
-            { text: '新字根工具', link: '/ziyuan/zigenlianxi' },
-            { text: '常用字根', link: '/ziyuan/qianwubai' },
+            { text: '字源了解', link: '/xingma/ziyuan' },
+            { text: '图片字根', link: '/xingma/zigen' },
+            { text: '新字根工具', link: '/xingma/zigenlianxi' },
+            { text: '常用字根', link: '/xingma/qianwubai' },
           ]
         }]
       },

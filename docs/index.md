@@ -15,36 +15,30 @@ hero:
   actions:
     - theme: brand # brand 选中色
       text: 字源形码
-      link: /ziyuan
+      link: /xingma
     - theme: brand # alt 未选中色
       text: 短拼拼音
       link: /duanpin
-    - theme: brand
-      text: 字源三拼
-      link: /sanpin
-    - theme: brand
-      text: 字源速记
-      link: /suji
     # - theme: brand
-    #   text: 风云整句
-    #   link: /fengyun
+    #   text: 字源三拼
+    #   link: /sanpin
+    # - theme: brand
+    #   text: 字源速记
+    #   link: /suji
 
 features:
   - title: 字源
     details: 简单、好学、一眼记住二十个字根！
-    link: /ziyuan
+    link: /xingma
   - title: 短拼
     details: 记住8个键，提速50%
     link: /duanpin
-  - title: 三拼
-    details: 更少选重的短拼音
-    link: /sanpin
-  - title: 速记
-    details: 单手速记选重少
-    link: /suji
-  # - title: 风云
-  #   details: 一流且强悍的整句输入
-  #   link: /fengyun
+  # - title: 三拼
+  #   details: 更少选重的短拼音
+  #   link: /sanpin
+  # - title: 速记
+  #   details: 单手速记选重少
+  #   link: /suji
 ---
 
 ## 下载exe
