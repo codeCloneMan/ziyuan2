@@ -1,24 +1,40 @@
 /* 支持CJK扩展字符的字体族 */
+/* 1. 优先使用系统内置超集字体（零加载成本） */
 @font-face {
-  font-family: 'CJK-Extended';
-  src: url('https://cdn.jsdelivr.net/npm/cjk-ext-fonts@1.0.0/fonts/cjk-ext.woff2') format('woff2');
-  font-weight: normal;
-  font-style: normal;
+  font-family: 'System-CJK-Fallback';
+  src: local('Microsoft YaHei UI'), /* Win10/11 内置（支持GB18030-2022 8万字） */
+       local('PingFang SC'),        /* macOS/iOS 内置（覆盖扩展区B/C） */
+       local('Source Han Sans SC'), /* 思源黑体本地安装版 */
+       local('Noto Sans CJK SC');   /* Noto本地安装版 */
   font-display: swap;
 }
 
+/* 2. 核心：现代扩展字体（覆盖7万+汉字） */
 @font-face {
-  font-family: 'Noto Sans CJK SC';
-  src: url('https://cdn.jsdelivr.net/npm/noto-sans-cjk-sc@1.0.0/fonts/NotoSansCJKsc-Regular.woff2') format('woff2');
-  font-weight: normal;
-  font-style: normal;
+  font-family: 'Super-CJK';
+  src: 
+    url('https://cdn.jsdelivr.net/gh/googlefonts/noto-cjk@v3.003/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf.woff2') format('woff2'), /* Noto CJK v3.003 (7.5万字) */
+    url('https://cdn.jsdelivr.net/gh/adobe-fonts/source-han-sans@2.004R/SuperOTC/SourceHanSansSC-Regular.otf.woff2') format('woff2'); /* 思源黑体Super OTC (7.2万字) */
+  font-weight: 400;
   font-display: swap;
+  unicode-range: U+3400-4DBF, U+4E00-9FFF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F, U+2B820-2CEAF, U+2CEB0-2EBEF; /* 覆盖CJK-A/B/C/D/E/F/G */
 }
 
+/* 3. 极端扩展区专用（仅当需要时加载） */
 @font-face {
-  font-family: 'Source Han Sans SC';
-  src: url('https://cdn.jsdelivr.net/npm/source-han-sans-sc@1.0.0/fonts/SourceHanSansSC-Regular.woff2') format('woff2');
-  font-weight: normal;
-  font-style: normal;
+  font-family: 'CJK-Ext-X';
+  src: url('https://cdn.jsdelivr.net/gh/verybigdog/cjk-ext-fonts@main/fonts/cjk-ext-g.woff2') format('woff2'); /* 专精扩展G区 */
   font-display: swap;
+  unicode-range: U+30000-3134A; /* CJK Extension G */
+}
+
+/* 应用到body */
+body {
+  font-family: 
+    'Super-CJK',          /* 7万+核心汉字 */
+    'System-CJK-Fallback',/* 系统超集字体 */
+    'CJK-Ext-X',          /* 极端扩展区 */
+    sans-serif;           /* 最后后备 */
+  font-size: 16px;
+  line-height: 1.6;
 }

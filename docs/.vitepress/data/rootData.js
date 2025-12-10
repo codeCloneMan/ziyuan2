@@ -266,7 +266,7 @@ export const allRoots = [
   { character: '〢', code: 'i', hint: '两点' },
   { character: '糸', code: 'u', hint: '丝线' },
   { character: '', code: 'm', hint: '祭字头' },
-  { character: '', code: 'r', hint: '段字旁' },
+  { character: '', code: 'r', hint: '段字左旁' },
   { character: '双', code: 'f', hint: '双人' },
   { character: '钅', code: 'z', hint: '金字旁' },
   { character: '舟', code: 'g', hint: '舟船' },

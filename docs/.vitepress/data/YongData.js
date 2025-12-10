@@ -267,7 +267,7 @@ export const top500Roots = [
   { character: '九', code: 'o', hint: '数字九' },
   { character: '疒', code: 'h', hint: '病字头' },
   { character: '', code: 'a', hint: '久字头' },
-  { character: '', code: 'r', hint: '段字旁' }
+  { character: '', code: 'r', hint: '段字左旁' }
 ];
 
 // 如果需要，也可以导出 allRoots 以兼容其他页面
