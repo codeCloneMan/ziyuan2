@@ -23,7 +23,7 @@ description: 短拼输入法减少击键，提高文字输入效率
   maxWidth="100%"
   maxHeight="500px"
 /> -->
-<ImageZoom src="./images/duanpinzigentu.png" alt="字根编码图" caption="字根图 - 点击可放大查看" />
+<ImageZoom src="./public/duanpinzigentu.png" alt="字根编码图" caption="字根图 - 点击可放大查看" />
 
 **简单介绍**
 
