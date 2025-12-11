@@ -17,13 +17,13 @@ description: 短拼输入法减少击键，提高文字输入效率
 
 **短拼展示图**
 
-<!-- ![An image](./images/duanpinzigentu.png) -->
+![An image](./duanpinzigentu.png)
 <!-- <ImageZoom 
   src="https://p3-flow-imagex-sign.byteimg.com/tos-cn-i-a9rns2rl98/37dc02668c7447d0b5c3cf67e856bfaa.png~tplv-a9rns2rl98-image-qvalue.image?rcl=2025121017314774B388E6790D2A44E828&rk3s=8e244e95&rrcfp=b669a9d6&x-expires=1765445507&x-signature=pZdp7eSb74qrVs3UcR1gypEY%2BME%3D"
   maxWidth="100%"
   maxHeight="500px"
 /> -->
-<ImageZoom src="./public/duanpinzigentu.png" alt="字根编码图" caption="字根图 - 点击可放大查看" />
+<!-- <ImageZoom src="./public/duanpinzigentu.png" /> -->
 
 **简单介绍**
 
