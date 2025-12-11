@@ -5,7 +5,7 @@ export default defineConfig({
   // base: '/ziyuan/',
   lang: 'zh-CN',
   title: "字源",
-  description: "力求入门简单且提速快的输入法系列",
+  description: "入门简单且性能强的形码输入法",
 
   markdown: {
     image: {
