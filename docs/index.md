@@ -2,7 +2,6 @@
 # https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
-
 hero:
   name: "字源形码"
   text: "最快入门的形码输入法"

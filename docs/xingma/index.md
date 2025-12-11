@@ -1,5 +1,7 @@
 ---
 outline: deep
+title: 字源
+description: 字源输入法
 ---
 
 # 欢迎学习字源输入法

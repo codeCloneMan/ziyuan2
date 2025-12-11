@@ -1,5 +1,8 @@
 ---
 outline: deep
+title: 短拼
+titleTemplate: 减少全拼字母的输入法
+description: 短拼输入法减少击键，提高文字输入效率
 ---
 
 # 欢迎学习短拼拼音输入法
