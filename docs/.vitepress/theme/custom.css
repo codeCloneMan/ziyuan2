@@ -1,33 +1,51 @@
+/* docs/.vitepress/theme/custom.css 定义主题颜色*/
+:root {
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #23ff55, #ff2323);
+}
+
+
+/* 仅针对 Hero 区域的 brand 按钮 */
+.VPHomeHero .VPButton.brand {
+  background-color: #e73b3b;     /* 自定义背景色（例如粉红） */
+  color: white;
+  border-color: #e73b3b;
+}
+.VPHomeHero .VPButton.brand:hover {
+  background-color: #64d151;     /* 悬停时更亮 */
+  border-color: #64d151;
+}
+/* 可选：聚焦状态 */
+/* .VPHomeHero .VPButton.brand:focus {
+  outline: 2px solid #244afe;
+  outline-offset: 1px;
+} */
+
+
 /* 自定义样式 */
 .root-practice-container {
   margin: 2rem 0;
 }
-
 .character-display {
   margin: 2rem 0;
 }
-
 .code-input {
   width: 100%;
   max-width: 400px;
   margin: 0 auto;
 }
-
 .reference-grid {
   margin-top: 1rem;
 }
-
 /* 响应式调整 */
 @media (max-width: 768px) {
   .reference-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
   .stats {
     flex-direction: column;
     gap: 5px;
   }
-  
   .character {
     font-size: 48px;
   }

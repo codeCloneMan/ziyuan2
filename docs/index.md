@@ -5,17 +5,18 @@ layout: home
 
 hero:
   name: "字源形码"
-  text: "最易入门的形码输入法"
+  text: "最快入门的形码输入法"
   tagline: 简单、好学、一眼记住二十个字根！
   # tagline: Lorem ipsum...
   image: 
-    src: 字源图标.png
+    # src: 字源图标.png
+    # src: ./images/源王铎.svg
     # alt: vitepress
 
   actions:
     - theme: brand # brand 选中色
       text: 字源形码
-      link: /xingma
+      link: /xingma/index
     - theme: brand # alt 未选中色
       text: 短拼拼音
       link: /duanpin
@@ -29,7 +30,7 @@ hero:
 features:
   - title: 字源形码
     details: 简单、好学、一眼记住二十个字根！
-    link: /xingma
+    link: /xingma/index
   - title: 短拼拼音
     details: 记住8个键，提速50%
     link: /duanpin
@@ -43,7 +44,7 @@ features:
 
 ## 下载exe
 
-[字源1.30安装包](http://ziyuan.ysepan.com/)
+[字源安装包](http://ziyuan.ysepan.com/)
 
 
 ## 友情推荐

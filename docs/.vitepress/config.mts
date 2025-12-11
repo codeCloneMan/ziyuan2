@@ -2,6 +2,7 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
+  base: '/ziyuan/',
   lang: 'zh-CN',
   title: "字源",
   description: "力求入门简单且提速快的输入法系列",
@@ -17,7 +18,7 @@ export default defineConfig({
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
     // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
-    logo: '字源图标.svg',
+    // logo: '字源图标.svg',
     // https://vitepress.dev/reference/default-theme-config
     search: {
       provider: 'local',
@@ -48,6 +49,7 @@ export default defineConfig({
       // { text: '字根练习', link: '/practice' },
       { text: '字源形码', link: '/xingma/index' },
       { text: '短拼拼音', link: '/duanpin' },
+      // { text: 'test', link: '/test' },
       // {
       //   text: '查看输入方案',
       //   items: [
@@ -63,7 +65,7 @@ export default defineConfig({
         '/xingma/': [{
           text: '目录展示',
           items: [
-            { text: '字源了解', link: '/xingma/ziyuan' },
+            { text: '字源了解', link: '/xingma/liaojie' },
             { text: '图片字根', link: '/xingma/zigen' },
             { text: '新字根工具', link: '/xingma/zigenlianxi' },
             { text: '常用字根', link: '/xingma/qianwubai' },
