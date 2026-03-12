@@ -1,0 +1,165 @@
+<template>
+  <div class="cjk-display-container">
+    <h2 class="cjk-title">CJK扩展字符集展示</h2>
+    <p class="cjk-description">
+      以下展示一些CJK扩展区的字符，这些字符通常用于特殊用途或古籍文献中。
+    </p>
+    
+    <div class="cjk-grid">
+      <div 
+        v-for="(char, index) in cjkCharacters" 
+        :key="index" 
+        class="cjk-character"
+        :title="`${char.char} - U+${char.code.toString(16).toUpperCase().padStart(4, '0')} - ${char.description}`"
+      >
+        {{ char.char }}
+      </div>
+    </div>
+    
+    <div class="cjk-info">
+      <p>这些字符属于CJK扩展区，需要支持CJK扩展字符集的字体才能正确显示。</p>
+      <p>本站已安装Noto Sans CJK SC字体，支持大多数CJK扩展字符。</p>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+
+// CJK扩展区字符示例
+const cjkCharacters = ref([
+  { char: '', code: 0xE816, description: 'CJK兼容扩展字符' },
+  { char: '㐀', code: 0x3400, description: 'CJK扩展A区字符' },
+  { char: '㐁', code: 0x3401, description: 'CJK扩展A区字符' },
+  { char: '㐂', code: 0x3402, description: 'CJK扩展A区字符' },
+  { char: '㐃', code: 0x3403, description: 'CJK扩展A区字符' },
+  { char: '㐄', code: 0x3404, description: 'CJK扩展A区字符' },
+  { char: '㐅', code: 0x3405, description: 'CJK扩展A区字符' },
+  { char: '㐆', code: 0x3406, description: 'CJK扩展A区字符' },
+  { char: '㐇', code: 0x3407, description: 'CJK扩展A区字符' },
+  { char: '㐈', code: 0x3408, description: 'CJK扩展A区字符' },
+  { char: '㐉', code: 0x3409, description: 'CJK扩展A区字符' },
+  { char: '㐊', code: 0x340A, description: 'CJK扩展A区字符' },
+  { char: '㐋', code: 0x340B, description: 'CJK扩展A区字符' },
+  { char: '㐌', code: 0x340C, description: 'CJK扩展A区字符' },
+  { char: '㐍', code: 0x340D, description: 'CJK扩展A区字符' },
+  { char: '㐎', code: 0x340E, description: 'CJK扩展A区字符' },
+  { char: '㐏', code: 0x340F, description: 'CJK扩展A区字符' },
+  { char: '㐐', code: 0x3410, description: 'CJK扩展A区字符' },
+  { char: '㐑', code: 0x3411, description: 'CJK扩展A区字符' },
+  { char: '㐒', code: 0x3412, description: 'CJK扩展A区字符' },
+  { char: '㐓', code: 0x3413, description: 'CJK扩展A区字符' },
+  { char: '㐔', code: 0x3414, description: 'CJK扩展A区字符' },
+  { char: '㐕', code: 0x3415, description: 'CJK扩展A区字符' },
+  { char: '㐖', code: 0x3416, description: 'CJK扩展A区字符' },
+  { char: '㐗', code: 0x3417, description: 'CJK扩展A区字符' },
+  { char: '㐘', code: 0x3418, description: 'CJK扩展A区字符' },
+  { char: '㐙', code: 0x3419, description: 'CJK扩展A区字符' },
+  { char: '㐚', code: 0x341A, description: 'CJK扩展A区字符' },
+  { char: '㐛', code: 0x341B, description: 'CJK扩展A区字符' },
+  { char: '㐜', code: 0x341C, description: 'CJK扩展A区字符' },
+  { char: '㐝', code: 0x341D, description: 'CJK扩展A区字符' },
+  { char: '㐞', code: 0x341E, description: 'CJK扩展A区字符' },
+  { char: '㐟', code: 0x341F, description: 'CJK扩展A区字符' },
+  { char: '㐠', code: 0x3420, description: 'CJK扩展A区字符' },
+  { char: '㐡', code: 0x3421, description: 'CJK扩展A区字符' },
+  { char: '㐢', code: 0x3422, description: 'CJK扩展A区字符' },
+  { char: '㐣', code: 0x3423, description: 'CJK扩展A区字符' },
+  { char: '㐤', code: 0x3424, description: 'CJK扩展A区字符' },
+  { char: '㐥', code: 0x3425, description: 'CJK扩展A区字符' },
+  { char: '㐦', code: 0x3426, description: 'CJK扩展A区字符' },
+  { char: '㐧', code: 0x3427, description: 'CJK扩展A区字符' },
+  { char: '㐨', code: 0x3428, description: 'CJK扩展A区字符' },
+  { char: '㐩', code: 0x3429, description: 'CJK扩展A区字符' },
+  { char: '㐪', code: 0x342A, description: 'CJK扩展A区字符' },
+  { char: '㐫', code: 0x342B, description: 'CJK扩展A区字符' },
+  { char: '㐬', code: 0x342C, description: 'CJK扩展A区字符' },
+  { char: '㐭', code: 0x342D, description: 'CJK扩展A区字符' },
+  { char: '㐮', code: 0x342E, description: 'CJK扩展A区字符' },
+  { char: '㐯', code: 0x342F, description: 'CJK扩展A区字符' },
+  { char: '㐰', code: 0x3430, description: 'CJK扩展A区字符' },
+  { char: '㐱', code: 0x3431, description: 'CJK扩展A区字符' },
+  { char: '㐲', code: 0x3432, description: 'CJK扩展A区字符' },
+  { char: '㐳', code: 0x3433, description: 'CJK扩展A区字符' },
+  { char: '㐴', code: 0x3434, description: 'CJK扩展A区字符' },
+  { char: '㐵', code: 0x3435, description: 'CJK扩展A区字符' },
+  { char: '㐶', code: 0x3436, description: 'CJK扩展A区字符' },
+  { char: '㐷', code: 0x3437, description: 'CJK扩展A区字符' },
+  { char: '㐸', code: 0x3438, description: 'CJK扩展A区字符' },
+  { char: '㐹', code: 0x3439, description: 'CJK扩展A区字符' },
+  { char: '㐺', code: 0x343A, description: 'CJK扩展A区字符' },
+  { char: '㐻', code: 0x343B, description: 'CJK扩展A区字符' },
+  { char: '㐼', code: 0x343C, description: 'CJK扩展A区字符' },
+  { char: '㐽', code: 0x343D, description: 'CJK扩展A区字符' },
+  { char: '㐾', code: 0x343E, description: 'CJK扩展A区字符' },
+  { char: '㐿', code: 0x343F, description: 'CJK扩展A区字符' },
+  { char: '㑀', code: 0x3440, description: 'CJK扩展A区字符' },
+  { char: '㑁', code: 0x3441, description: 'CJK扩展A区字符' },
+  { char: '㑂', code: 0x3442, description: 'CJK扩展A区字符' },
+  { char: '㑃', code: 0x3443, description: 'CJK扩展A区字符' },
+  { char: '㑄', code: 0x3444, description: 'CJK扩展A区字符' },
+  { char: '㑅', code: 0x3445, description: 'CJK扩展A区字符' },
+  { char: '㑆', code: 0x3446, description: 'CJK扩展A区字符' },
+  { char: '㑇', code: 0x3447, description: 'CJK扩展A区字符' },
+  { char: '㑈', code: 0x3448, description: 'CJK扩展A区字符' },
+  { char: '㑉', code: 0x3449, description: 'CJK扩展A区字符' },
+  { char: '㑊', code: 0x344A, description: 'CJK扩展A区字符' },
+  { char: '㑋', code: 0x344B, description: 'CJK扩展A区字符' },
+  { char: '㑌', code: 0x344C, description: 'CJK扩展A区字符' },
+  { char: '㑍', code: 0x344D, description: 'CJK扩展A区字符' },
+  { char: '㑎', code: 0x344E, description: 'CJK扩展A区字符' },
+  { char: '㑏', code: 0x344F, description: 'CJK扩展A区字符' },
+  { char: '㑐', code: 0x3450, description: 'CJK扩展A区字符' },
+  { char: '㑑', code: 0x3451, description: 'CJK扩展A区字符' },
+  { char: '㑒', code: 0x3452, description: 'CJK扩展A区字符' },
+  { char: '㑓', code: 0x3453, description: 'CJK扩展A区字符' },
+  { char: '㑔', code: 0x3454, description: 'CJK扩展A区字符' },
+  { char: '㑕', code: 0x3455, description: 'CJK扩展A区字符' },
+  { char: '㑖', code: 0x3456, description: 'CJK扩展A区字符' },
+  { char: '㑗', code: 0x3457, description: 'CJK扩展A区字符' },
+  { char: '㑘', code: 0x3458, description: 'CJK扩展A区字符' },
+  { char: '㑙', code: 0x3459, description: 'CJK扩展A区字符' },
+  { char: '㑚', code: 0x345A, description: 'CJK扩展A区字符' },
+  { char: '㑛', code: 0x345B, description: 'CJK扩展A区字符' },
+  { char: '㑜', code: 0x345C, description: 'CJK扩展A区字符' },
+  { char: '㑝', code: 0x345D, description: 'CJK扩展A区字符' },
+  { char: '㑞', code: 0x345E, description: 'CJK扩展A区字符' },
+  { char: '㑟', code: 0x345F, description: 'CJK扩展A区字符' },
+  { char: '㑠', code: 0x3460, description: 'CJK扩展A区字符' },
+  { char: '㑡', code: 0x3461, description: 'CJK扩展A区字符' },
+  { char: '㑢', code: 0x3462, description: 'CJK扩展A区字符' },
+  { char: '㑣', code: 0x3463, description: 'CJK扩展A区字符' },
+  { char: '㑤', code: 0x3464, description: 'CJK扩展A区字符' },
+  { char: '㑥', code: 0x3465, description: 'CJK扩展A区字符' },
+  { char: '㑦', code: 0x3466, description: 'CJK扩展A区字符' },
+  { char: '㑧', code: 0x3467, description: 'CJK扩展A区字符' },
+  { char: '㑨', code: 0x3468, description: 'CJK扩展A区字符' },
+  { char: '㑩', code: 0x3469, description: 'CJK扩展A区字符' },
+  { char: '㑪', code: 0x346A, description: 'CJK扩展A区字符' },
+  { char: '㑫', code: 0x346B, description: 'CJK扩展A区字符' },
+  { char: '㑬', code: 0x346C, description: 'CJK扩展A区字符' },
+  { char: '㑭', code: 0x346D, description: 'CJK扩展A区字符' },
+  { char: '㑮', code: 0x346E, description: 'CJK扩展A区字符' },
+  { char: '㑯', code: 0x346F, description: 'CJK扩展A区字符' },
+  { char: '㑰', code: 0x3470, description: 'CJK扩展A区字符' },
+  { char: '㑱', code: 0x3471, description: 'CJK扩展A区字符' },
+  { char: '㑲', code: 0x3472, description: 'CJK扩展A区字符' },
+  { char: '㑳', code: 0x3473, description: 'CJK扩展A区字符' },
+  { char: '㑴', code: 0x3474, description: 'CJK扩展A区字符' },
+  { char: '㑵', code: 0x3475, description: 'CJK扩展A区字符' },
+  { char: '㑶', code: 0x3476, description: 'CJK扩展A区字符' },
+  { char: '㑷', code: 0x3477, description: 'CJK扩展A区字符' },
+  { char: '㑸', code: 0x3478, description: 'CJK扩展A区字符' },
+  { char: '㑹', code: 0x3479, description: 'CJK扩展A区字符' },
+  { char: '㑺', code: 0x347A, description: 'CJK扩展A区字符' },
+  { char: '㑻', code: 0x347B, description: 'CJK扩展A区字符' },
+  { char: '㑼', code: 0x347C, description: 'CJK扩展A区字符' },
+  { char: '㑽', code: 0x347D, description: 'CJK扩展A区字符' },
+  { char: '㑾', code: 0x347E, description: 'CJK扩展A区字符' },
+  { char: '㑿', code: 0x347F, description: 'CJK扩展A区字符' },
+  { char: '㒀', code: 0x3480, description: 'CJK扩展A区字符' },
+  { char: '㒁', code: 0x3481, description: 'CJK扩展A区字符' },
+  { char: '㒂', code: 0x3482, description: 'CJK扩展A区字符' },
+  { char: '㒃', code: 0x3483, description: 'CJK扩展A区字符' },
+  { char: '㒄', code: 0x3484, description: 'CJK扩展A区字符' }
+])

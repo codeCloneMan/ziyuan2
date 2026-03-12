@@ -2,19 +2,33 @@ import { defineConfig } from 'vitepress'
 
 // https://vitepress.dev/reference/site-config
 export default defineConfig({
-  // base: '/ziyuan/',
   lang: 'zh-CN',
-  title: "字源",
+  title: "字源形码",
   description: "入门简单且性能强的形码输入法",
-
+  lastUpdated: true,
+  cleanUrls: true,
+  head: [
+    ['meta', { name: 'keywords', content: '字源,形码,输入法,五笔,拼音,短拼' }],
+    ['meta', { name: 'author', content: '字源输入法' }],
+    ['link', { rel: 'icon', href: '/字源图标.png' }],
+    // 导入 Noto Sans CJK SC 字体
+    ['link', { 
+      rel: 'stylesheet', 
+      href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap' 
+    }],
+    ['link', {
+      rel: 'preconnect',
+      href: 'https://fonts.gstatic.com',
+      crossorigin: ''
+    }]
+  ],
   markdown: {
     image: {
-      // 默认禁用；设置为 true 可为所有图片启用懒加载。
       lazyLoading: true
     }
   },
 
-  themeConfig: {
+  themeConfig: { 
     // siteTitle: 'My Custom Title',
     // logo: '../images/源王铎.svg',
     // logo和icon图标放在public中，打包的时候会复制到index.md路径下，图片则放在images路径下
@@ -46,19 +60,20 @@ export default defineConfig({
     },
     nav: [
       { text: '首页', link: '/' },
-      // { text: '字根练习', link: '/practice' },
+      { text: '输入法介绍', link: '/introduction' },
+      { text: '字根练习', link: '/practice/typing' },
       { text: '字源形码', link: '/xingma/index' },
       { text: '短拼拼音', link: '/duanpin' },
-      // { text: 'test', link: '/test' },
-      // {
-      //   text: '查看输入方案',
-      //   items: [
-
-      //     { text: '短拼拼音', link: '/duanpin' },
-      //     { text: '字源三拼', link: '/sanpin' },
-      //     { text: '字源速记', link: '/suji' },
-      //   ]
-      // }
+      { 
+        text: '更多工具', 
+        items: [
+          { text: '输入法测评', link: 'https://ceping.shurufa.app/', target: '_blank' },
+          { text: 'YB6B 测评', link: 'https://yb6b.github.io/#/', target: '_blank' },
+          { text: '52打字', link: 'https://www.52dazi.cn/home', target: '_blank' },
+          { text: 'Cheonhyeong', link: 'http://cheonhyeong.com/Simplified/download.html', target: '_blank' },
+          { text: '汉典', link: 'https://www.zdic.net/', target: '_blank' }
+        ]
+      }
     ],
 
     sidebar: {
@@ -66,9 +81,15 @@ export default defineConfig({
           text: '目录展示',
           items: [
             { text: '字源了解', link: '/xingma/liaojie' },
-            { text: '图片字根', link: '/xingma/zigen' },
-            { text: '新字根工具', link: '/xingma/zigenlianxi' },
-            { text: '常用字根', link: '/xingma/qianwubai' },
+          ]
+        }],
+        '/practice/': [{
+          text: '练习模式',
+          items: [
+            { text: '常用字根练习', link: '/practice/top500' },
+            { text: '顺序练习', link: '/practice/modern' },
+            { text: '随机练习', link: '/practice/random' },
+            { text: '错误字根练习', link: '/practice/error' },
           ]
         }]
       },

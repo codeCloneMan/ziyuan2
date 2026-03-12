@@ -2,50 +2,210 @@
 outline: deep
 ---
 
-# 1.31版本字根练习：
+# 1.31版本字根练习
 
-<!-- 模式切换按钮区域 -->
-<div style="text-align:center;margin:20px 0;">
+<style scoped>
+.practice-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.button-group {
+  text-align: center;
+  margin: 20px 0;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.mode-button {
+  padding: 10px 20px;
+  font-size: 18px;
+  border: none;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.mode-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.mode-button.order {
+  background: #0099ff;
+}
+
+.mode-button.order:hover {
+  background: #0077cc;
+}
+
+.mode-button.random {
+  background: #ff6600;
+}
+
+.mode-button.random:hover {
+  background: #e65c00;
+}
+
+.progress-display {
+  text-align: center;
+  font-size: 20px;
+  margin: 10px 0;
+  color: #333;
+  font-weight: bold;
+}
+
+.image-container {
+  width: 150px;
+  height: 150px;
+  border: 0px solid #333;
+  padding: 10px;
+  margin: 30px auto;
+  background: #f9f9f9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.image-container img {
+  max-width: 126px;
+  max-height: 126px;
+  object-fit: contain;
+}
+
+.input-container {
+  text-align: center;
+  margin-top: 10px;
+}
+
+.code-input {
+  width: 680px;
+  padding: 8px;
+  font-size: 36px;
+  text-align: center;
+  border: 1px solid #999;
+  border-radius: 4px;
+  transition: all 0.3s ease;
+}
+
+.code-input:focus {
+  outline: none;
+  border-color: #0099ff;
+  box-shadow: 0 0 0 3px rgba(0, 153, 255, 0.2);
+}
+
+.code-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f5f5f5;
+}
+
+.tip-message {
+  font-size: 24px;
+  margin: 10px 0;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+
+.tip-success {
+  color: #00cc00;
+}
+
+.tip-error {
+  color: #ff3300;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .button-group {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .code-input {
+    width: 100%;
+    max-width: 400px;
+    font-size: 28px;
+  }
+  
+  .image-container {
+    width: 120px;
+    height: 120px;
+  }
+  
+  .image-container img {
+    max-width: 100px;
+    max-height: 100px;
+  }
+  
+  .tip-message {
+    font-size: 18px;
+  }
+}
+</style>
+
+<div class="practice-container">
+  <!-- 模式切换按钮区域 -->
+  <div class="button-group">
     <button 
-        @click="switchMode('order')"
-        style="padding:10px 20px;font-size:18px;margin:0 10px;border:none;border-radius:6px;background:#0099ff;color:white;cursor:pointer;"
+      @click="switchMode('order')"
+      class="mode-button order"
+      type="button"
+      aria-label="切换到顺序模式"
     >
-        顺序模式
+      顺序模式
     </button>
     <button 
-        @click="switchMode('random')"
-        style="padding:10px 20px;font-size:18px;margin:0 10px;border:none;border-radius:6px;background:#ff6600;color:white;cursor:pointer;"
+      @click="switchMode('random')"
+      class="mode-button random"
+      type="button"
+      aria-label="切换到乱序模式"
     >
-        乱序模式
+      乱序模式
     </button>
-</div>
+  </div>
 
-<!-- 练习数展示 -->
-<div style="text-align:center;font-size:20px;margin:10px 0;color:#333;">
+  <!-- 练习数展示 -->
+  <div class="progress-display">
     练习进度：{{ practiceCount }} / {{ totalCount }}
-</div>
+  </div>
 
-<!-- 图片展示区：修正border为0px -->
-<div style="width:150px;height:150px;border:0px solid #333;padding:10px;margin:30px auto;background:#f9f9f9;display:flex;align-items:center;justify-content:center;box-sizing:border-box;">
-    <img ref="ziGenImg" src="/dirpng/a(1).png" alt="字根图片" style="max-width:126px;max-height:126px;">
-</div>
+  <!-- 图片展示区 -->
+  <div class="image-container">
+    <img ref="ziGenImg" src="/dirpng/a(1).png" alt="字根图片">
+  </div>
 
-<div style="text-align:center;margin-top:10px;">
+  <div class="input-container">
     <input 
-        ref="codeInput"
-        v-model="inputValue"
-        maxlength="1"
-        placeholder="输入1个字母自动验证" 
-        style="width:680px;padding:8px;font-size:36px;text-align:center;border:1px solid #999;border-radius:4px;opacity: isDisabled ? 0.6 : 1;"
-        autocomplete="off"
-        spellcheck="false"
-        @input="handleInput"
-        @focus="hideTip"
-        :disabled="isDisabled"
+      ref="codeInput"
+      v-model="inputValue"
+      maxlength="1"
+      placeholder="输入1个字母自动验证" 
+      class="code-input"
+      autocomplete="off"
+      spellcheck="false"
+      @input="handleInput"
+      @focus="hideTip"
+      @keydown.enter="handleInput"
+      :disabled="isDisabled"
+      :aria-label="'输入字根编码'"
     >
-    <p ref="errorTip" style="font-size:24px;margin:10px 0;" :style="{ color: tipType === 'success' ? '#00cc00' : '#ff3300' }">
-        {{ tipText }}
+    <p 
+      ref="errorTip" 
+      class="tip-message"
+      :class="tipType === 'success' ? 'tip-success' : 'tip-error'"
+      role="status"
+      aria-live="polite"
+    >
+      {{ tipText }}
     </p>
+  </div>
 </div>
 
 <script setup>

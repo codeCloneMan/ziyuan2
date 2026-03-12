@@ -1,4 +1,8 @@
 // src/utils/progressManager.js
+/**
+ * 字根练习进度管理工具
+ * 提供进度保存、加载、清除等功能
+ */
 
 /**
  * 保存练习进度 - 只有当练习量大于等于1时才保存
@@ -30,6 +34,12 @@ export const saveProgress = (mode, correctCount, answeredRoots, practiceRoots, i
     console.log(`进度已保存: ${answeredRoots}个字根`)
   } catch (error) {
     console.error('保存进度失败:', error)
+    // 如果存储空间不足，尝试清理旧数据
+    try {
+      localStorage.clear()
+    } catch (clearError) {
+      console.error('清理存储失败:', clearError)
+    }
   }
 }
 
@@ -40,7 +50,18 @@ export const saveProgress = (mode, correctCount, answeredRoots, practiceRoots, i
 export const loadProgress = () => {
   try {
     const saved = localStorage.getItem('rootPracticeProgress')
-    return saved ? JSON.parse(saved) : null
+    if (!saved) return null
+    
+    const data = JSON.parse(saved)
+    
+    // 验证数据完整性
+    if (!data.mode || !Array.isArray(data.practiceRoots)) {
+      console.warn('进度数据格式不正确，已清除')
+      localStorage.removeItem('rootPracticeProgress')
+      return null
+    }
+    
+    return data
   } catch (error) {
     console.error('加载进度失败:', error)
     // 清理可能损坏的数据
@@ -53,8 +74,12 @@ export const loadProgress = () => {
  * 清除保存的进度
  */
 export const clearProgress = () => {
-  localStorage.removeItem('rootPracticeProgress')
-  console.log('进度已清除')
+  try {
+    localStorage.removeItem('rootPracticeProgress')
+    console.log('进度已清除')
+  } catch (error) {
+    console.error('清除进度失败:', error)
+  }
 }
 
 /**
@@ -65,6 +90,33 @@ export const clearProgress = () => {
 export const shouldRestoreProgress = (progressData) => {
   if (!progressData) return false
   
+  // 检查数据完整性
+  if (!progressData.mode || typeof progressData.answeredRoots !== 'number') {
+    return false
+  }
+  
   // 只有当练习量大于等于1时才允许恢复
   return progressData.answeredRoots >= 1
+}
+
+/**
+ * 获取存储使用情况（调试用）
+ * @returns {Object} 存储信息
+ */
+export const getStorageInfo = () => {
+  try {
+    const used = JSON.stringify(localStorage).length
+    const total = 5 * 1024 * 1024 // 假设5MB限制
+    const percentage = ((used / total) * 100).toFixed(2)
+    
+    return {
+      used,
+      total,
+      percentage,
+      keys: Object.keys(localStorage)
+    }
+  } catch (error) {
+    console.error('获取存储信息失败:', error)
+    return { error: true }
+  }
 }

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { top500Roots } from '../data/YongData.js'
-import { loadProgress, saveProgress, clearProgress, shouldRestoreProgress } from '../utils/Top500ProgressManager.js'
+import { saveProgress, loadProgress, clearProgress, hasProgress } from '../utils/PracticeProgressManager.js'
 
 const currentRoot = ref(null)
 const userInput = ref('')
@@ -697,32 +697,51 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="root-practice">
-    <div class="practice-area" :class="{ 'fonts-loaded': fontLoaded }">
-      <div class="stats">
-        <span>🎯 正确率: {{ accuracy }}%</span>
-        <span>📊 进度: {{ progress }}</span>
-        <span v-if="isCrossPractice" class="cross-progress">{{ crossPracticeProgress }}</span>
+  <div class="practice-container">
+    <!-- 统计栏 -->
+    <div class="stats-bar">
+      <div class="stat-item">
+        <span class="stat-label">正确率</span>
+        <span class="stat-value" :class="{ 'success': accuracy >= 80, 'warning': accuracy < 80 }">
+          {{ accuracy }}%
+        </span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">进度</span>
+        <span class="stat-value">{{ progress }}</span>
+      </div>
+      <div class="stat-item" v-if="isCrossPractice">
+        <span class="stat-label">十字练习</span>
+        <span class="stat-value">{{ crossPracticeProgress }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">模式</span>
+        <span class="stat-value">{{ practiceMode === 'order' ? '顺序' : '乱序' }}</span>
+      </div>
+    </div>
+
+    <!-- 进度条 -->
+    <div class="progress-container">
+      <div class="progress-bar">
+        <div class="progress-fill" :style="{ width: (answeredRoots / totalRoots) * 100 + '%' }"></div>
+      </div>
+    </div>
+
+    <!-- 主练习区域 -->
+    <div class="practice-area" v-if="!isComplete && fontLoaded">
+      <!-- 字根显示 -->
+      <div class="root-display">
+        <div class="root-character">
+          {{ currentRoot?.character || '🎉' }}
+        </div>
       </div>
       
-      <div class="character-container">
-        <div class="character-display">
-          <span 
-            class="character" 
-            :class="{ 'special-character': currentRoot?.character && currentRoot.character.length === 1 && currentRoot.character.charCodeAt(0) > 127 }"
-          >
-            {{ currentRoot?.character || '🎉' }}
-          </span>
-          <div v-if="!fontLoaded" class="font-loading">
-            <div class="loading-spinner"></div>
-            <span>加载特殊字体中...</span>
-          </div>
-        </div>
-        <div class="hint-display">
-          {{ isComplete ? '完成！' : currentRoot?.hint || '' }}
-        </div>
+      <!-- 提示信息 -->
+      <div class="hint-display">
+        {{ isComplete ? '完成！' : currentRoot?.hint || '' }}
       </div>
-      
+
+      <!-- 输入区域 -->
       <div class="input-area">
         <input
           v-model="userInput"
@@ -731,113 +750,161 @@ onUnmounted(() => {
           @compositionend="handleCompositionEnd"
           :placeholder="isComplete ? '练习完成' : '请输入字根编码'"
           class="code-input"
-          :class="{ 'flash-red': showFlash }"
+          :class="{ 'correct': !showFlash && userInput, 'wrong': showFlash }"
           :disabled="isComplete || !fontLoaded"
           maxlength="1"
           autofocus
         />
-      </div>
-      
-      <div class="feedback">{{ feedback }}</div>
-
-      <!-- 恢复进度对话框（普通练习） -->
-      <div v-if="showResumeDialog && !isCrossPractice" class="resume-overlay">
-        <div class="resume-dialog">
-          <div class="resume-icon">💾</div>
-          <h2>发现未完成的练习</h2>
-          <p>检测到您之前有未完成的练习，要继续吗？</p>
-          <div class="progress-info">
-            <span>📝 练习模式: {{ savedProgress?.mode === 'order' ? '顺序练习' : '乱序练习' }}</span>
-            <span>✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || top500Roots.length }}</span>
-            <span>🎯 正确率: {{ savedProgress ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) : 0 }}%</span>
-          </div>
-          <div class="dialog-buttons">
-            <button @click="handleResume" class="resume-btn">
-              ✅ 继续练习
-            </button>
-            <button @click="handleRestart" class="restart-btn">
-              🔄 重新开始
-            </button>
-          </div>
+        
+        <!-- 反馈信息 -->
+        <div v-if="feedback" class="feedback-message" :class="showFlash ? 'error' : 'success'">
+          {{ feedback }}
         </div>
       </div>
 
-      <!-- 恢复进度对话框（十字练习） -->
-      <div v-if="showCrossResumeDialog" class="resume-overlay">
-        <div class="resume-dialog">
-          <div class="resume-icon">✳️</div>
-          <h2>发现未完成的十字练习</h2>
-          <p>检测到您之前有未完成的十字练习，要继续吗？</p>
-          <div class="progress-info">
-            <!-- 修正：从合并数据中正确获取 groupRepetitions -->
-            <span>✅ 当前进度: 第 {{ Number(savedCrossState?.currentGroup) + 1 }}/{{ Math.ceil(top500Roots.length / 10) }} 组 (已练习 {{ Number(savedCrossState?.groupRepetitions) || 0 }}/3 遍)</span>
-          </div>
-          <div class="dialog-buttons">
-            <button @click="handleCrossResume" class="resume-btn">
-              ✅ 继续练习
-            </button>
-            <button @click="handleCrossRestart" class="restart-btn">
-              🔄 重新开始
-            </button>
-          </div>
-        </div>
+      <!-- 控制按钮 -->
+      <div class="control-buttons">
+        <button @click="toggleOrderMode" class="btn" :class="{ 'btn-primary': practiceMode === 'order', 'btn-secondary': practiceMode !== 'order' }">
+          🔄 顺序练习
+        </button>
+        <button @click="toggleShuffleMode" class="btn" :class="{ 'btn-primary': practiceMode === 'shuffle', 'btn-secondary': practiceMode !== 'shuffle' }">
+          🎲 乱序练习
+        </button>
+        <button @click="toggleCrossPractice" class="btn" :class="{ 'btn-success': isCrossPractice, 'btn-secondary': !isCrossPractice }">
+          ✳️ 十字练习
+        </button>
+        <button @click="startPractice(true)" class="btn btn-warning" :disabled="!fontLoaded">
+          🔄 重新开始
+        </button>
       </div>
+    </div>
 
-      <!-- 完成覆盖层 -->
-      <div v-if="isComplete" class="completion-overlay">
-        <div class="completion-content">
-          <div class="completion-icon">🎉</div>
-          <h2>恭喜完成！</h2>
-          <p>正确率: {{ accuracy }}%</p>
-          <p>完成进度: {{ progress }}</p>
-          <div class="completion-buttons">
-            <button @click="startPractice" class="completion-restart-btn">
-              🔄 再来一次
-            </button>
-            <button @click="() => {
-              if (isCrossPractice) {
-                clearCrossPracticeProgress()
-                clearCrossPracticeState()
-              } else {
-                clearProgress('top500')
-              }
-            }" class="completion-clear-btn">
-              🗑️ 清除进度
-            </button>
-          </div>
+    <!-- 字体加载提示 -->
+    <div v-if="!fontLoaded" class="practice-area">
+      <div class="font-loading">
+        <div class="loading-spinner"></div>
+        <p>加载特殊字体中...</p>
+      </div>
+    </div>
+
+    <!-- 恢复进度对话框（普通练习） -->
+    <div v-if="showResumeDialog && !isCrossPractice" class="resume-overlay">
+      <div class="resume-dialog">
+        <div class="resume-icon">💾</div>
+        <h2>发现未完成的练习</h2>
+        <p>检测到您之前有未完成的练习，要继续吗？</p>
+        <div class="progress-info">
+          <span>📝 练习模式: {{ savedProgress?.mode === 'order' ? '顺序练习' : '乱序练习' }}</span>
+          <span>✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || top500Roots.length }}</span>
+          <span>🎯 正确率: {{ savedProgress ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) : 0 }}%</span>
+        </div>
+        <div class="dialog-buttons">
+          <button @click="handleResume" class="btn btn-success">
+            ✅ 继续练习
+          </button>
+          <button @click="handleRestart" class="btn btn-danger">
+            🔄 重新开始
+          </button>
         </div>
       </div>
     </div>
-    
-    <div class="controls">
-      <button @click="toggleOrderMode" class="mode-btn" :class="{ 'mode-active': practiceMode === 'order' }">
-        🔄 顺序练习
-      </button>
-      <button @click="toggleShuffleMode" class="mode-btn" :class="{ 'mode-active': practiceMode === 'shuffle' }">
-        🎲 乱序练习
-      </button>
-      <button @click="toggleCrossPractice" class="cross-btn" :class="{ 'cross-active': isCrossPractice }">
-        ✳️ 十字练习
-      </button>
-      <button @click="startPractice(true)" class="restart-btn" :disabled="!fontLoaded">
-        🔄 重新开始
-      </button>
+
+    <!-- 恢复进度对话框（十字练习） -->
+    <div v-if="showCrossResumeDialog" class="resume-overlay">
+      <div class="resume-dialog">
+        <div class="resume-icon">✳️</div>
+        <h2>发现未完成的十字练习</h2>
+        <p>检测到您之前有未完成的十字练习，要继续吗？</p>
+        <div class="progress-info">
+          <span>✅ 当前进度: 第 {{ Number(savedCrossState?.currentGroup) + 1 }}/{{ Math.ceil(top500Roots.length / 10) }} 组 (已练习 {{ Number(savedCrossState?.groupRepetitions) || 0 }}/3 遍)</span>
+        </div>
+        <div class="dialog-buttons">
+          <button @click="handleCrossResume" class="btn btn-success">
+            ✅ 继续练习
+          </button>
+          <button @click="handleCrossRestart" class="btn btn-danger">
+            🔄 重新开始
+          </button>
+        </div>
+      </div>
     </div>
-    
-    <div class="font-info" v-if="fontLoaded">
-      <p v-if="!isCrossPractice">💡 提示：前500字字根练习进度会永久保存到本地，关闭页面后仍可继续。</p>
-      <p v-else>💡 提示：十字练习将字根分为每组10个，每组需练习3遍才能进入下一组。进度永久保存。</p>
+
+    <!-- 完成界面 -->
+    <div v-if="isComplete && fontLoaded" class="complete-screen">
+      <div class="complete-content">
+        <div class="completion-icon">🎉</div>
+        <h2>恭喜完成！</h2>
+        <div class="complete-stats">
+          <div class="stat">
+            <span class="stat-number">{{ accuracy }}%</span>
+            <span class="stat-label">正确率</span>
+          </div>
+          <div class="stat">
+            <span class="stat-number">{{ progress }}</span>
+            <span class="stat-label">完成进度</span>
+          </div>
+        </div>
+        <div class="complete-message">
+          {{ accuracy >= 80 ? '太棒了！继续保持！' : '加油！多练习就能提高！' }}
+        </div>
+        <div class="complete-actions">
+          <button @click="startPractice" class="btn btn-large btn-primary">
+            🔄 再来一次
+          </button>
+          <button @click="() => {
+            if (isCrossPractice) {
+              clearCrossPracticeProgress()
+              clearCrossPracticeState()
+            } else {
+              clearProgress('top500')
+            }
+          }" class="btn btn-large btn-danger">
+            🗑️ 清除进度
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 键盘快捷键提示 -->
+    <div class="keyboard-hints">
+      <span class="hint">Enter - 提交</span>
+      <span class="hint">Tab - 跳过</span>
+      <span class="hint">ESC - 暂停</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* 保持原有字体样式不变 */
+/* 导入统一练习卡片样式 */
+@import url('../styles/practice-styles.css');
 @import url('../styles/fonts.css');
 
-@keyframes flashRed {
-  0% { border-color: #e74c3c; box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.5); }
-  100% { border-color: #3498db; box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+/* 自定义样式 */
+.practice-container {
+  position: relative;
+}
+
+/* 字体加载提示 */
+.font-loading {
+  text-align: center;
+  padding: 3rem;
+}
+
+.font-loading .loading-spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(102, 126, 234, 0.3);
+  border-radius: 50%;
+  border-top-color: #667eea;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+.font-loading p {
+  font-size: 1.2rem;
+  color: #666;
+  font-weight: 600;
 }
 
 @keyframes spin {
@@ -845,454 +912,163 @@ onUnmounted(() => {
   100% { transform: rotate(360deg); }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.root-practice {
-  max-width: 600px;
-  margin: 1.5rem auto;
-  padding: 1.5rem;
-  border: 1px solid #eaecef;
-  border-radius: 8px;
-  background: #f8f9fa;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.practice-area {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  padding: 1.2rem;
-  border-radius: 8px;
-  background: white;
-  min-height: 280px;
-  position: relative;
-  transition: all 0.3s ease;
-}
-
-.fonts-loaded {
-  opacity: 1;
-  transition: opacity 0.5s ease;
-}
-
-.stats {
-  display: flex;
-  justify-content: space-around;
-  margin-bottom: 0.8rem;
-  font-weight: bold;
-  color: #2c3e50;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.cross-progress {
-  color: #e74c3c;
-  font-size: 0.9rem;
-}
-
-.character-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  margin: 1.2rem 0;
-  flex-direction: column;
-}
-
-.character-display {
-  position: relative;
-  min-height: 3rem;
-}
-
-.character {
-  font-size: 3.5rem;
-  font-weight: bold;
-  color: #2c3e50;
-  display: block;
-  transition: all 0.3s ease;
-  font-family: 'CJK-Extended', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS', sans-serif;
-}
-
-.special-character {
-  font-size: 3.2rem;
-}
-
-.hint-display {
-  display: flex;
-  align-items: center;
-  font-size: 1.3rem;
-  font-weight: bold;
-  color: #3498db;
-  background: #e3f2fd;
-  padding: 0.4rem 1rem;
-  border-radius: 20px;
-  min-width: 80px;
-  text-align: center;
-  margin-top: 0.3rem;
-}
-
-.font-loading {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  color: #7f8c8d;
-  width: 100%;
-}
-
-.loading-spinner {
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(52, 152, 219, 0.3);
-  border-radius: 50%;
-  border-top-color: #3498db;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 8px;
-}
-
-.input-area {
-  margin: 1rem 0;
-}
-
-.code-input {
-  padding: 0.75rem;
-  font-size: 1.5rem;
-  text-align: center;
-  border: 3px solid #3498db;
-  border-radius: 8px;
-  width: 180px;
-  margin: 0 auto;
-  outline: none;
-  transition: all 0.3s;
-  font-family: inherit;
-}
-
-.code-input::placeholder {
-  color: #95a5a6;
-  opacity: 1;
-  font-size: 1rem;
-}
-
-.code-input:focus {
-  border-color: #2980b9;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.3);
-}
-
-.code-input.flash-red {
-  animation: flashRed 0.5s;
-}
-
-.code-input:disabled {
-  background: #f8f9fa;
-  cursor: not-allowed;
-  opacity: 0.8;
-}
-
-.feedback {
-  margin: 0.8rem 0;
-  font-size: 1.3rem;
-  font-weight: bold;
-  min-height: 1.8rem;
-  color: #e74c3c;
-}
-
-/* 恢复进度对话框样式 */
+/* 恢复进度对话框 */
 .resume-overlay {
-  position: absolute;
+  position: fixed;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.8);
   display: flex;
   justify-content: center;
   align-items: center;
-  border-radius: 8px;
-  z-index: 20;
+  z-index: 1000;
+  backdrop-filter: blur(5px);
 }
 
 .resume-dialog {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
+  border-radius: 20px;
+  padding: 2.5rem;
   text-align: center;
-  max-width: 90%;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-  animation: fadeIn 0.3s ease;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideIn 0.4s ease-out;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .resume-icon {
-  font-size: 2.5rem;
-  margin-bottom: 0.8rem;
-  color: #3498db;
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .resume-dialog h2 {
-  font-size: 1.6rem;
-  color: #2c3e50;
-  margin-bottom: 0.5rem;
+  font-size: 1.8rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 1rem;
+  font-weight: 900;
 }
 
 .resume-dialog p {
-  color: #7f8c8d;
-  margin-bottom: 1rem;
-  font-size: 1rem;
+  color: #666;
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+  line-height: 1.6;
 }
 
 .progress-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 1rem;
-  padding: 0.8rem;
-  background: #f8f9fa;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 12px;
+  padding: 1.2rem;
+  margin-bottom: 1.5rem;
   text-align: left;
+  border: 1px solid rgba(255, 255, 255, 0.3);
 }
 
 .progress-info span {
-  font-weight: bold;
-  color: #2c3e50;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 600;
+  color: #444;
+}
+
+.progress-info span:last-child {
+  margin-bottom: 0;
 }
 
 .dialog-buttons {
   display: flex;
-  gap: 0.8rem;
+  gap: 1rem;
   justify-content: center;
 }
 
-.resume-btn, .restart-btn {
-  padding: 0.7rem 1.2rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.resume-btn {
-  background: #3498db;
-  color: white;
-}
-
-.resume-btn:hover {
-  background: #2980b9;
-  transform: translateY(-2px);
-}
-
-.restart-btn {
-  background: #e74c3c;
-  color: white;
-}
-
-.restart-btn:hover {
-  background: #c0392b;
-  transform: translateY(-2px);
-}
-
-/* 完成覆盖层样式 */
-.completion-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.95);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 8px;
-  z-index: 10;
-  backdrop-filter: blur(2px);
-}
-
-.completion-content {
-  text-align: center;
-  padding: 1.5rem;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  max-width: 90%;
-}
-
+/* 完成界面 */
 .completion-icon {
-  font-size: 3.5rem;
-  margin-bottom: 0.8rem;
-  color: #27ae60;
-  animation: bounce 1s infinite;
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: bounce 2s ease-in-out infinite;
 }
 
 @keyframes bounce {
   0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
+  50% { transform: translateY(-10px); }
 }
 
-.completion-content h2 {
-  font-size: 1.8rem;
-  color: #2c3e50;
-  margin-bottom: 0.5rem;
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .stats-bar {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .root-character {
+    font-size: 80px;
+  }
+  
+  .resume-dialog {
+    padding: 1.5rem;
+  }
+  
+  .resume-dialog h2 {
+    font-size: 1.5rem;
+  }
+  
+  .resume-dialog p {
+    font-size: 1rem;
+  }
+  
+  .complete-screen h2 {
+    font-size: 2rem;
+  }
+  
+  .stat-number {
+    font-size: 2rem;
+  }
+  
+  .control-buttons {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+  }
 }
 
-.completion-content p {
-  font-size: 1.1rem;
-  color: #3498db;
-  margin: 0.4rem 0;
-  font-weight: bold;
-}
-
-.completion-buttons {
-  display: flex;
-  gap: 0.8rem;
-  justify-content: center;
-  margin-top: 1.2rem;
-}
-
-.completion-restart-btn {
-  padding: 0.7rem 1.8rem;
-  background: #27ae60;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
-}
-
-.completion-restart-btn:hover {
-  background: #219653;
-  transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6);
-}
-
-.completion-clear-btn {
-  padding: 0.7rem 1.8rem;
-  background: #95a5a6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4);
-}
-
-.completion-clear-btn:hover {
-  background: #7f8c8d;
-  transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6);
-}
-
-.controls {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 0.8rem;
-  flex-wrap: wrap;
-}
-
-.mode-btn {
-  padding: 0.55rem 0.9rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: bold;
-  transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-
-.mode-btn:hover {
-  transform: translateY(-1px);
-}
-
-.mode-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.mode-btn.mode-active {
-  background: #3498db;
-}
-
-.mode-btn.mode-active:hover {
-  background: #2980b9;
-}
-
-.mode-btn:not(.mode-active) {
-  background: #95a5a6;
-}
-
-.mode-btn:not(.mode-active):hover {
-  background: #7f8c8d;
-}
-
-/* 新增：十字练习按钮样式 */
-.cross-btn {
-  padding: 0.55rem 0.9rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: bold;
-  transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-  background: #7f8c8d; /* 灰色 */
-  color: white;
-}
-
-.cross-btn:hover {
-  background: #95a5a6;
-  transform: translateY(-1px);
-}
-
-.cross-btn.cross-active {
-  background: #3498db; /* 蓝色 */
-  box-shadow: 0 2px 6px rgba(52, 152, 219, 0.4);
-}
-
-.cross-btn.cross-active:hover {
-  background: #2980b9;
-  transform: translateY(-2px);
-}
-
-.restart-btn {
-  padding: 0.55rem 0.9rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  font-weight: bold;
-  transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
-}
-
-.restart-btn:hover {
-  background: #c0392b;
-  transform: translateY(-1px);
-}
-
-.restart-btn:disabled {
-  background: #bdc3c7;
-  cursor: not-allowed;
-  transform: none;
-  opacity: 0.7;
-}
-
-.font-info {
-  margin-top: 0.8rem;
-  padding: 0.4rem;
-  background: #f8f9fa;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  color: #7f8c8d;
-  text-align: center;
+@media (max-width: 480px) {
+  .stats-bar {
+    grid-template-columns: 1fr;
+  }
+  
+  .root-character {
+    font-size: 60px;
+  }
+  
+  .code-input {
+    font-size: 1.2rem;
+    padding: 1rem;
+  }
+  
+  .hint-display {
+    font-size: 1rem;
+    padding: 0.8rem 1rem;
+  }
+  
+  .keyboard-hints {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .hint {
+    width: 100%;
+    justify-content: center;
+  }
 }
 </style>
