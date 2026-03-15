@@ -1,7 +1,14 @@
 ---
+outline: deep
 title: Sequential Practice
 ---
 
-# Sequential Practice
+<ModernPractice />
 
-This English page demonstrates the sequential practice mode.
+<script setup>
+import ModernPractice from '../../.vitepress/components/ModernPractice.vue'
+</script>
+
+## Practice Instructions
+
+Sequential practice systematically teaches all radicals in order for comprehensive learning.

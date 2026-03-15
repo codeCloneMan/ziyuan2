@@ -172,7 +172,7 @@ export const DEFAULT_PRACTICE_CONFIG: PracticeConfig = {
   groupSize: 10,
   groupRepetitions: 3,
   feedbackDisplayTime: 1500,
-  autoSave: true
+  autoSave: true,
 }
 
 /**
@@ -196,7 +196,7 @@ export interface PracticeEvent {
   /** 事件时间戳 */
   timestamp: number
   /** 事件数据 */
-  data?: any
+  data?: Record<string, unknown>
 }
 
 /**

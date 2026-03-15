@@ -8,7 +8,7 @@ const PROGRESS_KEYS = {
   TOP500: 'top500_progress',
   MODERN: 'modern_progress',
   ERROR: 'error_progress',
-  TYPING: 'typing_progress'
+  TYPING: 'typing_progress',
 }
 
 // 保存进度
@@ -17,7 +17,7 @@ export function saveProgress(key, data) {
     const progressData = {
       ...data,
       timestamp: Date.now(),
-      version: '1.0'
+      version: '1.0',
     }
     localStorage.setItem(key, JSON.stringify(progressData))
     console.log(`进度已保存: ${key}`)
@@ -33,9 +33,9 @@ export function loadProgress(key) {
   try {
     const saved = localStorage.getItem(key)
     if (!saved) return null
-    
+
     const data = JSON.parse(saved)
-    
+
     // 检查数据是否过期（7天）
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
     if (Date.now() - data.timestamp > SEVEN_DAYS) {
@@ -43,7 +43,7 @@ export function loadProgress(key) {
       localStorage.removeItem(key)
       return null
     }
-    
+
     console.log(`进度已加载: ${key}`)
     return data
   } catch (error) {
@@ -55,8 +55,25 @@ export function loadProgress(key) {
 // 清除进度
 export function clearProgress(key) {
   try {
-    localStorage.removeItem(key)
-    console.log(`进度已清除: ${key}`)
+    // 将进度重置为0而不是删除，确保记录进度为0
+    const zeroProgress = {
+      progress: 0,
+      accuracy: 0,
+      masteryRate: 0,
+      masteredCount: 0,
+      remainingCount: 0,
+      elapsedTime: 0,
+      totalAttempts: 0,
+      totalCorrect: 0,
+      totalWrong: 0,
+      isComplete: false,
+      isPaused: false,
+      timestamp: Date.now(),
+      currentIndex: 0,
+      rootStats: {},
+    }
+    localStorage.setItem(key, JSON.stringify(zeroProgress))
+    console.log(`进度已重置为0: ${key}`)
     return true
   } catch (error) {
     console.error(`清除进度失败 (${key}):`, error)
@@ -73,7 +90,7 @@ export function hasProgress(key) {
 // 获取所有进度
 export function getAllProgress() {
   const progress = {}
-  Object.values(PROGRESS_KEYS).forEach(key => {
+  Object.values(PROGRESS_KEYS).forEach((key) => {
     const data = loadProgress(key)
     if (data) {
       progress[key] = data
@@ -84,7 +101,7 @@ export function getAllProgress() {
 
 // 清除所有进度
 export function clearAllProgress() {
-  Object.values(PROGRESS_KEYS).forEach(key => {
+  Object.values(PROGRESS_KEYS).forEach((key) => {
     clearProgress(key)
   })
   console.log('所有进度已清除')
@@ -97,10 +114,10 @@ export function getProgressStats() {
     total: 0,
     completed: 0,
     accuracy: 0,
-    timeSpent: 0
+    timeSpent: 0,
   }
-  
-  Object.values(PROGRESS_KEYS).forEach(key => {
+
+  Object.values(PROGRESS_KEYS).forEach((key) => {
     const data = loadProgress(key)
     if (data) {
       stats.total++
@@ -109,11 +126,11 @@ export function getProgressStats() {
       if (data.timeSpent) stats.timeSpent += data.timeSpent
     }
   })
-  
+
   if (stats.total > 0) {
     stats.accuracy = Math.round(stats.accuracy / stats.total)
   }
-  
+
   return stats
 }
 
@@ -122,15 +139,15 @@ export function exportProgress() {
   try {
     const allProgress = getAllProgress()
     const dataStr = JSON.stringify(allProgress, null, 2)
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr)
-    
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr)
+
     const exportFileDefaultName = `ziyuan_progress_${Date.now()}.json`
-    
+
     const linkElement = document.createElement('a')
     linkElement.setAttribute('href', dataUri)
     linkElement.setAttribute('download', exportFileDefaultName)
     linkElement.click()
-    
+
     console.log('进度已导出')
     return true
   } catch (error) {
@@ -144,23 +161,23 @@ export function importProgress(file) {
   return new Promise((resolve, reject) => {
     try {
       const reader = new FileReader()
-      
+
       reader.onload = (event) => {
         try {
           const importedData = JSON.parse(event.target.result)
-          
+
           // 验证导入的数据结构
           if (typeof importedData !== 'object') {
             throw new Error('无效的进度文件格式')
           }
-          
+
           // 保存导入的进度
           Object.entries(importedData).forEach(([key, data]) => {
             if (Object.values(PROGRESS_KEYS).includes(key)) {
               saveProgress(key, data)
             }
           })
-          
+
           console.log('进度已导入')
           resolve(true)
         } catch (error) {
@@ -168,12 +185,12 @@ export function importProgress(file) {
           reject(error)
         }
       }
-      
+
       reader.onerror = (error) => {
         console.error('读取文件失败:', error)
         reject(error)
       }
-      
+
       reader.readAsText(file)
     } catch (error) {
       console.error('导入进度失败:', error)
@@ -201,5 +218,5 @@ export default {
   getProgressStats,
   exportProgress,
   importProgress,
-  syncProgress
+  syncProgress,
 }

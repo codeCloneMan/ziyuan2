@@ -6,27 +6,27 @@ import { ref, onMounted, onUnmounted } from 'vue'
  * 点击放大查看图片，支持滚轮缩放
  */
 
-const props = defineProps({
+defineProps({
   src: {
     type: String,
-    required: true
+    required: true,
   },
   alt: {
     type: String,
-    default: ''
+    default: '',
   },
   width: {
     type: [String, Number],
-    default: '100%'
+    default: '100%',
   },
   height: {
     type: [String, Number],
-    default: 'auto'
+    default: 'auto',
   },
   maxWidth: {
     type: String,
-    default: '100%'
-  }
+    default: '100%',
+  },
 })
 
 const isZoomed = ref(false)
@@ -60,9 +60,9 @@ const closeZoom = () => {
 // 滚轮缩放
 const handleWheel = (e) => {
   if (!isZoomed.value) return
-  
+
   e.preventDefault()
-  
+
   const delta = e.deltaY > 0 ? -0.1 : 0.1
   const newScale = Math.min(Math.max(scale.value + delta, 0.5), 5)
   scale.value = newScale
@@ -71,7 +71,7 @@ const handleWheel = (e) => {
 // 开始拖拽
 const startDrag = (e) => {
   if (!isZoomed.value || scale.value <= 1) return
-  
+
   isDragging.value = true
   startX.value = e.clientX - translateX.value
   startY.value = e.clientY - translateY.value
@@ -80,7 +80,7 @@ const startDrag = (e) => {
 // 拖拽中
 const onDrag = (e) => {
   if (!isDragging.value) return
-  
+
   translateX.value = e.clientX - startX.value
   translateY.value = e.clientY - startY.value
 }
@@ -93,7 +93,7 @@ const endDrag = () => {
 // 键盘事件
 const handleKeydown = (e) => {
   if (!isZoomed.value) return
-  
+
   if (e.key === 'Escape') {
     closeZoom()
   } else if (e.key === 'ArrowUp') {
@@ -143,68 +143,60 @@ onUnmounted(() => {
       :style="{ width, height, maxWidth }"
       @click="openZoom"
     />
-    
+
     <!-- 放大遮罩层 -->
     <Teleport to="body">
-      <div 
-        v-if="isZoomed" 
-        class="zoom-overlay"
-        @wheel="handleWheel"
-        @click.self="closeZoom"
-      >
+      <div v-if="isZoomed" class="zoom-overlay" @wheel="handleWheel" @click.self="closeZoom">
         <!-- 放大图片 -->
-        <div 
+        <div
           ref="zoomContainer"
           class="zoom-content"
-          :style="{ 
-            transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`
+          :style="{
+            transform: `translate(${translateX}px, ${translateY}px) scale(${scale})`,
           }"
           @mousedown="startDrag"
         >
-          <img
-            ref="zoomImage"
-            :src="src"
-            :alt="alt"
-            class="zoomed-image"
-          />
+          <img ref="zoomImage" :src="src" :alt="alt" class="zoomed-image" />
         </div>
-        
+
         <!-- 控制按钮 -->
         <div class="zoom-controls">
-          <button class="zoom-btn" @click.stop="scale = Math.min(scale + 0.2, 5)" title="放大 (+)">
+          <button class="zoom-btn" title="放大 (+)" @click.stop="scale = Math.min(scale + 0.2, 5)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              <line x1="11" y1="8" x2="11" y2="14"></line>
-              <line x1="8" y1="11" x2="14" y2="11"></line>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="11" y1="8" x2="11" y2="14" />
+              <line x1="8" y1="11" x2="14" y2="11" />
             </svg>
           </button>
-          <button class="zoom-btn" @click.stop="scale = Math.max(scale - 0.2, 0.5)" title="缩小 (-)">
+          <button
+            class="zoom-btn"
+            title="缩小 (-)"
+            @click.stop="scale = Math.max(scale - 0.2, 0.5)"
+          >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="8"></circle>
-              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-              <line x1="8" y1="11" x2="14" y2="11"></line>
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <line x1="8" y1="11" x2="14" y2="11" />
             </svg>
           </button>
-          <button class="zoom-btn" @click.stop="resetView" title="重置">
+          <button class="zoom-btn" title="重置" @click.stop="resetView">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
-              <path d="M3 3v5h5"></path>
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+              <path d="M3 3v5h5" />
             </svg>
           </button>
-          <button class="zoom-btn" @click.stop="closeZoom" title="关闭 (ESC)">
+          <button class="zoom-btn" title="关闭 (ESC)" @click.stop="closeZoom">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
-        
+
         <!-- 缩放比例显示 -->
-        <div class="zoom-scale">
-          {{ Math.round(scale * 100) }}%
-        </div>
-        
+        <div class="zoom-scale">{{ Math.round(scale * 100) }}%</div>
+
         <!-- 快捷键提示 -->
         <div class="zoom-hints">
           <span>滚轮缩放 | 拖拽移动 | ESC关闭</span>
@@ -346,23 +338,23 @@ onUnmounted(() => {
   .zoom-controls {
     bottom: 60px;
   }
-  
+
   .zoom-btn {
     width: 40px;
     height: 40px;
   }
-  
+
   .zoom-btn svg {
     width: 20px;
     height: 20px;
   }
-  
+
   .zoom-scale {
     bottom: 20px;
     font-size: 12px;
     padding: 6px 12px;
   }
-  
+
   .zoom-hints {
     top: 20px;
     font-size: 11px;

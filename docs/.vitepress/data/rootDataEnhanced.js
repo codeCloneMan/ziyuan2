@@ -336,7 +336,7 @@ export const allRoots = [
   { character: '末', code: 'x', hint: '末尾', category: '植物' },
   { character: '瓦', code: 'o', hint: '瓦片', category: '自然' },
   { character: '', code: 'z', hint: '戈字旁', category: '其他' },
-  { character: '⺜', code: 'n', hint: '病字头', category: '结构' },
+  { character: '⺜', code: 'n', hint: '冒字头', category: '结构' },
   { character: '乌', code: 'e', hint: '乌鸦', category: '动物' },
   { character: '鸟', code: 'e', hint: '鸟儿', category: '动物' },
   { character: '乑', code: 's', hint: '众人', category: '人体' },
@@ -404,7 +404,7 @@ export const allRoots = [
   { character: '烏', code: 'e', hint: '乌鸦', category: '动物' },
   { character: '𦣝', code: 'j', hint: '类臣旁', category: '结构' },
   { character: '𩙿', code: 'o', hint: '食字旁', category: '结构' },
-  { character: '', code: 'r', hint: '斲字左底', category: '结构' }
+  { character: '', code: 'r', hint: '斲字左底', category: '结构' },
 ]
 
 /**
@@ -418,7 +418,7 @@ export const ROOT_CATEGORIES = {
   NUMBER: '数字',
   STROKE: '笔画',
   STRUCTURE: '结构',
-  OTHER: '其他'
+  OTHER: '其他',
 }
 
 /**
@@ -435,13 +435,13 @@ export const rootsByCategory = new Map()
  * 初始化索引
  */
 function initializeIndexes() {
-  allRoots.forEach(root => {
+  allRoots.forEach((root) => {
     // 按编码索引
     if (!rootsByCode.has(root.code)) {
       rootsByCode.set(root.code, [])
     }
     rootsByCode.get(root.code).push(root)
-    
+
     // 如果有分类，按分类索引
     if (root.category) {
       if (!rootsByCategory.has(root.category)) {
@@ -510,23 +510,23 @@ export const getCategoryStats = () => {
 export const validateRootData = () => {
   const issues = []
   const codeSet = new Set()
-  
+
   allRoots.forEach((root, index) => {
     // 检查必填字段
     if (!root.character || !root.code || !root.hint) {
       issues.push(`索引 ${index}: 缺少必填字段`)
     }
-    
+
     // 检查编码重复
     if (codeSet.has(root.code)) {
       issues.push(`编码 ${root.code} 重复`)
     }
     codeSet.add(root.code)
   })
-  
+
   return {
     valid: issues.length === 0,
     issues,
-    totalRoots: allRoots.length
+    totalRoots: allRoots.length,
   }
 }

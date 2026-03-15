@@ -1,6 +1,8 @@
 import { test, expect } from '@playwright/test'
 
-test('English navigation text appears after language switch and en route works', async ({ page }) => {
+test('English navigation text appears after language switch and en route works', async ({
+  page,
+}) => {
   // Start at root with Chinese by default
   await page.goto('http://localhost:5173/')
   await expect(page.locator('text=首页')).toBeVisible()

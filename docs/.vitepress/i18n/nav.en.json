@@ -1,0 +1,62 @@
+[
+  {
+    "key": "home",
+    "link": "/en/",
+    "text": { "zh": "首页", "en": "Home" }
+  },
+  {
+    "key": "introduction",
+    "link": "/en/introduction",
+    "text": { "zh": "快速入门", "en": "Getting Started" }
+  },
+  {
+    "key": "practice",
+    "link": "#",
+    "text": { "zh": "字根练习", "en": "Root Practice" },
+    "children": [
+      {
+        "key": "top500",
+        "link": "/en/practice/top500",
+        "text": { "zh": "常用字根", "en": "Common Roots" }
+      },
+      {
+        "key": "modern",
+        "link": "/en/practice/modern",
+        "text": { "zh": "顺序练习", "en": "Order Practice" }
+      },
+      {
+        "key": "random",
+        "link": "/en/practice/random",
+        "text": { "zh": "随机练习", "en": "Random Practice" }
+      },
+      {
+        "key": "error",
+        "link": "/en/practice/error",
+        "text": { "zh": "错题本", "en": "Error Book" }
+      }
+    ]
+  },
+  {
+    "key": "xingma",
+    "link": "/en/xingma/index",
+    "text": { "zh": "字源形码", "en": "Tiger Origin" }
+  },
+  {
+    "key": "duanpin",
+    "link": "/en/duanpin",
+    "text": { "zh": "短拼拼音", "en": "Short Pinyin" }
+  },
+  {
+    "key": "tools",
+    "link": "#",
+    "text": { "zh": "更多工具", "en": "More Tools" },
+    "children": [
+      {
+        "key": "ceping",
+        "link": "https://ceping.shurufa.app/",
+        "text": { "zh": "输入法测评", "en": "Input Method Test" },
+        "target": "_blank"
+      }
+    ]
+  }
+]

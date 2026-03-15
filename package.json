@@ -1,11 +1,25 @@
 {
   "devDependencies": {
-    "vitepress": "^1.5.0"
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/eslint-plugin": "^8.57.0",
+    "@typescript-eslint/parser": "^8.57.0",
+    "eslint": "^10.0.3",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.8.0",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "vitepress": "^1.5.0",
+    "vue-eslint-parser": "^10.4.0"
   },
   "scripts": {
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
-    "docs:preview": "vitepress preview docs"
+    "docs:preview": "vitepress preview docs",
+    "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
+    "lint:check": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts",
+    "format": "prettier --write \"**/*.{js,jsx,ts,tsx,vue,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,jsx,ts,tsx,vue,json,md}\""
   },
   "dependencies": {
     "@fontsource/noto-sans-sc": "^5.2.9",

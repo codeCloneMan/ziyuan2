@@ -13,14 +13,14 @@
 export const debounce = (func, wait = 300, immediate = false) => {
   let timeout
   let lastCallTime = 0
-  
+
   return function executedFunction(...args) {
     const now = Date.now()
     const context = this
-    
+
     // 清除之前的定时器
     clearTimeout(timeout)
-    
+
     if (immediate) {
       // 如果距离上次调用已经超过 wait 时间，立即执行
       if (now - lastCallTime >= wait) {
@@ -52,15 +52,15 @@ export const throttle = (func, limit = 300) => {
   let inThrottle = false
   let lastFunc
   let lastRan
-  
+
   return function executedFunction(...args) {
     const context = this
-    
+
     if (!inThrottle) {
       func.apply(context, args)
       lastRan = Date.now()
       inThrottle = true
-      
+
       setTimeout(() => {
         inThrottle = false
         // 如果有积攒的调用，执行最后一次
@@ -131,17 +131,17 @@ export const isValidString = (value) => {
  */
 export const safeGet = (obj, path, defaultValue = null) => {
   if (!obj || typeof obj !== 'object') return defaultValue
-  
+
   const keys = path.split('.')
   let result = obj
-  
+
   for (const key of keys) {
     if (result === null || result === undefined || typeof result !== 'object') {
       return defaultValue
     }
     result = result[key]
   }
-  
+
   return result ?? defaultValue
 }
 
@@ -167,9 +167,9 @@ export const formatTime = (seconds) => {
 export const calculatePercentage = (part, total, decimals = 0) => {
   const safePart = safeParseNumber(part, 0)
   const safeTotal = safeParseNumber(total, 0)
-  
+
   if (safeTotal === 0) return 0
-  
+
   const percentage = (safePart / safeTotal) * 100
   const multiplier = Math.pow(10, decimals)
   return Math.round(percentage * multiplier) / multiplier
@@ -182,9 +182,9 @@ export const calculatePercentage = (part, total, decimals = 0) => {
  */
 export const shuffleArray = (array) => {
   if (!Array.isArray(array) || array.length === 0) return []
-  
+
   const newArray = [...array]
-  
+
   // 使用更现代的实现，但保持兼容性
   for (let i = newArray.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
@@ -193,7 +193,7 @@ export const shuffleArray = (array) => {
     newArray[i] = newArray[j]
     newArray[j] = temp
   }
-  
+
   return newArray
 }
 
@@ -210,9 +210,11 @@ export const generateId = () => {
  * @returns {boolean}
  */
 export const isTouchDevice = () => {
-  return window.matchMedia('(pointer: coarse)').matches || 
-         'ontouchstart' in window || 
-         navigator.maxTouchPoints > 0
+  return (
+    window.matchMedia('(pointer: coarse)').matches ||
+    'ontouchstart' in window ||
+    navigator.maxTouchPoints > 0
+  )
 }
 
 /**
@@ -239,7 +241,7 @@ export const prefersReducedMotion = () => {
  */
 export const safeFocus = (element, delay = 0) => {
   if (!element || typeof element.focus !== 'function') return
-  
+
   const focusElement = () => {
     try {
       element.focus()
@@ -247,7 +249,7 @@ export const safeFocus = (element, delay = 0) => {
       console.warn('Failed to focus element:', error)
     }
   }
-  
+
   if (delay > 0) {
     setTimeout(focusElement, delay)
   } else {
@@ -285,7 +287,7 @@ export const deepClone = (obj) => {
   if (obj === null || typeof obj !== 'object') return obj
   if (obj instanceof Date) return new Date(obj.getTime())
   if (Array.isArray(obj)) return obj.map(deepClone)
-  
+
   const cloned = {}
   for (const key in obj) {
     if (Object.prototype.hasOwnProperty.call(obj, key)) {

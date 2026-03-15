@@ -41,19 +41,9 @@ const accuracy = computed(() => {
   return Math.round((correctCount.value / totalCount.value) * 100)
 })
 
-const progress = computed(() => {
-  if (practiceList.value.length === 0) return 0
-  return Math.round((currentIndex.value / practiceList.value.length) * 100)
-})
-
 const currentHint = computed(() => {
   if (!currentRoot.value) return ''
   return currentRoot.value.hint || ''
-})
-
-const currentCode = computed(() => {
-  if (!currentRoot.value) return ''
-  return currentRoot.value.code || ''
 })
 
 // 洗牌算法
@@ -91,11 +81,9 @@ const initPractice = (mode, practiceRoots, correctCount, answeredRoots, isComple
   correctCount.value = correctCount
   totalCount.value = answeredRoots
   isPaused.value = false
-  
+
   if (!isComplete && answeredRoots < practiceRoots.length) {
     currentRoot.value = practiceRoots[answeredRoots]
-  } else {
-    isComplete = true
   }
 }
 
@@ -104,7 +92,7 @@ const startPractice = (ignoreSavedProgress = false) => {
   if (ignoreSavedProgress) {
     clearProgress('typing')
   }
-  
+
   initPracticeList()
   loadCurrentRoot()
   startTime.value = Date.now()
@@ -145,7 +133,7 @@ const handleCorrect = () => {
   correctCount.value++
   isCorrect.value = true
   isWrong.value = false
-  
+
   setTimeout(() => {
     nextRoot()
   }, 200)
@@ -155,7 +143,7 @@ const handleCorrect = () => {
 const handleWrong = () => {
   isWrong.value = true
   isCorrect.value = false
-  
+
   setTimeout(() => {
     isWrong.value = false
     nextRoot()
@@ -246,12 +234,12 @@ const handleResume = () => {
     )
     progressRestored.value = true
     showResumeDialog.value = false
-    
+
     // 更新当前根
     if (currentIndex.value < practiceList.value.length) {
       currentRoot.value = practiceList.value[currentIndex.value]
     }
-    
+
     startTimer()
     focusInput()
   }
@@ -298,17 +286,17 @@ const handleBeforeUnload = () => {
 // 生命周期
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
-  
+
   // 加载保存的进度
   const progressData = loadProgress('typing')
   savedProgress.value = progressData
-  
+
   if (progressData && shouldRestoreProgress(progressData)) {
     showResumeDialog.value = true
   } else {
     startPractice()
   }
-  
+
   // 添加页面卸载监听
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
@@ -317,7 +305,7 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   stopTimer()
-  
+
   // 离开页面时保存进度
   if (!isPaused.value && totalCount.value >= 1) {
     saveProgress(
@@ -341,34 +329,40 @@ onUnmounted(() => {
         <div class="stat-label">进度</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value" :class="{ 'high': accuracy >= 90, 'medium': accuracy >= 70 }">
+        <div class="stat-value" :class="{ high: accuracy >= 90, medium: accuracy >= 70 }">
           {{ accuracy }}%
         </div>
         <div class="stat-label">正确率</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ formatTime(elapsedTime) }}</div>
+        <div class="stat-value">
+          {{ formatTime(elapsedTime) }}
+        </div>
         <div class="stat-label">用时</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ correctCount }}</div>
+        <div class="stat-value">
+          {{ correctCount }}
+        </div>
         <div class="stat-label">正确</div>
       </div>
       <div class="stat-item">
-        <div class="stat-value">{{ totalCount - correctCount }}</div>
+        <div class="stat-value">
+          {{ totalCount - correctCount }}
+        </div>
         <div class="stat-label">错误</div>
       </div>
     </div>
 
     <!-- 主练习区域 -->
-    <div class="practice-area" v-if="currentRoot && !isPaused">
+    <div v-if="currentRoot && !isPaused" class="practice-area">
       <!-- 字根显示 -->
       <div class="root-display">
-        <div class="root-character" :class="{ 'correct': isCorrect, 'wrong': isWrong }">
+        <div class="root-character" :class="{ correct: isCorrect, wrong: isWrong }">
           {{ currentRoot.character }}
         </div>
       </div>
-      
+
       <!-- 提示信息 -->
       <div class="hint-display">
         {{ currentHint }}
@@ -383,35 +377,29 @@ onUnmounted(() => {
           maxlength="10"
           placeholder="输入字根编码"
           class="code-input"
-          :class="{ 'correct': isCorrect, 'wrong': isWrong }"
-          @input="validateInput"
+          :class="{ correct: isCorrect, wrong: isWrong }"
           autocomplete="off"
           spellcheck="false"
+          @input="validateInput"
         />
       </div>
 
       <!-- 控制按钮 -->
       <div class="control-buttons">
-        <button @click="prevRoot" class="btn btn-secondary" :disabled="currentIndex === 0">
+        <button class="btn btn-secondary" :disabled="currentIndex === 0" @click="prevRoot">
           ← 上一个
         </button>
-        <button @click="skipRoot" class="btn btn-warning">
-          跳过
-        </button>
-        <button @click="nextRoot" class="btn btn-primary">
-          下一个 →
-        </button>
-        <button @click="togglePause" class="btn btn-secondary">
+        <button class="btn btn-warning" @click="skipRoot">跳过</button>
+        <button class="btn btn-primary" @click="nextRoot">下一个 →</button>
+        <button class="btn btn-secondary" @click="togglePause">
           {{ isPaused ? '▶️ 继续' : '⏸️ 暂停' }}
         </button>
-        <button @click="clearAllErrors" class="btn btn-danger">
-          🗑️ 清除记录
-        </button>
+        <button class="btn btn-danger" @click="clearAllErrors">🗑️ 清除记录</button>
       </div>
     </div>
 
     <!-- 暂停界面 -->
-    <div class="pause-screen" v-if="isPaused">
+    <div v-if="isPaused" class="pause-screen">
       <h2>⏸️ 已暂停</h2>
       <div class="pause-stats">
         <div class="stat">
@@ -428,12 +416,8 @@ onUnmounted(() => {
         </div>
       </div>
       <div class="pause-actions">
-        <button @click="togglePause" class="btn btn-large btn-primary">
-          继续练习
-        </button>
-        <button @click="startPractice" class="btn btn-large btn-secondary">
-          再来一次
-        </button>
+        <button class="btn btn-large btn-primary" @click="togglePause">继续练习</button>
+        <button class="btn btn-large btn-secondary" @click="startPractice">再来一次</button>
       </div>
     </div>
 
@@ -449,16 +433,23 @@ onUnmounted(() => {
         </div>
         <div class="progress-info-row">
           <span class="progress-item">📝 练习模式: 打字练习</span>
-          <span class="progress-item">✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || allRoots.length }}</span>
-          <span class="progress-item">🎯 正确率: {{ savedProgress ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) : 0 }}%</span>
+          <span class="progress-item"
+            >✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{
+              savedProgress?.practiceRoots?.length || allRoots.length
+            }}</span
+          >
+          <span class="progress-item"
+            >🎯 正确率:
+            {{
+              savedProgress
+                ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100)
+                : 0
+            }}%</span
+          >
         </div>
         <div class="dialog-buttons">
-          <button @click="handleResume" class="btn btn-success">
-            ✅ 继续练习
-          </button>
-          <button @click="handleRestart" class="btn btn-danger">
-            🔄 重新开始
-          </button>
+          <button class="btn btn-success" @click="handleResume">✅ 继续练习</button>
+          <button class="btn btn-danger" @click="handleRestart">🔄 重新开始</button>
         </div>
       </div>
     </div>
@@ -569,9 +560,16 @@ onUnmounted(() => {
 }
 
 @keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-15px); }
-  75% { transform: translateX(15px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-15px);
+  }
+  75% {
+    transform: translateX(15px);
+  }
 }
 
 /* 提示信息 */
@@ -871,29 +869,29 @@ onUnmounted(() => {
     gap: 15px;
     padding: 20px 15px;
   }
-  
+
   .stat-item {
     flex: 1 1 40%;
     min-width: 80px;
   }
-  
+
   .stat-value {
     font-size: 24px;
   }
-  
+
   .root-character {
     font-size: 100px;
   }
-  
+
   .practice-area {
     padding: 40px 20px;
   }
-  
+
   .pause-stats {
     gap: 30px;
     flex-wrap: wrap;
   }
-  
+
   .stat-number {
     font-size: 40px;
   }
@@ -903,20 +901,20 @@ onUnmounted(() => {
   .typing-practice-container {
     padding: 15px;
   }
-  
+
   .root-character {
     font-size: 80px;
   }
-  
+
   .code-input {
     font-size: 24px;
     padding: 15px 20px;
   }
-  
+
   .pause-screen {
     padding: 40px 20px;
   }
-  
+
   .pause-screen h2 {
     font-size: 28px;
   }

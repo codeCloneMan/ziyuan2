@@ -1,0 +1,53 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# production
+/docs/.vitepress/dist
+
+# misc
+.DS_Store
+*.pem
+
+# env
+.env
+.env.*
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# editor
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# cache
+/docs/.vitepress/cache
+.vitepress/cache
+
+# build
+dist
+build
+
+# markdown
+*.md
+
+# lock files
+pnpm-lock.yaml
+yarn.lock
+package-lock.json

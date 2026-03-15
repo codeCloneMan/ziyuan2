@@ -86,7 +86,7 @@ export const safeRemoveItem = (key) => {
 export const getAllKeys = () => {
   try {
     if (!isStorageAvailable()) return []
-    return Object.keys(localStorage).filter(key => key.startsWith(STORAGE_PREFIX))
+    return Object.keys(localStorage).filter((key) => key.startsWith(STORAGE_PREFIX))
   } catch (error) {
     console.warn('Failed to get all keys:', error)
     return []
@@ -101,7 +101,7 @@ export const clearAllPracticeStorage = () => {
   try {
     if (!isStorageAvailable()) return false
     const keys = getAllKeys()
-    keys.forEach(key => {
+    keys.forEach((key) => {
       try {
         localStorage.removeItem(key)
       } catch (e) {
@@ -124,19 +124,19 @@ export const getStorageUsage = () => {
     if (!isStorageAvailable()) {
       return { used: 0, total: 0, available: 0, percent: 0 }
     }
-    
+
     let used = 0
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
       const value = localStorage.getItem(key)
       used += key.length + value.length
     }
-    
+
     // localStorage 通常限制为 5-10MB
     const total = 5 * 1024 * 1024 // 5MB 估计值
     const available = Math.max(0, total - used)
     const percent = Math.min(100, Math.round((used / total) * 100))
-    
+
     return { used, total, available, percent }
   } catch (error) {
     console.warn('Failed to get storage usage:', error)

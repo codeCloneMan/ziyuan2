@@ -1,7 +1,12 @@
 <script setup>
 import { ref, onMounted, computed, onUnmounted, nextTick } from 'vue'
 import { allRoots } from '../data/rootData.js'
-import { loadProgress, saveProgress, clearProgress, shouldRestoreProgress } from '../utils/progressManager.js'
+import {
+  loadProgress,
+  saveProgress,
+  clearProgress,
+  shouldRestoreProgress,
+} from '../utils/progressManager.js'
 import { formatTime, safeFocus } from '../utils/safeUtils.js'
 import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
 
@@ -56,7 +61,9 @@ const canDisplayCurrentRoot = computed(() => {
 
 const charUnicode = computed(() => {
   if (!currentRoot.value) return ''
-  return 'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  return (
+    'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  )
 })
 
 const shuffleArray = (array) => {
@@ -72,20 +79,20 @@ const shuffleArray = (array) => {
 
 const initCrossPractice = () => {
   if (!fontLoaded.value) return
-  
+
   const roots = [...allRoots]
   totalGroups.value = Math.ceil(roots.length / 10)
-  
+
   const savedCrossProgress = loadCrossPracticeProgress()
   if (savedCrossProgress) {
     completedGroups.value = savedCrossProgress.completedGroups || 0
     currentGroup.value = savedCrossProgress.currentGroup || 0
     groupRepetitions.value = savedCrossProgress.groupRepetitions || 0
-    
+
     completedGroups.value = Number(completedGroups.value)
     currentGroup.value = Number(currentGroup.value)
     groupRepetitions.value = Number(groupRepetitions.value)
-    
+
     if (completedGroups.value >= totalGroups.value) {
       isComplete.value = true
       feedback.value = '🎉 恭喜完成所有十字练习！'
@@ -96,7 +103,7 @@ const initCrossPractice = () => {
     currentGroup.value = 0
     groupRepetitions.value = 0
   }
-  
+
   loadCurrentGroup()
 }
 
@@ -105,52 +112,52 @@ const loadCurrentGroup = () => {
   const startIdx = currentGroup.value * 10
   const endIdx = Math.min(startIdx + 10, roots.length)
   groupRoots.value = roots.slice(startIdx, endIdx)
-  
+
   if (practiceMode.value === 'order') {
     practiceRoots.value = [...groupRoots.value]
   } else {
     practiceRoots.value = shuffleArray([...groupRoots.value])
   }
-  
+
   correctCount.value = 0
   answeredRoots.value = 0
   isComplete.value = false
-  
+
   nextRoot()
 }
 
 const handleGroupCompleted = () => {
   groupRepetitions.value++
-  
+
   saveCrossPracticeProgress({
     completedGroups: completedGroups.value,
     currentGroup: currentGroup.value,
     groupRepetitions: groupRepetitions.value,
-    lastCompletedTime: new Date().toISOString()
+    lastCompletedTime: new Date().toISOString(),
   })
-  
+
   if (groupRepetitions.value >= 3) {
     completedGroups.value++
     saveCrossPracticeProgress({
       completedGroups: completedGroups.value,
       currentGroup: currentGroup.value,
       groupRepetitions: 0,
-      lastCompletedTime: new Date().toISOString()
+      lastCompletedTime: new Date().toISOString(),
     })
-    
+
     if (completedGroups.value >= totalGroups.value) {
       isComplete.value = true
       feedback.value = '🎉 恭喜完成所有十字练习！'
       return
     }
-    
+
     currentGroup.value = completedGroups.value
     groupRepetitions.value = 0
     feedback.value = `✅ 完成第 ${completedGroups.value} 组！进入第 ${currentGroup.value + 1} 组`
   } else {
     feedback.value = `✅ 完成第 ${groupRepetitions.value}/3 遍练习，继续下一遍！`
   }
-  
+
   setTimeout(() => {
     loadCurrentGroup()
   }, 1500)
@@ -158,7 +165,7 @@ const handleGroupCompleted = () => {
 
 const startPractice = (ignoreSavedProgress = false) => {
   if (!fontLoaded.value) return
-  
+
   if (ignoreSavedProgress) {
     if (isCrossPractice.value) {
       clearCrossPracticeProgress()
@@ -167,26 +174,26 @@ const startPractice = (ignoreSavedProgress = false) => {
       clearProgress()
     }
   }
-  
+
   correctCount.value = 0
   answeredRoots.value = 0
   isComplete.value = false
   progressRestored.value = false
-  
+
   startTimer()
   focusInput()
-  
+
   if (isCrossPractice.value) {
     initCrossPractice()
     return
   }
-  
+
   if (practiceMode.value === 'order') {
     practiceRoots.value = [...allRoots]
   } else {
     practiceRoots.value = shuffleArray([...allRoots])
   }
-  
+
   nextRoot()
 }
 
@@ -194,7 +201,7 @@ const startTimer = () => {
   stopTimer()
   startTime.value = Date.now()
   elapsedTime.value = 0
-  
+
   timer = setInterval(() => {
     elapsedTime.value = Math.floor((Date.now() - startTime.value) / 1000)
   }, 1000)
@@ -215,29 +222,29 @@ const focusInput = () => {
 
 const toggleCrossPractice = () => {
   if (!fontLoaded.value) return
-  
+
   isCrossPractice.value = !isCrossPractice.value
-  
+
   if (isCrossPractice.value) {
     initCrossPractice()
   } else {
     startPractice(true)
   }
-  
+
   saveCrossPracticeState({
     isCrossPractice: isCrossPractice.value,
     practiceMode: practiceMode.value,
     currentGroup: currentGroup.value,
     groupRepetitions: groupRepetitions.value,
-    completedGroups: completedGroups.value
+    completedGroups: completedGroups.value,
   })
 }
 
 const toggleOrderMode = () => {
   if (!fontLoaded.value) return
-  
+
   practiceMode.value = 'order'
-  
+
   if (isCrossPractice.value) {
     loadCurrentGroup()
     saveCrossPracticeState({
@@ -245,7 +252,7 @@ const toggleOrderMode = () => {
       practiceMode: 'order',
       currentGroup: currentGroup.value,
       groupRepetitions: groupRepetitions.value,
-      completedGroups: completedGroups.value
+      completedGroups: completedGroups.value,
     })
   } else {
     startPractice(true)
@@ -254,9 +261,9 @@ const toggleOrderMode = () => {
 
 const toggleShuffleMode = () => {
   if (!fontLoaded.value) return
-  
+
   practiceMode.value = 'shuffle'
-  
+
   if (isCrossPractice.value) {
     loadCurrentGroup()
     saveCrossPracticeState({
@@ -264,7 +271,7 @@ const toggleShuffleMode = () => {
       practiceMode: 'shuffle',
       currentGroup: currentGroup.value,
       groupRepetitions: groupRepetitions.value,
-      completedGroups: completedGroups.value
+      completedGroups: completedGroups.value,
     })
   } else {
     startPractice(true)
@@ -281,11 +288,11 @@ const nextRoot = () => {
       handleGroupCompleted()
       return
     }
-    
+
     isComplete.value = true
     feedback.value = '🎉 恭喜完成所有字根练习！'
   }
-  
+
   if (!isCrossPractice.value) {
     saveProgress(
       practiceMode.value,
@@ -312,7 +319,7 @@ const checkAnswer = () => {
     correctCount.value++
     isCorrect.value = true
     feedback.value = '✅ 正确！'
-    
+
     // 立即跳转到下一个字根
     answeredRoots.value++
     userInput.value = ''
@@ -321,7 +328,7 @@ const checkAnswer = () => {
   } else {
     isCorrect.value = false
     feedback.value = `❌ 错误！正确答案是 ${code.toUpperCase()}`
-    
+
     setTimeout(() => {
       answeredRoots.value++
       userInput.value = ''
@@ -395,11 +402,11 @@ const resumeCrossPractice = () => {
   showCrossResumeDialog.value = false
   isCrossPractice.value = true
   practiceMode.value = savedCrossState.value.practiceMode || 'shuffle'
-  
+
   currentGroup.value = savedCrossState.value.currentGroup
   groupRepetitions.value = savedCrossState.value.groupRepetitions
   completedGroups.value = savedCrossState.value.completedGroups
-  
+
   progressRestored.value = true
   initCrossPractice()
   startTimer()
@@ -412,7 +419,7 @@ const initPractice = (mode, roots, correct, answered, complete) => {
   correctCount.value = correct
   answeredRoots.value = answered
   isComplete.value = complete
-  
+
   if (!complete && answered < roots.length) {
     currentRoot.value = roots[answered]
   } else {
@@ -423,15 +430,16 @@ const initPractice = (mode, roots, correct, answered, complete) => {
 const loadFonts = async () => {
   try {
     const testElement = document.createElement('div')
-    testElement.style.fontFamily = 'CJK-Extended, "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "SimSun", "Arial Unicode MS", sans-serif'
+    testElement.style.fontFamily =
+      'CJK-Extended, "Noto Sans CJK SC", "Source Han Sans SC", "Microsoft YaHei", "SimSun", "Arial Unicode MS", sans-serif'
     testElement.textContent = '⺝'
     document.body.appendChild(testElement)
-    
-    await new Promise(resolve => requestAnimationFrame(resolve))
-    
-    const width = testElement.offsetWidth
+
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+
+    // 检查元素宽度以确认字体加载
     document.body.removeChild(testElement)
-    
+
     fontLoaded.value = true
   } catch (error) {
     console.error('字体加载失败:', error)
@@ -441,19 +449,22 @@ const loadFonts = async () => {
 
 onMounted(async () => {
   await loadFonts()
-  
+
   const crossState = loadCrossPracticeState()
   const crossProgress = loadCrossPracticeProgress()
-  
+
   if (crossState && crossState.isCrossPractice) {
     savedCrossState.value = crossState
-    
+
     if (crossProgress) {
-      savedCrossState.value.currentGroup = Number(crossProgress.currentGroup || crossState.currentGroup) || 0
-      savedCrossState.value.groupRepetitions = Number(crossProgress.groupRepetitions || crossState.groupRepetitions) || 0
-      savedCrossState.value.completedGroups = Number(crossProgress.completedGroups || crossState.completedGroups) || 0
+      savedCrossState.value.currentGroup =
+        Number(crossProgress.currentGroup || crossState.currentGroup) || 0
+      savedCrossState.value.groupRepetitions =
+        Number(crossProgress.groupRepetitions || crossState.groupRepetitions) || 0
+      savedCrossState.value.completedGroups =
+        Number(crossProgress.completedGroups || crossState.completedGroups) || 0
     }
-    
+
     if (crossProgress && Number(crossProgress.completedGroups) < Math.ceil(allRoots.length / 10)) {
       showCrossResumeDialog.value = true
     } else {
@@ -470,7 +481,7 @@ onMounted(async () => {
   } else {
     const progressData = loadProgress()
     savedProgress.value = progressData
-    
+
     if (progressData && shouldRestoreProgress(progressData)) {
       showResumeDialog.value = true
     } else {
@@ -494,9 +505,7 @@ onUnmounted(() => {
         <span class="mode-badge" :class="practiceMode">
           {{ practiceMode === 'order' ? '🔄 顺序练习' : '🎲 乱序练习' }}
         </span>
-        <span v-if="isCrossPractice" class="mode-badge group-mode">
-          ✳️ 十字练习
-        </span>
+        <span v-if="isCrossPractice" class="mode-badge group-mode"> ✳️ 十字练习 </span>
       </div>
     </div>
 
@@ -530,7 +539,7 @@ onUnmounted(() => {
 
     <!-- 进度条 -->
     <div class="progress-track">
-      <div class="progress-fill" :style="{ width: `${(correctCount / totalRoots) * 100}%` }"></div>
+      <div class="progress-fill" :style="{ width: `${(correctCount / totalRoots) * 100}%` }" />
     </div>
 
     <!-- 十字练习进度信息 -->
@@ -544,14 +553,14 @@ onUnmounted(() => {
       <div class="resume-content">
         <h3>📝 发现保存的进度</h3>
         <p>上次练习：{{ savedProgress.correctCount }}/{{ savedProgress.answeredRoots }} 个字根</p>
-        <p>正确率：{{ Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) }}%</p>
+        <p>
+          正确率：{{
+            Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100)
+          }}%
+        </p>
         <div class="resume-buttons">
-          <button @click="resumeProgress" class="btn-resume btn-continue">
-            继续练习
-          </button>
-          <button @click="startPractice(true)" class="btn-resume btn-restart">
-            重新开始
-          </button>
+          <button class="btn-resume btn-continue" @click="resumeProgress">继续练习</button>
+          <button class="btn-resume btn-restart" @click="startPractice(true)">重新开始</button>
         </div>
       </div>
     </div>
@@ -560,15 +569,14 @@ onUnmounted(() => {
     <div v-if="showCrossResumeDialog && savedCrossState" class="resume-dialog">
       <div class="resume-content">
         <h3>✳️ 发现十字练习进度</h3>
-        <p>当前进度：第 {{ savedCrossState.currentGroup + 1 }}/{{ Math.ceil(allRoots.length / 10) }} 组</p>
+        <p>
+          当前进度：第 {{ savedCrossState.currentGroup + 1 }}/{{ Math.ceil(allRoots.length / 10) }}
+          组
+        </p>
         <p>当前组练习：{{ savedCrossState.groupRepetitions }}/3 遍</p>
         <div class="resume-buttons">
-          <button @click="resumeCrossPractice" class="btn-resume btn-continue">
-            继续练习
-          </button>
-          <button @click="startPractice(true)" class="btn-resume btn-restart">
-            重新开始
-          </button>
+          <button class="btn-resume btn-continue" @click="resumeCrossPractice">继续练习</button>
+          <button class="btn-resume btn-restart" @click="startPractice(true)">重新开始</button>
         </div>
       </div>
     </div>
@@ -576,10 +584,16 @@ onUnmounted(() => {
     <!-- 练习主区域 -->
     <div class="practice-main">
       <div class="character-display">
-        <div v-if="currentRoot" class="character" :class="{ 'unicode-fallback': !canDisplayCurrentRoot }">
+        <div
+          v-if="currentRoot"
+          class="character"
+          :class="{ 'unicode-fallback': !canDisplayCurrentRoot }"
+        >
           <span v-if="canDisplayCurrentRoot">{{ currentRoot.character }}</span>
           <div v-else class="unicode-fallback">
-            <div class="unicode-code">{{ charUnicode }}</div>
+            <div class="unicode-code">
+              {{ charUnicode }}
+            </div>
             <div class="unicode-hint">字根：{{ currentRoot.hint }}</div>
           </div>
         </div>
@@ -590,9 +604,6 @@ onUnmounted(() => {
           <input
             ref="inputRef"
             v-model="userInput"
-            @keyup.enter="checkAnswer"
-            @compositionstart="isComposing = true"
-            @compositionend="isComposing = false"
             class="code-input"
             :class="{ 'flash-red': showFlash }"
             :disabled="!fontLoaded || isComplete"
@@ -600,10 +611,13 @@ onUnmounted(() => {
             autocomplete="off"
             spellcheck="false"
             maxlength="4"
+            @keyup.enter="checkAnswer"
+            @compositionstart="isComposing = true"
+            @compositionend="isComposing = false"
           />
         </div>
-        
-        <div v-if="feedback" class="feedback" :class="{ 'correct': isCorrect, 'error': !isCorrect }">
+
+        <div v-if="feedback" class="feedback" :class="{ correct: isCorrect, error: !isCorrect }">
           {{ feedback }}
         </div>
       </div>
@@ -611,16 +625,24 @@ onUnmounted(() => {
 
     <!-- 控制按钮 -->
     <div class="controls">
-      <button @click="toggleOrderMode" class="control-btn" :class="{ 'active': practiceMode === 'order' }">
+      <button
+        class="control-btn"
+        :class="{ active: practiceMode === 'order' }"
+        @click="toggleOrderMode"
+      >
         🔄 顺序练习
       </button>
-      <button @click="toggleShuffleMode" class="control-btn" :class="{ 'active': practiceMode === 'shuffle' }">
+      <button
+        class="control-btn"
+        :class="{ active: practiceMode === 'shuffle' }"
+        @click="toggleShuffleMode"
+      >
         🎲 乱序练习
       </button>
-      <button @click="toggleCrossPractice" class="control-btn" :class="{ 'active': isCrossPractice }">
+      <button class="control-btn" :class="{ active: isCrossPractice }" @click="toggleCrossPractice">
         ✳️ 十字练习
       </button>
-      <button @click="startPractice(true)" class="control-btn restart-btn" :disabled="!fontLoaded">
+      <button class="control-btn restart-btn" :disabled="!fontLoaded" @click="startPractice(true)">
         🔄 重新开始
       </button>
     </div>
@@ -644,22 +666,18 @@ onUnmounted(() => {
           </div>
         </div>
         <div class="completion-actions">
-          <button @click="startPractice(true)" class="btn-resume btn-continue">
-            重新练习
-          </button>
-          <button @click="clearProgress" class="completion-clear-btn">
-            🗑️ 清除进度
-          </button>
+          <button class="btn-resume btn-continue" @click="startPractice(true)">重新练习</button>
+          <button class="completion-clear-btn" @click="clearProgress">🗑️ 清除进度</button>
         </div>
       </div>
     </div>
-    
+
     <!-- 字体加载提示 -->
     <div v-if="!fontLoaded" class="font-loading">
-      <div class="loading-spinner"></div>
+      <div class="loading-spinner" />
       <p>正在加载字体...</p>
     </div>
-    
+
     <!-- 提示信息 -->
     <div v-else class="font-info">
       <p v-if="!isCrossPractice">💡 提示：练习进度会永久保存到本地，关闭页面后仍可继续。</p>
@@ -677,7 +695,8 @@ onUnmounted(() => {
   background: var(--vp-c-bg);
   border-radius: 16px;
   box-shadow: var(--shadow-md);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .practice-header {
@@ -816,7 +835,7 @@ onUnmounted(() => {
   right: 0;
   bottom: 0;
   width: 20px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3));
   border-radius: 0 6px 6px 0;
 }
 
@@ -850,7 +869,7 @@ onUnmounted(() => {
   line-height: 1;
   margin-bottom: 1rem;
   font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
-  text-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  text-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
   transition: transform var(--transition-normal);
 }
 
@@ -1133,7 +1152,7 @@ onUnmounted(() => {
   color: var(--tiger-primary);
   margin-bottom: 2rem;
   font-weight: 900;
-  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .completion-stats {
@@ -1210,27 +1229,31 @@ onUnmounted(() => {
 }
 
 @keyframes flashRed {
-  0% { 
-    transform: translateX(0); 
-    border-color: var(--tiger-error); 
-    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3); 
+  0% {
+    transform: translateX(0);
+    border-color: var(--tiger-error);
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
   }
-  25% { 
-    transform: translateX(-4px); 
+  25% {
+    transform: translateX(-4px);
   }
-  75% { 
-    transform: translateX(4px); 
+  75% {
+    transform: translateX(4px);
   }
-  100% { 
-    transform: translateX(0); 
-    border-color: var(--vp-c-border); 
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); 
+  100% {
+    transform: translateX(0);
+    border-color: var(--vp-c-border);
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
   }
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes slideUp {
@@ -1250,29 +1273,29 @@ onUnmounted(() => {
     padding: 1rem;
     margin: 0.5rem;
   }
-  
+
   .practice-title {
     font-size: 2rem;
   }
-  
+
   .stats-panel {
     grid-template-columns: repeat(3, 1fr);
     gap: 0.75rem;
   }
-  
+
   .character {
     font-size: 6rem;
   }
-  
+
   .controls {
     flex-direction: column;
     align-items: center;
   }
-  
+
   .control-btn {
     width: 250px;
   }
-  
+
   .code-input {
     width: 200px;
     font-size: 1.5rem;
@@ -1283,17 +1306,17 @@ onUnmounted(() => {
   .stats-panel {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   .character {
     font-size: 4.5rem;
   }
-  
+
   .code-input {
     width: 180px;
     font-size: 1.25rem;
     padding: 1rem 1.5rem;
   }
-  
+
   .practice-title {
     font-size: 1.75rem;
   }
@@ -1307,7 +1330,7 @@ onUnmounted(() => {
   font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .mode-btn:hover {
@@ -1339,7 +1362,7 @@ onUnmounted(() => {
   font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   background: #7f8c8d; /* 灰色 */
   color: white;
 }
@@ -1367,7 +1390,7 @@ onUnmounted(() => {
   font-size: 0.85rem;
   font-weight: bold;
   transition: all 0.3s;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .restart-btn:hover {

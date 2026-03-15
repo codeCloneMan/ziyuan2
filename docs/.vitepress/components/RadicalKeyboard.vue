@@ -1,51 +1,46 @@
-/**
- * 字根键盘组件 - 显示 QWERTY 键盘布局及字根位置
- * 模仿虎码练习页面的虚拟键盘设计
- */
+/** * 字根键盘组件 - 显示 QWERTY 键盘布局及字根位置 * 模仿虎码练习页面的虚拟键盘设计 */
 
 <script setup>
-import { computed } from 'vue'
-
 const props = defineProps({
   // 当前要显示的字根编码
   currentCode: {
     type: String,
-    default: ''
+    default: '',
   },
   // 用户输入的编码
   userInput: {
     type: String,
-    default: ''
+    default: '',
   },
   // 是否显示正确/错误状态
   showResult: {
     type: Boolean,
-    default: false
+    default: false,
   },
   // 是否正确
   isCorrect: {
     type: Boolean,
-    default: false
-  }
+    default: false,
+  },
 })
 
 // QWERTY 键盘布局
 const keyboardRows = [
   ['Q', 'W', 'E', 'R', 'T', 'Y', 'U', 'I', 'O', 'P'],
   ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'],
-  ['Z', 'X', 'C', 'V', 'B', 'N', 'M']
+  ['Z', 'X', 'C', 'V', 'B', 'N', 'M'],
 ]
 
 // 获取按键状态
 const getKeyState = (key) => {
   const upperCode = props.currentCode.toUpperCase()
   const upperInput = props.userInput.toUpperCase()
-  
+
   // 如果正在输入，高亮对应的按键
   if (upperInput && key === upperInput[0]) {
     return 'active'
   }
-  
+
   // 如果显示结果
   if (props.showResult) {
     // 正确时高亮答案键
@@ -62,7 +57,7 @@ const getKeyState = (key) => {
       }
     }
   }
-  
+
   return 'normal'
 }
 </script>
@@ -70,12 +65,7 @@ const getKeyState = (key) => {
 <template>
   <div class="radical-keyboard">
     <div v-for="(row, rowIndex) in keyboardRows" :key="rowIndex" class="keyboard-row">
-      <div
-        v-for="key in row"
-        :key="key"
-        class="keyboard-key"
-        :class="getKeyState(key)"
-      >
+      <div v-for="key in row" :key="key" class="keyboard-key" :class="getKeyState(key)">
         {{ key }}
       </div>
     </div>
@@ -160,19 +150,37 @@ const getKeyState = (key) => {
 }
 
 @keyframes correctPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.1); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.1);
+  }
 }
 
 @keyframes targetPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); box-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.5);
+  }
 }
 
 @keyframes wrongShake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-5px); }
-  75% { transform: translateX(5px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-5px);
+  }
+  75% {
+    transform: translateX(5px);
+  }
 }
 
 /* 响应式设计 */
@@ -182,11 +190,11 @@ const getKeyState = (key) => {
     height: 2.2rem;
     font-size: 0.875rem;
   }
-  
+
   .keyboard-row:nth-child(2) {
     padding-left: 1rem;
   }
-  
+
   .keyboard-row:nth-child(3) {
     padding-left: 2rem;
   }
@@ -199,15 +207,15 @@ const getKeyState = (key) => {
     font-size: 0.75rem;
     border-radius: 6px;
   }
-  
+
   .keyboard-row {
     gap: 0.25rem;
   }
-  
+
   .keyboard-row:nth-child(2) {
     padding-left: 0.75rem;
   }
-  
+
   .keyboard-row:nth-child(3) {
     padding-left: 1.5rem;
   }
@@ -227,7 +235,7 @@ const getKeyState = (key) => {
   .keyboard-key {
     transition: none;
   }
-  
+
   .keyboard-key.correct,
   .keyboard-key.target,
   .keyboard-key.wrong {

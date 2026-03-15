@@ -1,9 +1,5 @@
-/**
- * 错误字根练习组件 - 分组练习版 V2
- * 特点：
- * 1. 分组练习，组内字根随机循环
- * 2. 悬浮恢复对话框
- */
+/** * 错误字根练习组件 - 分组练习版 V2 * 特点： * 1. 分组练习，组内字根随机循环 * 2. 悬浮恢复对话框
+*/
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
@@ -17,15 +13,16 @@ import RadicalKeyboard from './RadicalKeyboard.vue'
 const STORAGE_KEYS = {
   ERROR_RADICALS: 'errorRadicals',
   MASTERED_RADICALS: 'masteredRadicals',
-  PRACTICE_PROGRESS: 'errorPracticeProgress'
+  PRACTICE_PROGRESS: 'error_progress', // 统一使用下划线
 }
-const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+// eslint-disable-next-line no-unused-vars
+const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000 // 保留常量供未来使用
 
 // 使用分组练习引擎（错误练习使用随机模式）
 const engine = useGroupPractice({
   groupSize: 8,
   repetitions: 4,
-  errorThreshold: 3
+  errorThreshold: 3,
 })
 
 // 重新开始标志
@@ -40,14 +37,19 @@ const isCorrect = ref(false)
 const feedback = ref('')
 const inputRef = ref(null)
 const showResumeDialog = ref(false)
+const savedProgress = ref(null) // 存储保存的进度信息
 
 // 计时器
 let timer = null
+let timeoutIds = [] // 管理所有setTimeout
 
 // 计算属性
 const currentRoot = computed(() => engine.currentRoot.value)
 const currentHint = computed(() => currentRoot.value?.hint || '')
 const currentCode = computed(() => currentRoot.value?.code || '')
+
+// 计算属性 - 动态获取恢复对话框文案
+const resumeText = computed(() => '发现未完成的错误字根练习')
 
 const canDisplayCurrentRoot = computed(() => {
   if (!currentRoot.value) return true
@@ -57,7 +59,9 @@ const canDisplayCurrentRoot = computed(() => {
 
 const charUnicode = computed(() => {
   if (!currentRoot.value) return ''
-  return 'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  return (
+    'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  )
 })
 
 // 统计
@@ -68,8 +72,11 @@ const masteredCount = computed(() => engine.masteredCount.value)
 const remainingCount = computed(() => errorRadicals.value.length - masteredCount.value)
 const elapsedTime = computed(() => engine.elapsedTime.value)
 const groupProgress = computed(() => engine.groupProgress.value)
+// eslint-disable-next-line no-unused-vars
 const totalCount = computed(() => engine.totalAttempts.value)
+// eslint-disable-next-line no-unused-vars
 const correctCount = computed(() => engine.totalCorrect.value)
+// eslint-disable-next-line no-unused-vars
 const wrongCount = computed(() => engine.totalWrong.value)
 const isComplete = computed(() => engine.isComplete.value)
 const isPaused = computed(() => engine.isPaused.value)
@@ -144,7 +151,7 @@ const validateInput = () => {
       removeFromErrors(currentRoot.value)
     }
 
-    setTimeout(() => {
+    safeTimeout(() => {
       handleNext()
     }, 800)
   } else {
@@ -152,7 +159,7 @@ const validateInput = () => {
     feedback.value = `❌ 错误！正确答案是 ${code.toUpperCase()}`
 
     // 错误后跳过，继续循环本组
-    setTimeout(() => {
+    safeTimeout(() => {
       handleNext()
     }, 1500)
   }
@@ -163,7 +170,7 @@ const validateInput = () => {
 // 从错误列表移除
 const removeFromErrors = (root) => {
   const rootId = `${root.character}-${root.code}`
-  const index = errorRadicals.value.findIndex(r => `${r.character}-${r.code}` === rootId)
+  const index = errorRadicals.value.findIndex((r) => `${r.character}-${r.code}` === rootId)
   if (index > -1) {
     masteredRadicals.value.push(root)
     errorRadicals.value.splice(index, 1)
@@ -198,7 +205,7 @@ const skipRoot = () => {
   feedback.value = '⏭️ 已跳过'
   showResult.value = true
 
-  setTimeout(() => {
+  safeTimeout(() => {
     const result = engine.skip()
 
     if (result === 'complete') {
@@ -253,6 +260,19 @@ const startTimer = () => {
   }, 1000)
 }
 
+// 安全的setTimeout函数
+const safeTimeout = (callback, delay) => {
+  const id = setTimeout(callback, delay)
+  timeoutIds.push(id)
+  return id
+}
+
+// 清理所有定时器
+const clearAllTimeouts = () => {
+  timeoutIds.forEach((id) => clearTimeout(id))
+  timeoutIds = []
+}
+
 const stopTimer = () => {
   if (timer) {
     clearInterval(timer)
@@ -262,10 +282,43 @@ const stopTimer = () => {
 
 // 保存进度
 const saveProgress = () => {
-  const state = engine.serializeState()
-  state.errorRadicals = errorRadicals.value
-  state.masteredRadicals = masteredRadicals.value
-  safeSetItem(STORAGE_KEYS.PRACTICE_PROGRESS, state)
+  try {
+    const state = engine.serializeState()
+    state.errorRadicals = errorRadicals.value
+    state.masteredRadicals = masteredRadicals.value
+
+    // 添加兼容字段，确保恢复逻辑能正常工作
+    state.answeredRoots = engine.totalAttempts.value
+    state.practiceRoots = errorRadicals.value
+
+    const key = STORAGE_KEYS.PRACTICE_PROGRESS
+    console.log(' ErrorRadicalPractice SAVE_PROGRESS:', {
+      component: 'ErrorRadicalPractice',
+      key: key,
+      dataSize: JSON.stringify(state).length,
+      timestamp: new Date().toISOString(),
+      dataPreview: {
+        progress: state.progress,
+        totalAttempts: state.totalAttempts,
+        answeredRoots: state.answeredRoots,
+        isComplete: state.isComplete,
+        errorRadicalsCount: state.errorRadicals?.length || 0,
+        masteredRadicalsCount: state.masteredRadicals?.length || 0,
+      },
+    })
+
+    safeSetItem(key, state)
+
+    // 验证写入
+    const verify = safeGetItem(key, null)
+    console.log(' ErrorRadicalPractice SAVE_VERIFY:', {
+      key: key,
+      writeSuccess: !!verify,
+      storedProgress: verify?.progress,
+    })
+  } catch (error) {
+    console.error(' ErrorRadicalPractice: 保存进度失败', error)
+  }
 }
 
 // 恢复进度
@@ -273,39 +326,66 @@ const restoreProgress = async () => {
   const saved = safeGetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
   if (!saved) return false
 
-  if (Date.now() - saved.timestamp > PROGRESS_MAX_AGE) {
+  try {
+    engine.deserializeState(saved, errorRadicals.value, 'random')
+    console.log('ErrorRadicalPractice: 成功恢复进度', {
+      progress: engine.progress.value,
+    })
+    return true
+  } catch (error) {
+    console.error('ErrorRadicalPractice: 恢复进度失败', error)
     clearProgress()
     return false
   }
-
-  // 恢复错误字根列表
-  errorRadicals.value = saved.errorRadicals || []
-  masteredRadicals.value = saved.masteredRadicals || []
-
-  if (errorRadicals.value.length === 0) {
-    return false
-  }
-
-  // 恢复引擎状态
-  engine.deserializeState(saved, errorRadicals.value, 'random')
-
-  // 等待 Vue 更新 DOM
-  await nextTick()
-
-  // 恢复本地状态
-  userInput.value = ''
-  showResult.value = false
-  feedback.value = ''
-
-  // 启动计时器和聚焦
-  startTimer()
-  focusInput()
-  return true
 }
 
 // 清除进度
 const clearProgress = () => {
-  safeSetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
+  // 将进度重置为0而不是null，确保记录进度为0
+  const zeroProgress = {
+    progress: 0,
+    accuracy: 0,
+    masteryRate: 0,
+    masteredCount: 0,
+    remainingCount: errorRadicals.value.length,
+    elapsedTime: 0,
+    totalAttempts: 0,
+    totalCorrect: 0,
+    totalWrong: 0,
+    isComplete: false,
+    isPaused: false,
+    timestamp: Date.now(),
+    currentIndex: 0,
+    rootStats: {},
+  }
+
+  const key = STORAGE_KEYS.PRACTICE_PROGRESS
+  console.log('🗑️ ErrorRadicalPractice CLEAR_PROGRESS:', {
+    component: 'ErrorRadicalPractice',
+    key: key,
+    timestamp: new Date().toISOString(),
+    isRestarted: isRestarted.value,
+  })
+
+  // 显示清除前的数据
+  const beforeClear = safeGetItem(key, null)
+  console.log('📊 ErrorRadicalPractice BEFORE_CLEAR:', {
+    key: key,
+    hadData: !!beforeClear,
+    oldProgress: beforeClear?.progress,
+    oldMode: beforeClear?.mode,
+  })
+
+  safeSetItem(key, zeroProgress)
+
+  // 验证清除
+  const afterClear = safeGetItem(key, null)
+  console.log('✅ ErrorRadicalPractice CLEAR_VERIFY:', {
+    key: key,
+    clearSuccess: !!afterClear,
+    newProgress: afterClear?.progress,
+    newMode: afterClear?.mode,
+  })
 }
 
 // 键盘事件
@@ -365,9 +445,44 @@ onMounted(() => {
   loadErrorRadicals()
 
   const saved = safeGetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
-  if (saved && !saved.isComplete && Date.now() - saved.timestamp < PROGRESS_MAX_AGE) {
+  savedProgress.value = saved // 保存进度信息供对话框使用
+
+  console.log('=== ErrorRadicalPractice 进度检查开始 ===')
+  console.log('进度键:', STORAGE_KEYS.PRACTICE_PROGRESS)
+  console.log('保存的数据:', saved)
+  console.log('数据类型:', typeof saved)
+  console.log('数据完整性检查:', {
+    hasData: !!saved,
+    isObject: typeof saved === 'object',
+    hasProgress: Object.hasOwn(saved || {}, 'progress'),
+    hasTotalAttempts: Object.hasOwn(saved || {}, 'totalAttempts'),
+    hasAnsweredRoots: Object.hasOwn(saved || {}, 'answeredRoots'),
+    hasIsComplete: Object.hasOwn(saved || {}, 'isComplete'),
+  })
+
+  // 统一的进度检查逻辑：检查是否有有效的未完成进度
+  const shouldShow =
+    saved &&
+    typeof saved === 'object' &&
+    !saved.isComplete &&
+    (saved.progress > 0 || saved.totalAttempts > 0) // 只要有一项有值就显示
+
+  console.log('检查条件结果:', {
+    saved: !!saved,
+    isObject: typeof saved === 'object',
+    notComplete: !saved?.isComplete,
+    progressPositive: saved?.progress > 0,
+    hasAttempts: saved?.totalAttempts > 0,
+    hasProgressOrAttempts: saved?.progress > 0 || saved?.totalAttempts > 0,
+    shouldShow,
+  })
+  console.log('=== ErrorRadicalPractice 进度检查结束 ===')
+
+  if (shouldShow) {
+    console.log('显示恢复对话框')
     showResumeDialog.value = true
   } else {
+    console.log('直接开始新练习')
     initPractice()
   }
 })
@@ -375,8 +490,9 @@ onMounted(() => {
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   stopTimer()
+  clearAllTimeouts() // 清理所有setTimeout
 
-  if (!isRestarted.value && !isComplete.value && currentRoot.value) {
+  if (!isRestarted.value && !isComplete.value) {
     saveProgress()
   }
 })
@@ -396,14 +512,19 @@ watch(isComplete, (newVal) => {
     <!-- 悬浮恢复对话框 -->
     <div v-if="showResumeDialog" class="floating-resume-banner">
       <div class="resume-content">
-        <span class="resume-text">💾 发现未完成的错误字根练习</span>
+        <div class="resume-info">
+          <span class="resume-icon">💾</span>
+          <div class="resume-details">
+            <span class="resume-text">{{ resumeText }}</span>
+            <span class="resume-stats">
+              已完成 {{ Math.round((savedProgress?.progress || 0) * 100) }}% · 练习了
+              {{ savedProgress?.answeredRoots || 0 }} 个字根
+            </span>
+          </div>
+        </div>
         <div class="resume-buttons">
-          <button @click="handleResume" class="btn-resume btn-continue">
-            继续练习
-          </button>
-          <button @click="handleRestartFromDialog" class="btn-resume btn-restart">
-            重新开始
-          </button>
+          <button class="btn-resume btn-continue" @click="handleResume">继续练习</button>
+          <button class="btn-resume btn-restart" @click="handleRestartFromDialog">重新开始</button>
         </div>
       </div>
     </div>
@@ -427,19 +548,27 @@ watch(isComplete, (newVal) => {
         <span class="stat-label">已掌握</span>
       </div>
       <div class="stat-box">
-        <span class="stat-number" :class="{ 'text-success': masteryRate >= 70, 'text-warning': masteryRate < 50 }">
+        <span
+          class="stat-number"
+          :class="{ 'text-success': masteryRate >= 70, 'text-warning': masteryRate < 50 }"
+        >
           {{ masteryRate }}%
         </span>
         <span class="stat-label">掌握率</span>
       </div>
       <div class="stat-box">
-        <span class="stat-number" :class="{ 'text-success': accuracy >= 80, 'text-warning': accuracy < 60 }">
+        <span
+          class="stat-number"
+          :class="{ 'text-success': accuracy >= 80, 'text-warning': accuracy < 60 }"
+        >
           {{ accuracy }}%
         </span>
         <span class="stat-label">正确率</span>
       </div>
       <div class="stat-box">
-        <span class="stat-number">{{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
+        <span class="stat-number"
+          >{{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span
+        >
         <span class="stat-label">队列</span>
       </div>
       <div class="stat-box">
@@ -449,11 +578,11 @@ watch(isComplete, (newVal) => {
     </div>
 
     <div class="progress-track">
-      <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+      <div class="progress-fill" :style="{ width: progress + '%' }" />
     </div>
 
     <!-- 组进度信息 -->
-    <div class="group-info" v-if="!isComplete && !isPaused && errorRadicals.length > 0">
+    <div v-if="!isComplete && !isPaused && errorRadicals.length > 0" class="group-info">
       <span>第 {{ groupProgress.current }}/{{ groupProgress.total }} 组</span>
       <span>队列: {{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
       <span v-if="currentRootStats">
@@ -474,7 +603,7 @@ watch(isComplete, (newVal) => {
     </div>
 
     <!-- 主练习区域 -->
-    <main class="practice-main" v-if="!isComplete && errorRadicals.length > 0 && !isPaused">
+    <main v-if="!isComplete && errorRadicals.length > 0 && !isPaused" class="practice-main">
       <div class="character-display">
         <div v-if="canDisplayCurrentRoot" class="character">
           {{ currentRoot?.character }}
@@ -483,15 +612,19 @@ watch(isComplete, (newVal) => {
           <span class="unicode-code">{{ charUnicode }}</span>
           <span class="unicode-hint">{{ currentHint }}</span>
         </div>
-        <div class="character-hint">{{ currentHint }}</div>
+        <div class="character-hint">
+          {{ currentHint }}
+        </div>
       </div>
 
       <div class="input-section">
-        <div class="input-wrapper" :class="{ correct: showResult && isCorrect, wrong: showResult && !isCorrect }">
+        <div
+          class="input-wrapper"
+          :class="{ correct: showResult && isCorrect, wrong: showResult && !isCorrect }"
+        >
           <input
             ref="inputRef"
             v-model="userInput"
-            @input="handleInput"
             type="text"
             class="code-input"
             :placeholder="showResult ? '按 Enter 继续' : '输入编码'"
@@ -499,8 +632,13 @@ watch(isComplete, (newVal) => {
             maxlength="2"
             autocomplete="off"
             spellcheck="false"
+            @input="handleInput"
           />
-          <div v-if="feedback" class="feedback-text" :class="{ success: isCorrect, error: !isCorrect }">
+          <div
+            v-if="feedback"
+            class="feedback-text"
+            :class="{ success: isCorrect, error: !isCorrect }"
+          >
             {{ feedback }}
           </div>
         </div>
@@ -514,17 +652,17 @@ watch(isComplete, (newVal) => {
       />
 
       <div class="action-buttons">
-        <button @click="skipRoot" class="btn btn-secondary" :disabled="showResult">
+        <button class="btn btn-secondary" :disabled="showResult" @click="skipRoot">
           <span class="btn-icon">⏭</span>
           <span>跳过</span>
           <kbd class="key-hint">Ctrl+→</kbd>
         </button>
-        <button @click="togglePause" class="btn btn-secondary">
+        <button class="btn btn-secondary" @click="togglePause">
           <span class="btn-icon">{{ isPaused ? '▶' : '⏸' }}</span>
           <span>{{ isPaused ? '继续' : '暂停' }}</span>
           <kbd class="key-hint">Esc</kbd>
         </button>
-        <button @click="clearAllErrors" class="btn btn-danger">
+        <button class="btn btn-danger" @click="clearAllErrors">
           <span class="btn-icon">🗑</span>
           <span>清除记录</span>
         </button>
@@ -554,7 +692,7 @@ watch(isComplete, (newVal) => {
             <span class="pause-label">用时</span>
           </div>
         </div>
-        <button @click="togglePause" class="btn btn-primary btn-large">
+        <button class="btn btn-primary btn-large" @click="togglePause">
           <span class="btn-icon">▶</span>
           <span>继续练习</span>
         </button>
@@ -585,16 +723,20 @@ watch(isComplete, (newVal) => {
           </div>
         </div>
         <div class="complete-message">
-          {{ masteryRate >= 80 ? '太棒了！错误字根已大部分掌握！' :
-             masteryRate >= 50 ? '做得不错！继续加油！' :
-             '坚持练习，你一定能掌握所有字根！' }}
+          {{
+            masteryRate >= 80
+              ? '太棒了！错误字根已大部分掌握！'
+              : masteryRate >= 50
+                ? '做得不错！继续加油！'
+                : '坚持练习，你一定能掌握所有字根！'
+          }}
         </div>
         <div class="complete-actions">
-          <button @click="restartPractice" class="btn btn-primary btn-large">
+          <button class="btn btn-primary btn-large" @click="restartPractice">
             <span class="btn-icon">🔄</span>
             <span>再来一次</span>
           </button>
-          <button @click="clearAllErrors" class="btn btn-danger btn-large">
+          <button class="btn btn-danger btn-large" @click="clearAllErrors">
             <span class="btn-icon">🗑</span>
             <span>清除记录</span>
           </button>
@@ -615,7 +757,8 @@ watch(isComplete, (newVal) => {
   max-width: 800px;
   margin: 0 auto;
   padding: 1.5rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   position: relative;
 }
 
@@ -628,7 +771,9 @@ watch(isComplete, (newVal) => {
   z-index: 100;
   background: white;
   border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.15),
+    0 2px 8px rgba(0, 0, 0, 0.1);
   border: 1px solid #e2e8f0;
   padding: 1rem 1.5rem;
   animation: slideDown 0.3s ease-out;

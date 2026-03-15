@@ -13,7 +13,7 @@ const CHINESE_FONTS = [
   'Microsoft YaHei',
   'SimHei',
   'SimSun',
-  'Arial Unicode MS'
+  'Arial Unicode MS',
 ]
 
 /**
@@ -32,25 +32,25 @@ export const isFontAvailable = (fontFamily) => {
     // 创建测试元素
     const canvas = document.createElement('canvas')
     const context = canvas.getContext('2d')
-    
+
     // 测试文本
     const testText = '字体测试'
     const fallbackFont = 'monospace'
-    
+
     // 获取默认字体的宽度
     context.font = `72px ${fallbackFont}`
     const fallbackWidth = context.measureText(testText).width
-    
+
     // 测试目标字体
     context.font = `72px "${fontFamily}", ${fallbackFont}`
     const targetWidth = context.measureText(testText).width
-    
+
     // 如果宽度不同，说明字体可用
     const isAvailable = fallbackWidth !== targetWidth
-    
+
     // 缓存结果
     fontCache.set(fontFamily, isAvailable)
-    
+
     resolve(isAvailable)
   })
 }
@@ -76,15 +76,15 @@ export const canDisplayCharacter = async (char, fontFamily = 'Noto Sans SC') => 
     testElement.style.fontSize = '72px'
     testElement.style.fontFamily = `"${fontFamily}", monospace`
     testElement.textContent = char
-    
+
     document.body.appendChild(testElement)
-    
+
     // 检查字符是否渲染为占位符
     const computedStyle = window.getComputedStyle(testElement)
     const isPlaceholder = computedStyle.fontFamily.includes('monospace')
-    
+
     document.body.removeChild(testElement)
-    
+
     return !isPlaceholder
   } catch (error) {
     console.warn('Character display check failed:', error)
@@ -100,19 +100,21 @@ export const canDisplayCharacter = async (char, fontFamily = 'Noto Sans SC') => 
 export const isSpecialCharacter = (char) => {
   // 检查是否为扩展汉字区、生僻字等
   const code = char.charCodeAt(0)
-  
+
   // 基本汉字范围之外的字符
-  if (code > 0x9FFF) {
+  if (code > 0x9fff) {
     return true
   }
-  
+
   // 特殊符号区
-  if ((code >= 0x2000 && code <= 0x2FFF) || 
-      (code >= 0x3000 && code <= 0x303F) ||
-      (code >= 0xFF00 && code <= 0xFFEF)) {
+  if (
+    (code >= 0x2000 && code <= 0x2fff) ||
+    (code >= 0x3000 && code <= 0x303f) ||
+    (code >= 0xff00 && code <= 0xffef)
+  ) {
     return true
   }
-  
+
   return false
 }
 
@@ -137,15 +139,18 @@ export const getBestAvailableFont = async () => {
 export const preloadFont = (fontFamily) => {
   return new Promise((resolve, reject) => {
     const font = new FontFace(fontFamily, `url(/fonts/${fontFamily.replace(/\s+/g, '_')}.woff2)`)
-    
-    font.load().then(() => {
-      document.fonts.add(font)
-      fontCache.set(fontFamily, true)
-      resolve()
-    }).catch((error) => {
-      fontCache.set(fontFamily, false)
-      reject(error)
-    })
+
+    font
+      .load()
+      .then(() => {
+        document.fonts.add(font)
+        fontCache.set(fontFamily, true)
+        resolve()
+      })
+      .catch((error) => {
+        fontCache.set(fontFamily, false)
+        reject(error)
+      })
   })
 }
 
@@ -157,10 +162,10 @@ export const initializeFontSystem = async () => {
   try {
     // 检查系统字体
     const bestFont = await getBestAvailableFont()
-    
+
     // 设置 CSS 变量
     document.documentElement.style.setProperty('--best-chinese-font', `"${bestFont}"`)
-    
+
     console.log(`Font system initialized with: ${bestFont}`)
     return bestFont
   } catch (error) {
@@ -192,7 +197,7 @@ export class FontManager {
     if (this.loadingFonts.has(fontFamily)) {
       // 等待加载完成
       while (this.loadingFonts.has(fontFamily)) {
-        await new Promise(resolve => setTimeout(resolve, 50))
+        await new Promise((resolve) => setTimeout(resolve, 50))
       }
       return this.loadedFonts.has(fontFamily)
     }
@@ -249,5 +254,5 @@ export default {
   getBestAvailableFont,
   preloadFont,
   initializeFontSystem,
-  fontManager
+  fontManager,
 }

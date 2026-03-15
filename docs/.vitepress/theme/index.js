@@ -6,6 +6,8 @@ import ErrorRadicalPractice from '../components/ErrorRadicalPractice.vue'
 import TigerPractice from '../components/TigerPractice.vue'
 import RadicalKeyboard from '../components/RadicalKeyboard.vue'
 import ImageZoom from '../components/ImageZoom.vue'
+import RootsGallery from '../components/RootsGallery.vue'
+import RootCard from '../components/RootCard.vue'
 import './custom.css'
 // 导入公共练习样式
 import '../styles/practice-styles.css'
@@ -21,5 +23,7 @@ export default {
     app.component('TigerPractice', TigerPractice)
     app.component('RadicalKeyboard', RadicalKeyboard)
     app.component('ImageZoom', ImageZoom)
-  }
+    app.component('RootsGallery', RootsGallery)
+    app.component('RootCard', RootCard)
+  },
 }

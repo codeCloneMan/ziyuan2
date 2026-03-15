@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>字符编码测试</title>
+  <style>
+    .char-box {
+      display: inline-block;
+      margin: 10px;
+      padding: 20px;
+      border: 2px solid #ccc;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .char {
+      font-size: 48px;
+      font-family: sans-serif;
+    }
+    .code {
+      font-size: 14px;
+      color: #666;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <h1>字根字符编码测试</h1>
+  <div id="container"></div>
+  
+  <script>
+    // 从 rootData.js 中编码为 'u' 的字根
+    const roots = [
+      { char: '发', code: 'u', hint: '头发' },
+      { char: '纟', code: 'u', hint: '绞丝旁' },
+      { char: '冖', code: 'u', hint: '秃宝盖' },
+      { char: '冂', code: 'u', hint: '同字框' },
+      { char: '皮', code: 'u', hint: '皮肤' },
+      { char: '弋', code: 'u', hint: '弋字旁' },
+      { char: '系', code: 'u', hint: '系统' },
+      { char: '彡', code: 'u', hint: '三撇' },
+      { char: '专', code: 'u', hint: '专门' },
+      { char: '七', code: 'u', hint: '数字七' },
+      { char: '⺆', code: 'u', hint: '框向下' },
+      { char: '革', code: 'u', hint: '革命' },
+      { char: '糸', code: 'u', hint: '丝线' },
+      { char: '毛', code: 'u', hint: '毛发' },
+      { char: '幺', code: 'u', hint: '细小' },
+      { char: '乡', code: 'u', hint: '乡村' },
+      { char: '丝', code: 'u', hint: '丝线' },
+      { char: '羽', code: 'u', hint: '羽毛' },
+      { char: '镸', code: 'u', hint: '长字旁' },
+      { char: '犮', code: 'u', hint: '发字旁' },
+      { char: '叀', code: 'u', hint: '惠字头' },
+      { char: '糹', code: 'u', hint: '绞丝旁' },
+    ]
+    
+    const container = document.getElementById('container')
+    
+    roots.forEach(root => {
+      const code = root.char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+      const isInPUA = root.char.charCodeAt(0) >= 0xe000 && root.char.charCodeAt(0) <= 0xffff
+      
+      const box = document.createElement('div')
+      box.className = 'char-box'
+      box.innerHTML = `
+        <div class="char">${root.char}</div>
+        <div class="code">
+          ${root.char}<br>
+          U+${code}<br>
+          编码：${root.code}<br>
+          提示：${root.hint}<br>
+          私用区：${isInPUA ? '✅ 是' : '❌ 否'}
+        </div>
+      `
+      container.appendChild(box)
+    })
+  </script>
+</body>
+</html>

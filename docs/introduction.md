@@ -50,10 +50,6 @@ Q W E R T Y U I O P
 
 [开始顺序练习 →](/practice/modern)
 
-或查看完整的学习路线：
-
-[查看学习路线 →](/route)
-
 ## 📖 学习建议
 
 ### 新手路径
@@ -88,7 +84,6 @@ Q W E R T Y U I O P
 | [随机练习](/practice/random) | 随机抽测字根 | 练习期 ✅ |
 | [常用字根](/practice/top500) | 专项练习高频字根 | 进阶期 ✅ |
 | [错题本](/practice/error) | 练习错误字根 | 持续 ✅ |
-| [所有字根](/practice/typing) | 完整练习 | 综合训练 |
 
 ## ❓ 常见问题
 
@@ -124,10 +119,6 @@ Q W E R T Y U I O P
 准备好开始学习了吗？
 
 [开始顺序练习 →](/practice/modern)
-
-或查看完整学习路线：
-
-[查看学习路线 →](/route)
 
 ---
 

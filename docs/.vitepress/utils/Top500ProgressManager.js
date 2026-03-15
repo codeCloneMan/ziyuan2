@@ -18,14 +18,21 @@ const getStorageKey = (pageKey = 'top500') => {
  * @param {boolean} isComplete - 是否完成练习
  * @param {string} pageKey - 页面标识
  */
-export const saveProgress = (mode, correctCount, answeredRoots, practiceRoots, isComplete, pageKey = 'top500') => {
+export const saveProgress = (
+  mode,
+  correctCount,
+  answeredRoots,
+  practiceRoots,
+  isComplete,
+  pageKey = 'top500'
+) => {
   try {
     // 只有当练习量大于等于1时才保存进度
     if (answeredRoots < 1) {
       console.log(`[${pageKey}] 练习量小于1，不保存进度`)
       return
     }
-    
+
     const progressData = {
       mode,
       correctCount,
@@ -33,9 +40,9 @@ export const saveProgress = (mode, correctCount, answeredRoots, practiceRoots, i
       practiceRoots,
       isComplete,
       timestamp: new Date().toISOString(),
-      version: '1.0'
+      version: '1.0',
     }
-    
+
     const storageKey = getStorageKey(pageKey)
     localStorage.setItem(storageKey, JSON.stringify(progressData))
     console.log(`[${pageKey}] 进度已保存: ${answeredRoots}个字根`)
@@ -80,7 +87,7 @@ export const clearProgress = (pageKey = 'top500') => {
  */
 export const shouldRestoreProgress = (progressData) => {
   if (!progressData) return false
-  
+
   // 只有当练习量大于等于1时才允许恢复
   return progressData.answeredRoots >= 1
 }

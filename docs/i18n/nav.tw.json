@@ -1,0 +1,46 @@
+[
+  { "key": "home", "link": "/tw/", "text": { "zh": "首頁", "en": "Home", "tw": "首頁" } },
+  {
+    "key": "introduction",
+    "link": "/tw/introduction",
+    "text": { "zh": "快速入門", "en": "Getting Started", "tw": "快速入門" }
+  },
+  {
+    "key": "route",
+    "link": "/tw/route",
+    "text": { "zh": "學習路線", "en": "Learning Route", "tw": "學習路線" }
+  },
+  {
+    "key": "practice",
+    "text": { "zh": "字根練習", "en": "Root Practice", "tw": "字根練習" },
+    "children": [
+      {
+        "link": "/tw/practice/typing",
+        "text": { "zh": "所有字根", "en": "All Roots", "tw": "所有字根" }
+      },
+      {
+        "link": "/tw/practice/modern",
+        "text": { "zh": "順序練習", "en": "Order", "tw": "順序練習" }
+      },
+      {
+        "link": "/tw/practice/random",
+        "text": { "zh": "隨機練習", "en": "Random", "tw": "隨機練習" }
+      },
+      {
+        "link": "/tw/practice/top500",
+        "text": { "zh": "常用字根", "en": "Common Roots", "tw": "常用字根" }
+      },
+      { "link": "/tw/practice/error", "text": { "zh": "錯題本", "en": "Error", "tw": "錯題本" } }
+    ]
+  },
+  {
+    "key": "xingma",
+    "link": "/tw/xingma/index",
+    "text": { "zh": "字源形碼", "en": "Tiger Origin", "tw": "字源形碼" }
+  },
+  {
+    "key": "duanpin",
+    "link": "/tw/duanpin",
+    "text": { "zh": "短拼拼音", "en": "Duanpin", "tw": "短拼拼音" }
+  }
+]

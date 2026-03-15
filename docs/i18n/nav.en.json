@@ -1,17 +1,41 @@
 [
-  {"key":"home","link":"/en/index","text":{"zh":"首页","en":"Home"}},
-  {"key":"introduction","link":"/en/introduction","text":{"zh":"快速入门","en":"Getting Started"}},
-  {"key":"route","link":"/en/route","text":{"zh":"学习路线","en":"Learning Route"}},
-  {"key":"practice","text":{"zh":"字根练习","en":"Root Practice"},"children":[
-    {"link":"/en/practice/typing","text":{"zh":"所有字根","en":"All Roots"}},
-    {"link":"/en/practice/modern","text":{"zh":"顺序练习","en":"Order"}},
-    {"link":"/en/practice/random","text":{"zh":"随机练习","en":"Random"}},
-    {"link":"/en/practice/top500","text":{"zh":"常用字根","en":"Common Roots"}},
-    {"link":"/en/practice/error","text":{"zh":"错题本","en":"Error"}}
-  ]},
-  {"key":"xingma","link":"/en/xingma/index","text":{"zh":"字源形码","en":"Tiger Origin"}},
-  {"key":"duanpin","link":"/en/duanpin","text":{"zh":"短拼拼音","en":"Duanpin"}},
-  {"key":"improvements","link":"/en/improvements","text":{"zh":"改进","en":"Improvements"}},
-  {"key":"improvement-report","link":"/en/improvement-report","text":{"zh":"改进报告","en":"Improvement Report"}},
-  {"key":"code-improvement-summary","link":"/en/code-improvement-summary","text":{"zh":"代码改进总结","en":"Code Improvement Summary"}}
+  { "key": "home", "link": "/en/index", "text": { "zh": "首页", "en": "Home" } },
+  {
+    "key": "introduction",
+    "link": "/en/introduction",
+    "text": { "zh": "快速入门", "en": "Getting Started" }
+  },
+  { "key": "route", "link": "/en/route", "text": { "zh": "学习路线", "en": "Learning Route" } },
+  {
+    "key": "practice",
+    "text": { "zh": "字根练习", "en": "Root Practice" },
+    "children": [
+      { "link": "/en/practice/typing", "text": { "zh": "所有字根", "en": "All Roots" } },
+      { "link": "/en/practice/modern", "text": { "zh": "顺序练习", "en": "Order" } },
+      { "link": "/en/practice/random", "text": { "zh": "随机练习", "en": "Random" } },
+      { "link": "/en/practice/top500", "text": { "zh": "常用字根", "en": "Common Roots" } },
+      { "link": "/en/practice/error", "text": { "zh": "错题本", "en": "Error" } }
+    ]
+  },
+  {
+    "key": "xingma",
+    "link": "/en/xingma/index",
+    "text": { "zh": "字源形码", "en": "Tiger Origin" }
+  },
+  { "key": "duanpin", "link": "/en/duanpin", "text": { "zh": "短拼拼音", "en": "Duanpin" } },
+  {
+    "key": "improvements",
+    "link": "/en/improvements",
+    "text": { "zh": "改进", "en": "Improvements" }
+  },
+  {
+    "key": "improvement-report",
+    "link": "/en/improvement-report",
+    "text": { "zh": "改进报告", "en": "Improvement Report" }
+  },
+  {
+    "key": "code-improvement-summary",
+    "link": "/en/code-improvement-summary",
+    "text": { "zh": "代码改进总结", "en": "Code Improvement Summary" }
+  }
 ]

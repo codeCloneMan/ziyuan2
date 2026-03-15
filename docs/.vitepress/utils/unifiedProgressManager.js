@@ -4,16 +4,22 @@
  * 提供更健壮的存储管理和进度恢复功能
  */
 
-import { safeGetItem, safeSetItem, safeRemoveItem, getAllKeys, clearAllPracticeStorage } from './safeStorage.js'
+import {
+  safeGetItem,
+  safeSetItem,
+  safeRemoveItem,
+  getAllKeys,
+  clearAllPracticeStorage,
+} from './safeStorage.js'
 
 // 进度数据键名常量
 export const PROGRESS_KEYS = {
   ROOT_PRACTICE: 'root_practice',
-  TOP500: 'top500_progress', 
+  TOP500: 'top500_progress',
   MODERN: 'modern_progress',
   ERROR: 'error_progress',
   TYPING: 'typing_progress',
-  CROSS_PRACTICE: 'cross_practice'
+  CROSS_PRACTICE: 'cross_practice',
 }
 
 // 进度数据默认过期时间（7天）
@@ -48,7 +54,7 @@ export const saveProgress = (key, data) => {
       ...data,
       timestamp: Date.now(),
       version: '2.0',
-      userAgent: navigator.userAgent.slice(0, 100) // 保存部分用户代理用于兼容性检查
+      userAgent: navigator.userAgent.slice(0, 100), // 保存部分用户代理用于兼容性检查
     }
 
     return safeSetItem(key, progressData)
@@ -120,7 +126,7 @@ export const hasProgress = (key) => {
  */
 export const getAllProgress = () => {
   const progress = {}
-  Object.values(PROGRESS_KEYS).forEach(key => {
+  Object.values(PROGRESS_KEYS).forEach((key) => {
     const data = loadProgress(key)
     if (data) {
       progress[key] = data
@@ -136,7 +142,7 @@ export const getAllProgress = () => {
 export const clearAllProgress = () => {
   try {
     let success = true
-    Object.values(PROGRESS_KEYS).forEach(key => {
+    Object.values(PROGRESS_KEYS).forEach((key) => {
       if (!clearProgress(key)) {
         success = false
       }
@@ -159,26 +165,26 @@ export const getProgressStats = () => {
     accuracy: 0,
     timeSpent: 0,
     oldestProgress: null,
-    newestProgress: null
+    newestProgress: null,
   }
-  
+
   const allProgress = getAllProgress()
   const timestamps = []
-  
-  Object.values(allProgress).forEach(data => {
+
+  Object.values(allProgress).forEach((data) => {
     stats.total++
     if (data.isComplete) stats.completed++
     if (data.accuracy) stats.accuracy += data.accuracy
     if (data.timeSpent) stats.timeSpent += data.timeSpent
     timestamps.push(data.timestamp)
   })
-  
+
   if (stats.total > 0) {
     stats.accuracy = Math.round(stats.accuracy / stats.total)
     stats.oldestProgress = Math.min(...timestamps)
     stats.newestProgress = Math.max(...timestamps)
   }
-  
+
   return stats
 }
 
@@ -193,19 +199,19 @@ export const exportProgress = () => {
       version: '2.0',
       exportTime: Date.now(),
       progress: allProgress,
-      stats: getProgressStats()
+      stats: getProgressStats(),
     }
-    
+
     const dataStr = JSON.stringify(exportData, null, 2)
     const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr)
-    
+
     const exportFileDefaultName = `ziyuan_progress_${new Date().toISOString().split('T')[0]}.json`
-    
+
     const linkElement = document.createElement('a')
     linkElement.setAttribute('href', dataUri)
     linkElement.setAttribute('download', exportFileDefaultName)
     linkElement.click()
-    
+
     console.log('Progress exported successfully')
     return true
   } catch (error) {
@@ -226,36 +232,39 @@ export const importProgress = (file) => {
         reject(new Error('Invalid file object'))
         return
       }
-      
-      file.text().then(fileContent => {
-        try {
-          const importedData = JSON.parse(fileContent)
-          
-          // 验证导入的数据结构
-          if (!importedData.progress || typeof importedData.progress !== 'object') {
-            throw new Error('Invalid progress file format')
-          }
-          
-          // 保存导入的进度
-          let importCount = 0
-          Object.entries(importedData.progress).forEach(([key, data]) => {
-            if (Object.values(PROGRESS_KEYS).includes(key)) {
-              if (saveProgress(key, data)) {
-                importCount++
-              }
+
+      file
+        .text()
+        .then((fileContent) => {
+          try {
+            const importedData = JSON.parse(fileContent)
+
+            // 验证导入的数据结构
+            if (!importedData.progress || typeof importedData.progress !== 'object') {
+              throw new Error('Invalid progress file format')
             }
-          })
-          
-          console.log(`Imported ${importCount} progress items successfully`)
-          resolve(true)
-        } catch (parseError) {
-          console.error('Parse progress file failed:', parseError)
-          reject(parseError)
-        }
-      }).catch(readError => {
-        console.error('Read file failed:', readError)
-        reject(readError)
-      })
+
+            // 保存导入的进度
+            let importCount = 0
+            Object.entries(importedData.progress).forEach(([key, data]) => {
+              if (Object.values(PROGRESS_KEYS).includes(key)) {
+                if (saveProgress(key, data)) {
+                  importCount++
+                }
+              }
+            })
+
+            console.log(`Imported ${importCount} progress items successfully`)
+            resolve(true)
+          } catch (parseError) {
+            console.error('Parse progress file failed:', parseError)
+            reject(parseError)
+          }
+        })
+        .catch((readError) => {
+          console.error('Read file failed:', readError)
+          reject(readError)
+        })
     } catch (error) {
       console.error('Import progress failed:', error)
       reject(error)
@@ -269,7 +278,7 @@ export const importProgress = (file) => {
  */
 export const cleanupExpiredProgress = () => {
   let cleanedCount = 0
-  Object.values(PROGRESS_KEYS).forEach(key => {
+  Object.values(PROGRESS_KEYS).forEach((key) => {
     const data = safeGetItem(key)
     if (data && !validateProgressData(data)) {
       safeRemoveItem(key)
@@ -291,5 +300,5 @@ export default {
   getProgressStats,
   exportProgress,
   importProgress,
-  cleanupExpiredProgress
+  cleanupExpiredProgress,
 }

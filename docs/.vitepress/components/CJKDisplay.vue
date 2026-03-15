@@ -4,18 +4,18 @@
     <p class="cjk-description">
       以下展示一些CJK扩展区的字符，这些字符通常用于特殊用途或古籍文献中。
     </p>
-    
+
     <div class="cjk-grid">
-      <div 
-        v-for="(char, index) in cjkCharacters" 
-        :key="index" 
+      <div
+        v-for="(char, index) in cjkCharacters"
+        :key="index"
         class="cjk-character"
         :title="`${char.char} - U+${char.code.toString(16).toUpperCase().padStart(4, '0')} - ${char.description}`"
       >
         {{ char.char }}
       </div>
     </div>
-    
+
     <div class="cjk-info">
       <p>这些字符属于CJK扩展区，需要支持CJK扩展字符集的字体才能正确显示。</p>
       <p>本站已安装Noto Sans CJK SC字体，支持大多数CJK扩展字符。</p>
@@ -28,7 +28,7 @@ import { ref } from 'vue'
 
 // CJK扩展区字符示例
 const cjkCharacters = ref([
-  { char: '', code: 0xE816, description: 'CJK兼容扩展字符' },
+  { char: '', code: 0xe816, description: 'CJK兼容扩展字符' },
   { char: '㐀', code: 0x3400, description: 'CJK扩展A区字符' },
   { char: '㐁', code: 0x3401, description: 'CJK扩展A区字符' },
   { char: '㐂', code: 0x3402, description: 'CJK扩展A区字符' },
@@ -39,12 +39,12 @@ const cjkCharacters = ref([
   { char: '㐇', code: 0x3407, description: 'CJK扩展A区字符' },
   { char: '㐈', code: 0x3408, description: 'CJK扩展A区字符' },
   { char: '㐉', code: 0x3409, description: 'CJK扩展A区字符' },
-  { char: '㐊', code: 0x340A, description: 'CJK扩展A区字符' },
-  { char: '㐋', code: 0x340B, description: 'CJK扩展A区字符' },
-  { char: '㐌', code: 0x340C, description: 'CJK扩展A区字符' },
-  { char: '㐍', code: 0x340D, description: 'CJK扩展A区字符' },
-  { char: '㐎', code: 0x340E, description: 'CJK扩展A区字符' },
-  { char: '㐏', code: 0x340F, description: 'CJK扩展A区字符' },
+  { char: '㐊', code: 0x340a, description: 'CJK扩展A区字符' },
+  { char: '㐋', code: 0x340b, description: 'CJK扩展A区字符' },
+  { char: '㐌', code: 0x340c, description: 'CJK扩展A区字符' },
+  { char: '㐍', code: 0x340d, description: 'CJK扩展A区字符' },
+  { char: '㐎', code: 0x340e, description: 'CJK扩展A区字符' },
+  { char: '㐏', code: 0x340f, description: 'CJK扩展A区字符' },
   { char: '㐐', code: 0x3410, description: 'CJK扩展A区字符' },
   { char: '㐑', code: 0x3411, description: 'CJK扩展A区字符' },
   { char: '㐒', code: 0x3412, description: 'CJK扩展A区字符' },
@@ -55,12 +55,12 @@ const cjkCharacters = ref([
   { char: '㐗', code: 0x3417, description: 'CJK扩展A区字符' },
   { char: '㐘', code: 0x3418, description: 'CJK扩展A区字符' },
   { char: '㐙', code: 0x3419, description: 'CJK扩展A区字符' },
-  { char: '㐚', code: 0x341A, description: 'CJK扩展A区字符' },
-  { char: '㐛', code: 0x341B, description: 'CJK扩展A区字符' },
-  { char: '㐜', code: 0x341C, description: 'CJK扩展A区字符' },
-  { char: '㐝', code: 0x341D, description: 'CJK扩展A区字符' },
-  { char: '㐞', code: 0x341E, description: 'CJK扩展A区字符' },
-  { char: '㐟', code: 0x341F, description: 'CJK扩展A区字符' },
+  { char: '㐚', code: 0x341a, description: 'CJK扩展A区字符' },
+  { char: '㐛', code: 0x341b, description: 'CJK扩展A区字符' },
+  { char: '㐜', code: 0x341c, description: 'CJK扩展A区字符' },
+  { char: '㐝', code: 0x341d, description: 'CJK扩展A区字符' },
+  { char: '㐞', code: 0x341e, description: 'CJK扩展A区字符' },
+  { char: '㐟', code: 0x341f, description: 'CJK扩展A区字符' },
   { char: '㐠', code: 0x3420, description: 'CJK扩展A区字符' },
   { char: '㐡', code: 0x3421, description: 'CJK扩展A区字符' },
   { char: '㐢', code: 0x3422, description: 'CJK扩展A区字符' },
@@ -71,12 +71,12 @@ const cjkCharacters = ref([
   { char: '㐧', code: 0x3427, description: 'CJK扩展A区字符' },
   { char: '㐨', code: 0x3428, description: 'CJK扩展A区字符' },
   { char: '㐩', code: 0x3429, description: 'CJK扩展A区字符' },
-  { char: '㐪', code: 0x342A, description: 'CJK扩展A区字符' },
-  { char: '㐫', code: 0x342B, description: 'CJK扩展A区字符' },
-  { char: '㐬', code: 0x342C, description: 'CJK扩展A区字符' },
-  { char: '㐭', code: 0x342D, description: 'CJK扩展A区字符' },
-  { char: '㐮', code: 0x342E, description: 'CJK扩展A区字符' },
-  { char: '㐯', code: 0x342F, description: 'CJK扩展A区字符' },
+  { char: '㐪', code: 0x342a, description: 'CJK扩展A区字符' },
+  { char: '㐫', code: 0x342b, description: 'CJK扩展A区字符' },
+  { char: '㐬', code: 0x342c, description: 'CJK扩展A区字符' },
+  { char: '㐭', code: 0x342d, description: 'CJK扩展A区字符' },
+  { char: '㐮', code: 0x342e, description: 'CJK扩展A区字符' },
+  { char: '㐯', code: 0x342f, description: 'CJK扩展A区字符' },
   { char: '㐰', code: 0x3430, description: 'CJK扩展A区字符' },
   { char: '㐱', code: 0x3431, description: 'CJK扩展A区字符' },
   { char: '㐲', code: 0x3432, description: 'CJK扩展A区字符' },
@@ -87,12 +87,12 @@ const cjkCharacters = ref([
   { char: '㐷', code: 0x3437, description: 'CJK扩展A区字符' },
   { char: '㐸', code: 0x3438, description: 'CJK扩展A区字符' },
   { char: '㐹', code: 0x3439, description: 'CJK扩展A区字符' },
-  { char: '㐺', code: 0x343A, description: 'CJK扩展A区字符' },
-  { char: '㐻', code: 0x343B, description: 'CJK扩展A区字符' },
-  { char: '㐼', code: 0x343C, description: 'CJK扩展A区字符' },
-  { char: '㐽', code: 0x343D, description: 'CJK扩展A区字符' },
-  { char: '㐾', code: 0x343E, description: 'CJK扩展A区字符' },
-  { char: '㐿', code: 0x343F, description: 'CJK扩展A区字符' },
+  { char: '㐺', code: 0x343a, description: 'CJK扩展A区字符' },
+  { char: '㐻', code: 0x343b, description: 'CJK扩展A区字符' },
+  { char: '㐼', code: 0x343c, description: 'CJK扩展A区字符' },
+  { char: '㐽', code: 0x343d, description: 'CJK扩展A区字符' },
+  { char: '㐾', code: 0x343e, description: 'CJK扩展A区字符' },
+  { char: '㐿', code: 0x343f, description: 'CJK扩展A区字符' },
   { char: '㑀', code: 0x3440, description: 'CJK扩展A区字符' },
   { char: '㑁', code: 0x3441, description: 'CJK扩展A区字符' },
   { char: '㑂', code: 0x3442, description: 'CJK扩展A区字符' },
@@ -103,12 +103,12 @@ const cjkCharacters = ref([
   { char: '㑇', code: 0x3447, description: 'CJK扩展A区字符' },
   { char: '㑈', code: 0x3448, description: 'CJK扩展A区字符' },
   { char: '㑉', code: 0x3449, description: 'CJK扩展A区字符' },
-  { char: '㑊', code: 0x344A, description: 'CJK扩展A区字符' },
-  { char: '㑋', code: 0x344B, description: 'CJK扩展A区字符' },
-  { char: '㑌', code: 0x344C, description: 'CJK扩展A区字符' },
-  { char: '㑍', code: 0x344D, description: 'CJK扩展A区字符' },
-  { char: '㑎', code: 0x344E, description: 'CJK扩展A区字符' },
-  { char: '㑏', code: 0x344F, description: 'CJK扩展A区字符' },
+  { char: '㑊', code: 0x344a, description: 'CJK扩展A区字符' },
+  { char: '㑋', code: 0x344b, description: 'CJK扩展A区字符' },
+  { char: '㑌', code: 0x344c, description: 'CJK扩展A区字符' },
+  { char: '㑍', code: 0x344d, description: 'CJK扩展A区字符' },
+  { char: '㑎', code: 0x344e, description: 'CJK扩展A区字符' },
+  { char: '㑏', code: 0x344f, description: 'CJK扩展A区字符' },
   { char: '㑐', code: 0x3450, description: 'CJK扩展A区字符' },
   { char: '㑑', code: 0x3451, description: 'CJK扩展A区字符' },
   { char: '㑒', code: 0x3452, description: 'CJK扩展A区字符' },
@@ -119,12 +119,12 @@ const cjkCharacters = ref([
   { char: '㑗', code: 0x3457, description: 'CJK扩展A区字符' },
   { char: '㑘', code: 0x3458, description: 'CJK扩展A区字符' },
   { char: '㑙', code: 0x3459, description: 'CJK扩展A区字符' },
-  { char: '㑚', code: 0x345A, description: 'CJK扩展A区字符' },
-  { char: '㑛', code: 0x345B, description: 'CJK扩展A区字符' },
-  { char: '㑜', code: 0x345C, description: 'CJK扩展A区字符' },
-  { char: '㑝', code: 0x345D, description: 'CJK扩展A区字符' },
-  { char: '㑞', code: 0x345E, description: 'CJK扩展A区字符' },
-  { char: '㑟', code: 0x345F, description: 'CJK扩展A区字符' },
+  { char: '㑚', code: 0x345a, description: 'CJK扩展A区字符' },
+  { char: '㑛', code: 0x345b, description: 'CJK扩展A区字符' },
+  { char: '㑜', code: 0x345c, description: 'CJK扩展A区字符' },
+  { char: '㑝', code: 0x345d, description: 'CJK扩展A区字符' },
+  { char: '㑞', code: 0x345e, description: 'CJK扩展A区字符' },
+  { char: '㑟', code: 0x345f, description: 'CJK扩展A区字符' },
   { char: '㑠', code: 0x3460, description: 'CJK扩展A区字符' },
   { char: '㑡', code: 0x3461, description: 'CJK扩展A区字符' },
   { char: '㑢', code: 0x3462, description: 'CJK扩展A区字符' },
@@ -135,12 +135,12 @@ const cjkCharacters = ref([
   { char: '㑧', code: 0x3467, description: 'CJK扩展A区字符' },
   { char: '㑨', code: 0x3468, description: 'CJK扩展A区字符' },
   { char: '㑩', code: 0x3469, description: 'CJK扩展A区字符' },
-  { char: '㑪', code: 0x346A, description: 'CJK扩展A区字符' },
-  { char: '㑫', code: 0x346B, description: 'CJK扩展A区字符' },
-  { char: '㑬', code: 0x346C, description: 'CJK扩展A区字符' },
-  { char: '㑭', code: 0x346D, description: 'CJK扩展A区字符' },
-  { char: '㑮', code: 0x346E, description: 'CJK扩展A区字符' },
-  { char: '㑯', code: 0x346F, description: 'CJK扩展A区字符' },
+  { char: '㑪', code: 0x346a, description: 'CJK扩展A区字符' },
+  { char: '㑫', code: 0x346b, description: 'CJK扩展A区字符' },
+  { char: '㑬', code: 0x346c, description: 'CJK扩展A区字符' },
+  { char: '㑭', code: 0x346d, description: 'CJK扩展A区字符' },
+  { char: '㑮', code: 0x346e, description: 'CJK扩展A区字符' },
+  { char: '㑯', code: 0x346f, description: 'CJK扩展A区字符' },
   { char: '㑰', code: 0x3470, description: 'CJK扩展A区字符' },
   { char: '㑱', code: 0x3471, description: 'CJK扩展A区字符' },
   { char: '㑲', code: 0x3472, description: 'CJK扩展A区字符' },
@@ -151,15 +151,16 @@ const cjkCharacters = ref([
   { char: '㑷', code: 0x3477, description: 'CJK扩展A区字符' },
   { char: '㑸', code: 0x3478, description: 'CJK扩展A区字符' },
   { char: '㑹', code: 0x3479, description: 'CJK扩展A区字符' },
-  { char: '㑺', code: 0x347A, description: 'CJK扩展A区字符' },
-  { char: '㑻', code: 0x347B, description: 'CJK扩展A区字符' },
-  { char: '㑼', code: 0x347C, description: 'CJK扩展A区字符' },
-  { char: '㑽', code: 0x347D, description: 'CJK扩展A区字符' },
-  { char: '㑾', code: 0x347E, description: 'CJK扩展A区字符' },
-  { char: '㑿', code: 0x347F, description: 'CJK扩展A区字符' },
+  { char: '㑺', code: 0x347a, description: 'CJK扩展A区字符' },
+  { char: '㑻', code: 0x347b, description: 'CJK扩展A区字符' },
+  { char: '㑼', code: 0x347c, description: 'CJK扩展A区字符' },
+  { char: '㑽', code: 0x347d, description: 'CJK扩展A区字符' },
+  { char: '㑾', code: 0x347e, description: 'CJK扩展A区字符' },
+  { char: '㑿', code: 0x347f, description: 'CJK扩展A区字符' },
   { char: '㒀', code: 0x3480, description: 'CJK扩展A区字符' },
   { char: '㒁', code: 0x3481, description: 'CJK扩展A区字符' },
   { char: '㒂', code: 0x3482, description: 'CJK扩展A区字符' },
-  { char: '㒃', code: 0x3483, description: 'CJK扩展A区字符' },
-  { char: '㒄', code: 0x3484, description: 'CJK扩展A区字符' }
+  { char: '㒃', code: 0x3483, description: 'CJK 扩展 A 区字符' },
+  { char: '㒄', code: 0x3484, description: 'CJK 扩展 A 区字符' },
 ])
+</script>

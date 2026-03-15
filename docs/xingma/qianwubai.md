@@ -35,7 +35,7 @@ description: 字源形码前五百常用字字根专项练习
 
 ## 相关资源
 
-- [字源字根打字](/practice/typing) - 实战打字训练
+- [常用字根练习](/practice/top500) - 高频字专项练习
 - [顺序练习](/practice/modern) - 系统学习所有字根
 - [错误字根练习](/practice/error) - 针对性纠错练习
 - [字源了解](/xingma/liaojie) - 理论基础学习

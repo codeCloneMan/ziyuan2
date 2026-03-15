@@ -1,58 +1,78 @@
-/**
- * 现代字根练习组件 - 虎码风格设计（分组练习版 V2）
- * 特点：
- * - 分组练习，组内字根随机循环
- * - 悬浮恢复对话框
- */
+/** * 现代字根练习组件 - 虎码风格设计（分组练习版 V2） * 特点： * - 分组练习，组内字根随机循环 * -
+悬浮恢复对话框 */
 
 <script setup>
-import TopBar from './TopBar.vue'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { allRoots } from '../data/rootData.js'
 import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
 import { safeGetItem, safeSetItem } from '../utils/safeStorage.js'
-import { shuffleArray, formatTime, safeFocus, calculatePercentage } from '../utils/safeUtils.js'
+import { formatTime, safeFocus } from '../utils/safeUtils.js'
 import { useGroupPractice } from '../utils/GroupPracticeEngine.js'
+import { logStorageOperation, showStorageStatus } from '../utils/localStorageDebugger.js'
 import RadicalKeyboard from './RadicalKeyboard.vue'
 
 // 常量定义
 const ERROR_RADICALS_KEY = 'errorRadicals'
-const PRACTICE_PROGRESS_KEY = 'practiceProgress'
-const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+
+// 根据模式生成独立的进度键
+const getProgressKey = (mode) => {
+  const keyMap = {
+    order: 'order_progress',
+    random: 'random_progress',
+    typing: 'typing_progress',
+  }
+  return keyMap[mode] || `unknown_progress_${mode}` // 避免冲突的默认值
+}
+
+const PRACTICE_PROGRESS_KEY = computed(() => getProgressKey(props.mode))
+// eslint-disable-next-line no-unused-vars
+const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000 // 保留供未来使用
 
 // 组件属性
 const props = defineProps({
   mode: {
     type: String,
     default: 'order',
-    validator: (value) => ['order', 'random'].includes(value)
+    validator: (value) => ['order', 'random'].includes(value),
   },
   title: {
     type: String,
-    default: '字根练习'
-  }
+    default: '字根练习',
+  },
 })
 
 // 使用分组练习引擎
 const engine = useGroupPractice({
   groupSize: 8,
   repetitions: 4,
-  errorThreshold: 3
+  errorThreshold: 3,
 })
 
-// 重新开始标志 - 用于判断是否应该保存进度
-const isRestarted = ref(false)
-
-// 本地状态
+// 状态
+// eslint-disable-next-line no-unused-vars
+const practiceMode = ref('order') // 'order' | 'shuffle'
 const userInput = ref('')
 const showResult = ref(false)
 const isCorrect = ref(false)
 const feedback = ref('')
 const inputRef = ref(null)
 const showResumeDialog = ref(false)
+const savedProgress = ref(null) // 存储保存的进度信息
+const isRestarted = ref(false) // 重新开始标志
 
 // 计时器
 let timer = null
+let timeoutIds = [] // 管理所有setTimeout
+
+// 计算属性 - 动态获取恢复对话框文案
+const resumeText = computed(() => {
+  const textMap = {
+    order: '顺序练习',
+    random: '随机练习',
+  }
+  const practiceType = textMap[props.mode] || '练习'
+  return `发现未完成的${practiceType}`
+})
 
 // 计算属性 - 当前字根信息
 const currentHint = computed(() => engine.currentRoot.value?.hint || '')
@@ -68,7 +88,9 @@ const canDisplayCurrentRoot = computed(() => {
 
 const charUnicode = computed(() => {
   if (!currentRoot.value) return ''
-  return 'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  return (
+    'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  )
 })
 
 // 统计面板显示
@@ -76,11 +98,15 @@ const progress = computed(() => engine.progress.value)
 const accuracy = computed(() => engine.accuracy.value)
 const masteryRate = computed(() => engine.masteryRate.value)
 const masteredCount = computed(() => engine.masteredCount.value)
+// eslint-disable-next-line no-unused-vars
 const remainingCount = computed(() => engine.remainingCount.value)
 const elapsedTime = computed(() => engine.elapsedTime.value)
 const groupProgress = computed(() => engine.groupProgress.value)
+// eslint-disable-next-line no-unused-vars
 const totalCount = computed(() => engine.totalAttempts.value)
+// eslint-disable-next-line no-unused-vars
 const correctCount = computed(() => engine.totalCorrect.value)
+// eslint-disable-next-line no-unused-vars
 const wrongCount = computed(() => engine.totalWrong.value)
 const isComplete = computed(() => engine.isComplete.value)
 const isPaused = computed(() => engine.isPaused.value)
@@ -99,7 +125,7 @@ const initPractice = () => {
   showResult.value = false
   feedback.value = ''
   showResumeDialog.value = false
-  isRestarted.value = false  // 重置标志
+  isRestarted.value = false // 重置标志
   startTimer()
   focusInput()
 }
@@ -136,7 +162,7 @@ const validateInput = () => {
       feedback.value = '🎉 已掌握！'
     }
 
-    setTimeout(() => {
+    safeTimeout(() => {
       handleNext()
     }, 800)
   } else {
@@ -147,7 +173,7 @@ const validateInput = () => {
     saveErrorRadical(currentRoot.value)
 
     // 错误后跳过，继续循环本组
-    setTimeout(() => {
+    safeTimeout(() => {
       handleNext()
     }, 1500)
   }
@@ -181,7 +207,7 @@ const skipRoot = () => {
   feedback.value = '⏭️ 已跳过'
   showResult.value = true
 
-  setTimeout(() => {
+  safeTimeout(() => {
     const result = engine.skip()
 
     if (result === 'complete') {
@@ -213,7 +239,7 @@ const togglePause = () => {
 const restartPractice = () => {
   stopTimer()
   clearProgress()
-  isRestarted.value = true  // 标记为重新开始
+  isRestarted.value = true // 标记为重新开始
   initPractice()
 }
 
@@ -224,7 +250,7 @@ const saveErrorRadical = (root) => {
   const errorRadicals = safeGetItem(ERROR_RADICALS_KEY, [])
   const rootId = `${root.character}-${root.code}`
 
-  const exists = errorRadicals.some(r => `${r.character}-${r.code}` === rootId)
+  const exists = errorRadicals.some((r) => `${r.character}-${r.code}` === rootId)
   if (!exists) {
     errorRadicals.push(root)
     safeSetItem(ERROR_RADICALS_KEY, errorRadicals)
@@ -239,6 +265,19 @@ const startTimer = () => {
   }, 1000)
 }
 
+// 安全的setTimeout函数
+const safeTimeout = (callback, delay) => {
+  const id = setTimeout(callback, delay)
+  timeoutIds.push(id)
+  return id
+}
+
+// 清理所有定时器
+const clearAllTimeouts = () => {
+  timeoutIds.forEach((id) => clearTimeout(id))
+  timeoutIds = []
+}
+
 const stopTimer = () => {
   if (timer) {
     clearInterval(timer)
@@ -248,38 +287,136 @@ const stopTimer = () => {
 
 // 保存进度
 const saveProgress = () => {
-  const state = engine.serializeState()
-  state.mode = props.mode
-  safeSetItem(PRACTICE_PROGRESS_KEY, state)
+  try {
+    const state = engine.serializeState()
+    state.mode = props.mode
+
+    // 添加兼容字段，确保恢复逻辑能正常工作
+    state.answeredRoots = engine.totalAttempts?.value || 0
+    state.practiceRoots = engine.currentGroup?.value || [] // 使用currentGroup而不是allRoots
+
+    const key = PRACTICE_PROGRESS_KEY.value
+    console.log('🔑 TigerPractice SAVE_PROGRESS:', {
+      component: 'TigerPractice',
+      mode: props.mode,
+      key: key,
+      dataSize: JSON.stringify(state).length,
+      timestamp: new Date().toISOString(),
+      dataPreview: {
+        progress: state.progress,
+        totalAttempts: state.totalAttempts,
+        answeredRoots: state.answeredRoots,
+        isComplete: state.isComplete,
+      },
+    })
+
+    // 记录到调试工具
+    logStorageOperation('SET', key, state, 'TigerPractice')
+
+    safeSetItem(key, state)
+
+    // 验证写入
+    const verify = safeGetItem(key, null)
+    console.log('✅ TigerPractice SAVE_VERIFY:', {
+      key: key,
+      writeSuccess: !!verify,
+      storedProgress: verify?.progress,
+    })
+
+    // 显示当前存储状态
+    showStorageStatus()
+  } catch (error) {
+    console.error('❌ TigerPractice: 保存进度失败', error)
+  }
 }
 
 // 恢复进度
 const restoreProgress = () => {
-  const saved = safeGetItem(PRACTICE_PROGRESS_KEY, null)
+  const saved = safeGetItem(PRACTICE_PROGRESS_KEY.value, null)
   if (!saved) return false
 
-  // 检查过期
-  if (Date.now() - saved.timestamp > PROGRESS_MAX_AGE) {
-    clearProgress()
+  // 检查模式匹配
+  if (saved.mode !== props.mode) {
+    console.log('TigerPractice: 模式不匹配，不恢复进度', {
+      saved: saved.mode,
+      current: props.mode,
+    })
     return false
   }
 
-  // 恢复引擎状态
-  engine.deserializeState(saved, allRoots, props.mode)
-
-  // 恢复本地状态
-  userInput.value = ''
-  showResult.value = false
-  feedback.value = ''
-
-  startTimer()
-  focusInput()
-  return true
+  try {
+    engine.deserializeState(saved, allRoots, props.mode)
+    console.log('TigerPractice: 成功恢复进度', {
+      mode: props.mode,
+      key: PRACTICE_PROGRESS_KEY.value,
+      progress: engine.progress.value,
+    })
+    return true
+  } catch (error) {
+    console.error('TigerPractice: 恢复进度失败', error)
+    clearProgress()
+    return false
+  }
 }
 
 // 清除进度
 const clearProgress = () => {
-  safeSetItem(PRACTICE_PROGRESS_KEY, null)
+  // 将进度重置为0而不是null，确保记录进度为0
+  const zeroProgress = {
+    mode: props.mode,
+    progress: 0,
+    accuracy: 0,
+    masteryRate: 0,
+    currentIndex: 0,
+    currentGroup: [],
+    practiceQueue: [],
+    completedGroups: [],
+    errorRoots: [],
+    totalCorrect: 0,
+    totalWrong: 0,
+    totalAttempts: 0,
+    elapsedTime: 0,
+    isComplete: false,
+    isPaused: false,
+    timestamp: Date.now(),
+    answeredRoots: 0,
+    practiceRoots: [],
+  }
+
+  const key = PRACTICE_PROGRESS_KEY.value
+  console.log('🗑️ TigerPractice CLEAR_PROGRESS:', {
+    component: 'TigerPractice',
+    mode: props.mode,
+    key: key,
+    timestamp: new Date().toISOString(),
+    isRestarted: isRestarted.value,
+  })
+
+  // 显示清除前的数据
+  const beforeClear = safeGetItem(key, null)
+  console.log('📊 TigerPractice BEFORE_CLEAR:', {
+    key: key,
+    hadData: !!beforeClear,
+    oldProgress: beforeClear?.progress,
+    oldMode: beforeClear?.mode,
+  })
+
+  safeSetItem(key, zeroProgress)
+
+  // 验证清除
+  const afterClear = safeGetItem(key, null)
+  console.log('✅ TigerPractice CLEAR_VERIFY:', {
+    key: key,
+    clearSuccess: !!afterClear,
+    newProgress: afterClear?.progress,
+    newMode: afterClear?.mode,
+  })
+
+  // 记录到调试工具
+  logStorageOperation('SET', key, zeroProgress, 'TigerPractice')
+
+  // 显示当前存储状态
+  showStorageStatus()
 }
 
 // 键盘事件
@@ -328,31 +465,94 @@ const handleResume = () => {
 const handleRestartFromDialog = () => {
   showResumeDialog.value = false
   clearProgress()
-  isRestarted.value = true  // 标记为重新开始
+  isRestarted.value = true // 标记为重新开始
   initPractice()
 }
 
 // 生命周期
 onMounted(() => {
-  document.addEventListener('keydown', handleKeydown)
+  console.log('TigerPractice mounted with mode:', props.mode)
+
+  // 使用更具体的事件监听器，只监听当前组件的输入
+  const handleKeydownWrapper = (e) => {
+    // 如果焦点在输入框中，才处理键盘事件
+    if (document.activeElement === inputRef.value || document.activeElement?.tagName === 'BODY') {
+      handleKeydown(e)
+    }
+  }
+
+  document.addEventListener('keydown', handleKeydownWrapper)
+
+  // 保存引用以便清理
+  window._tigerKeydownHandler = handleKeydownWrapper
 
   // 尝试恢复进度
-  const saved = safeGetItem(PRACTICE_PROGRESS_KEY, null)
-  if (saved && !saved.isComplete && Date.now() - saved.timestamp < PROGRESS_MAX_AGE) {
+  const saved = safeGetItem(PRACTICE_PROGRESS_KEY.value, null)
+  savedProgress.value = saved // 保存进度信息供对话框使用
+
+  console.log('=== TigerPractice 进度检查开始 ===')
+  console.log('组件模式:', props.mode)
+  console.log('进度键:', PRACTICE_PROGRESS_KEY.value)
+  console.log('保存的数据:', saved)
+  console.log('数据类型:', typeof saved)
+  console.log('数据完整性检查:', {
+    hasData: !!saved,
+    isObject: typeof saved === 'object',
+    hasProgress: Object.hasOwn(saved || {}, 'progress'),
+    hasTotalAttempts: Object.hasOwn(saved || {}, 'totalAttempts'),
+    hasAnsweredRoots: Object.hasOwn(saved || {}, 'answeredRoots'),
+    hasMode: Object.hasOwn(saved || {}, 'mode'),
+    hasIsComplete: Object.hasOwn(saved || {}, 'isComplete'),
+  })
+
+  // 统一的进度检查逻辑：检查是否有有效的未完成进度
+  const shouldShow =
+    saved &&
+    typeof saved === 'object' &&
+    !saved.isComplete &&
+    (saved.progress > 0 || saved.totalAttempts > 0) && // 只要有一项有值就显示
+    saved.mode === props.mode // 确保模式匹配
+
+  console.log('检查条件结果:', {
+    saved: !!saved,
+    isObject: typeof saved === 'object',
+    notComplete: !saved?.isComplete,
+    progressPositive: saved?.progress > 0,
+    hasAttempts: saved?.totalAttempts > 0,
+    hasProgressOrAttempts: saved?.progress > 0 || saved?.totalAttempts > 0,
+    modeMatch: saved?.mode === props.mode,
+    shouldShow,
+  })
+  console.log('=== TigerPractice 进度检查结束 ===')
+
+  if (shouldShow) {
+    console.log('显示恢复对话框')
     showResumeDialog.value = true
   } else {
+    console.log('直接开始新练习')
     initPractice()
   }
 })
 
 onUnmounted(() => {
-  document.removeEventListener('keydown', handleKeydown)
-  stopTimer()
+  console.log('TigerPractice unmounted, cleaning up...')
 
-  // 保存进度（如果不是重新开始且未完成且有当前字根）
-  if (!isRestarted.value && !isComplete.value && currentRoot.value) {
+  // 清理事件监听器
+  if (window._tigerKeydownHandler) {
+    document.removeEventListener('keydown', window._tigerKeydownHandler)
+    delete window._tigerKeydownHandler
+  }
+
+  stopTimer()
+  clearAllTimeouts() // 清理所有setTimeout
+
+  // 保存进度（如果不是重新开始且未完成）
+  if (!isRestarted.value && !isComplete.value) {
     saveProgress()
   }
+
+  // 清理引擎状态
+  engine.reset?.()
 })
 
 // 监听完成状态
@@ -369,21 +569,28 @@ watch(isComplete, (newVal) => {
     <!-- 悬浮恢复对话框 - 放在工具栏上方 -->
     <div v-if="showResumeDialog" class="floating-resume-banner">
       <div class="resume-content">
-        <span class="resume-text">💾 发现未完成的练习</span>
+        <div class="resume-info">
+          <span class="resume-icon">💾</span>
+          <div class="resume-details">
+            <span class="resume-text">{{ resumeText }}</span>
+            <span class="resume-stats">
+              已完成 {{ Math.round((savedProgress?.progress || 0) * 100) }}% · 练习了
+              {{ savedProgress?.answeredRoots || 0 }} 个字根
+            </span>
+          </div>
+        </div>
         <div class="resume-buttons">
-          <button @click="handleResume" class="btn-resume btn-continue">
-            继续练习
-          </button>
-          <button @click="handleRestartFromDialog" class="btn-resume btn-restart">
-            重新开始
-          </button>
+          <button class="btn-resume btn-continue" @click="handleResume">继续练习</button>
+          <button class="btn-resume btn-restart" @click="handleRestartFromDialog">重新开始</button>
         </div>
       </div>
     </div>
 
     <!-- 顶部标题栏 -->
     <header class="practice-header">
-      <h1 class="practice-title">{{ title }}</h1>
+      <h1 class="practice-title">
+        {{ title }}
+      </h1>
       <div class="practice-mode">
         <span class="mode-badge" :class="mode">
           {{ mode === 'order' ? '顺序模式' : '随机模式' }}
@@ -399,7 +606,10 @@ watch(isComplete, (newVal) => {
         <span class="stat-label">总进度</span>
       </div>
       <div class="stat-box">
-        <span class="stat-number" :class="{ 'text-success': accuracy >= 80, 'text-warning': accuracy < 60 }">
+        <span
+          class="stat-number"
+          :class="{ 'text-success': accuracy >= 80, 'text-warning': accuracy < 60 }"
+        >
           {{ accuracy }}%
         </span>
         <span class="stat-label">正确率</span>
@@ -409,7 +619,9 @@ watch(isComplete, (newVal) => {
         <span class="stat-label">当前组</span>
       </div>
       <div class="stat-box">
-        <span class="stat-number">{{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
+        <span class="stat-number"
+          >{{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span
+        >
         <span class="stat-label">队列</span>
       </div>
       <div class="stat-box">
@@ -424,11 +636,11 @@ watch(isComplete, (newVal) => {
 
     <!-- 进度条 -->
     <div class="progress-track">
-      <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+      <div class="progress-fill" :style="{ width: progress + '%' }" />
     </div>
 
     <!-- 组进度信息 -->
-    <div class="group-info" v-if="!isComplete && !isPaused">
+    <div v-if="!isComplete && !isPaused" class="group-info">
       <span>第 {{ groupProgress.current }}/{{ groupProgress.total }} 组</span>
       <span>队列: {{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
       <span v-if="currentRootStats">
@@ -437,7 +649,7 @@ watch(isComplete, (newVal) => {
     </div>
 
     <!-- 主练习区域 -->
-    <main class="practice-main" v-if="!isComplete && !isPaused">
+    <main v-if="!isComplete && !isPaused" class="practice-main">
       <!-- 字根显示区 -->
       <div class="character-display">
         <div v-if="canDisplayCurrentRoot" class="character">
@@ -447,16 +659,20 @@ watch(isComplete, (newVal) => {
           <span class="unicode-code">{{ charUnicode }}</span>
           <span class="unicode-hint">{{ currentHint }}</span>
         </div>
-        <div class="character-hint">{{ currentHint }}</div>
+        <div class="character-hint">
+          {{ currentHint }}
+        </div>
       </div>
 
       <!-- 输入区 -->
       <div class="input-section">
-        <div class="input-wrapper" :class="{ correct: showResult && isCorrect, wrong: showResult && !isCorrect }">
+        <div
+          class="input-wrapper"
+          :class="{ correct: showResult && isCorrect, wrong: showResult && !isCorrect }"
+        >
           <input
             ref="inputRef"
             v-model="userInput"
-            @input="handleInput"
             type="text"
             class="code-input"
             :placeholder="showResult ? '按 Enter 继续' : '输入编码'"
@@ -464,8 +680,13 @@ watch(isComplete, (newVal) => {
             maxlength="2"
             autocomplete="off"
             spellcheck="false"
+            @input="handleInput"
           />
-          <div v-if="feedback" class="feedback-text" :class="{ success: isCorrect, error: !isCorrect }">
+          <div
+            v-if="feedback"
+            class="feedback-text"
+            :class="{ success: isCorrect, error: !isCorrect }"
+          >
             {{ feedback }}
           </div>
         </div>
@@ -481,17 +702,17 @@ watch(isComplete, (newVal) => {
 
       <!-- 操作按钮 -->
       <div class="action-buttons">
-        <button @click="skipRoot" class="btn btn-secondary" :disabled="showResult">
+        <button class="btn btn-secondary" :disabled="showResult" @click="skipRoot">
           <span class="btn-icon">⏭</span>
           <span>跳过</span>
           <kbd class="key-hint">Ctrl+→</kbd>
         </button>
-        <button @click="togglePause" class="btn btn-secondary">
+        <button class="btn btn-secondary" @click="togglePause">
           <span class="btn-icon">{{ isPaused ? '▶' : '⏸' }}</span>
           <span>{{ isPaused ? '继续' : '暂停' }}</span>
           <kbd class="key-hint">Esc</kbd>
         </button>
-        <button @click="restartPractice" class="btn btn-secondary">
+        <button class="btn btn-secondary" @click="restartPractice">
           <span class="btn-icon">🔄</span>
           <span>重新开始</span>
         </button>
@@ -521,7 +742,7 @@ watch(isComplete, (newVal) => {
             <span class="pause-label">用时</span>
           </div>
         </div>
-        <button @click="togglePause" class="btn btn-primary btn-large">
+        <button class="btn btn-primary btn-large" @click="togglePause">
           <span class="btn-icon">▶</span>
           <span>继续练习</span>
         </button>
@@ -552,12 +773,16 @@ watch(isComplete, (newVal) => {
           </div>
         </div>
         <div class="complete-message">
-          {{ accuracy >= 90 ? '太棒了！字根掌握得非常好！' :
-             accuracy >= 70 ? '做得不错！继续加油！' :
-             '还需要多练习，坚持就是胜利！' }}
+          {{
+            accuracy >= 90
+              ? '太棒了！字根掌握得非常好！'
+              : accuracy >= 70
+                ? '做得不错！继续加油！'
+                : '还需要多练习，坚持就是胜利！'
+          }}
         </div>
         <div class="complete-actions">
-          <button @click="restartPractice" class="btn btn-primary btn-large">
+          <button class="btn btn-primary btn-large" @click="restartPractice">
             <span class="btn-icon">🔄</span>
             <span>再来一次</span>
           </button>
@@ -576,28 +801,65 @@ watch(isComplete, (newVal) => {
 
 <style scoped>
 /* ===== 容器样式 ===== */
- .tiger-practice-container {
+.tiger-practice-container {
   max-width: 800px;
   margin: 0 auto;
   padding: 1.5rem;
   padding-top: 68px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   position: relative;
 }
 
 /* ===== 悬浮恢复对话框 ===== */
 .floating-resume-banner {
   position: fixed;
-  top: 80px;
+  top: 20px;
   left: 50%;
   transform: translateX(-50%);
-  z-index: 100;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
-  border: 1px solid #e2e8f0;
-  padding: 1rem 1.5rem;
+  z-index: 1000;
   animation: slideDown 0.3s ease-out;
+}
+
+.resume-content {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background: white;
+  padding: 1rem 1.5rem;
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+  border: 1px solid #e5e7eb;
+  max-width: 500px;
+}
+
+.resume-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+}
+
+.resume-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.resume-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.resume-text {
+  font-weight: 600;
+  color: #1f2937;
+  font-size: 0.95rem;
+}
+
+.resume-stats {
+  font-size: 0.825rem;
+  color: #6b7280;
 }
 
 @keyframes slideDown {

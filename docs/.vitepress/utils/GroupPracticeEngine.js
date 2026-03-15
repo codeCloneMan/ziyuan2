@@ -12,11 +12,11 @@ import { shuffleArray } from './safeUtils.js'
 
 // 默认配置
 const DEFAULT_CONFIG = {
-  groupSize: 8,          // 每组字根数量 (5-10)
-  repetitions: 4,        // 每字根练习遍数 (3-6)
-  errorThreshold: 3,     // 错误阈值，超过则加入下一组
-  maxGroupSize: 10,      // 最大组大小
-  minGroupSize: 5        // 最小组大小
+  groupSize: 8, // 每组字根数量 (5-10)
+  repetitions: 4, // 每字根练习遍数 (3-6)
+  errorThreshold: 3, // 错误阈值，超过则加入下一组
+  maxGroupSize: 10, // 最大组大小
+  minGroupSize: 5, // 最小组大小
 }
 
 export function useGroupPractice(config = {}) {
@@ -24,13 +24,13 @@ export function useGroupPractice(config = {}) {
 
   // 状态
   const allRoots = ref([])
-  const currentGroup = ref([])           // 当前组的原始字根列表
-  const practiceQueue = ref([])          // 练习队列（当前组的字根复制多次后打乱）
-  const currentQueueIndex = ref(0)       // 当前在队列中的位置
-  const currentGroupIndex = ref(0)       // 当前组索引
-  const completedGroups = ref([])        // 已完成的组
-  const errorRoots = ref([])             // 当前组的错误字根
-  const rootStats = ref({})              // 每个字根的练习统计
+  const currentGroup = ref([]) // 当前组的原始字根列表
+  const practiceQueue = ref([]) // 练习队列（当前组的字根复制多次后打乱）
+  const currentQueueIndex = ref(0) // 当前在队列中的位置
+  const currentGroupIndex = ref(0) // 当前组索引
+  const completedGroups = ref([]) // 已完成的组
+  const errorRoots = ref([]) // 当前组的错误字根
+  const rootStats = ref({}) // 每个字根的练习统计
   const isComplete = ref(false)
   const isPaused = ref(false)
 
@@ -68,7 +68,8 @@ export function useGroupPractice(config = {}) {
 
   // 已掌握数量
   const masteredCount = computed(() => {
-    return Object.values(rootStats.value).filter(s => s.consecutiveCorrect >= cfg.repetitions).length
+    return Object.values(rootStats.value).filter((s) => s.consecutiveCorrect >= cfg.repetitions)
+      .length
   })
 
   // 剩余数量
@@ -90,7 +91,7 @@ export function useGroupPractice(config = {}) {
       rootInGroup: Math.min(currentRootInGroup + 1, currentGroup.value.length),
       groupSize: currentGroup.value.length,
       queueProgress: currentQueueIndex.value,
-      queueTotal: practiceQueue.value.length
+      queueTotal: practiceQueue.value.length,
     }
   })
 
@@ -179,7 +180,7 @@ export function useGroupPractice(config = {}) {
         wrong: 0,
         consecutiveCorrect: 0,
         consecutiveWrong: 0,
-        lastCorrect: false
+        lastCorrect: false,
       }
     }
 
@@ -202,9 +203,7 @@ export function useGroupPractice(config = {}) {
 
       // 记录错误字根（如果错误超过阈值）
       if (stats.consecutiveWrong >= cfg.errorThreshold) {
-        const alreadyAdded = errorRoots.value.some(
-          r => `${r.character}-${r.code}` === rootId
-        )
+        const alreadyAdded = errorRoots.value.some((r) => `${r.character}-${r.code}` === rootId)
         if (!alreadyAdded) {
           errorRoots.value.push(currentRoot.value)
         }
@@ -224,7 +223,7 @@ export function useGroupPractice(config = {}) {
       completedGroups.value.push({
         index: currentGroupIndex.value,
         roots: [...currentGroup.value],
-        errorRoots: [...errorRoots.value]
+        errorRoots: [...errorRoots.value],
       })
 
       currentGroupIndex.value++
@@ -251,7 +250,7 @@ export function useGroupPractice(config = {}) {
       completedGroups.value.push({
         index: currentGroupIndex.value,
         roots: [...currentGroup.value],
-        errorRoots: [...errorRoots.value]
+        errorRoots: [...errorRoots.value],
       })
 
       currentGroupIndex.value++
@@ -286,13 +285,15 @@ export function useGroupPractice(config = {}) {
 
   // 获取字根统计
   const getRootStats = (rootId) => {
-    return rootStats.value[rootId] || {
-      attempts: 0,
-      correct: 0,
-      wrong: 0,
-      consecutiveCorrect: 0,
-      consecutiveWrong: 0
-    }
+    return (
+      rootStats.value[rootId] || {
+        attempts: 0,
+        correct: 0,
+        wrong: 0,
+        consecutiveCorrect: 0,
+        consecutiveWrong: 0,
+      }
+    )
   }
 
   // 导出序列化状态（用于保存进度）
@@ -310,7 +311,7 @@ export function useGroupPractice(config = {}) {
       totalAttempts: totalAttempts.value,
       elapsedTime: elapsedTime.value,
       isComplete: isComplete.value,
-      timestamp: Date.now()
+      timestamp: Date.now(),
     }
   }
 
@@ -349,6 +350,27 @@ export function useGroupPractice(config = {}) {
     startTime.value = Date.now() - elapsedTime.value * 1000
   }
 
+  // 重置状态
+  const reset = () => {
+    console.log('GroupPracticeEngine: 重置引擎状态')
+    allRoots.value = []
+    currentGroup.value = []
+    practiceQueue.value = []
+    currentQueueIndex.value = 0
+    currentGroupIndex.value = 0
+    completedGroups.value = []
+    errorRoots.value = []
+    rootStats.value = {}
+    isComplete.value = false
+    isPaused.value = false
+    totalCorrect.value = 0
+    totalWrong.value = 0
+    totalAttempts.value = 0
+    elapsedTime.value = 0
+    startTime.value = null // 重置时间基准，但不调用stopTimer（由组件管理）
+    console.log('GroupPracticeEngine: 引擎状态已重置')
+  }
+
   return {
     // 状态
     currentRoot,
@@ -383,8 +405,9 @@ export function useGroupPractice(config = {}) {
     getRootStats,
     serializeState,
     deserializeState,
+    reset,
 
     // 配置
-    config: cfg
+    config: cfg,
   }
 }

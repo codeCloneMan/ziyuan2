@@ -13,7 +13,6 @@ description: 字源形码入门指南
 
 ## 练习资源
 
-- [字根练习](/practice/typing) - 实战打字练习
 - [常用字根练习](/practice/top500) - 常用字专项练习
 - [顺序练习](/practice/modern) - 系统学习字根
 - [随机练习](/practice/random) - 巩固记忆
