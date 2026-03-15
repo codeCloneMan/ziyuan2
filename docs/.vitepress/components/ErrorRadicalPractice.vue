@@ -1,393 +1,258 @@
-<script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { allRoots } from '../data/rootData.js'
-import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
-import { saveProgress, loadProgress, clearProgress } from '../utils/PracticeProgressManager.js'
-
 /**
- * 错误字根练习组件
- * 专门练习之前答错的字根
+ * 错误字根练习组件 - 分组练习版 V2
+ * 特点：
+ * 1. 分组练习，组内字根随机循环
+ * 2. 悬浮恢复对话框
  */
 
-// 响应式状态
-const currentRoot = ref(null)
-const userInput = ref('')
-const feedback = ref('')
-const feedbackType = ref('') // 'success' | 'error' | 'info'
-const isCorrect = ref(false)
-const isWrong = ref(false)
-const currentIndex = ref(0)
-const practiceList = ref([])
-const correctCount = ref(0)
-const totalCount = ref(0)
-const wrongCount = ref(0)
-const startTime = ref(null)
-const elapsedTime = ref(0)
-const isPaused = ref(false)
-const inputRef = ref(null)
-const showResumeDialog = ref(false)
-const savedProgress = ref(null)
-const progressRestored = ref(false)
+<script setup>
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
+import { safeGetItem, safeSetItem } from '../utils/safeStorage.js'
+import { formatTime, safeFocus } from '../utils/safeUtils.js'
+import { useGroupPractice } from '../utils/GroupPracticeEngine.js'
+import RadicalKeyboard from './RadicalKeyboard.vue'
 
-// 错误字根管理
+// 常量定义
+const STORAGE_KEYS = {
+  ERROR_RADICALS: 'errorRadicals',
+  MASTERED_RADICALS: 'masteredRadicals',
+  PRACTICE_PROGRESS: 'errorPracticeProgress'
+}
+const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+
+// 使用分组练习引擎（错误练习使用随机模式）
+const engine = useGroupPractice({
+  groupSize: 8,
+  repetitions: 4,
+  errorThreshold: 3
+})
+
+// 重新开始标志
+const isRestarted = ref(false)
+
+// 状态
 const errorRadicals = ref([])
 const masteredRadicals = ref([])
-const radicalStats = ref({}) // 记录每个字根的统计信息
+const userInput = ref('')
+const showResult = ref(false)
+const isCorrect = ref(false)
+const feedback = ref('')
+const inputRef = ref(null)
+const showResumeDialog = ref(false)
 
 // 计时器
 let timer = null
 
 // 计算属性
-const accuracy = computed(() => {
-  if (totalCount.value === 0) return 0
-  return Math.round((correctCount.value / totalCount.value) * 100)
-})
+const currentRoot = computed(() => engine.currentRoot.value)
+const currentHint = computed(() => currentRoot.value?.hint || '')
+const currentCode = computed(() => currentRoot.value?.code || '')
 
-const progress = computed(() => {
-  if (practiceList.value.length === 0) return 0
-  return Math.round((currentIndex.value / practiceList.value.length) * 100)
-})
-
-const currentHint = computed(() => {
-  if (!currentRoot.value) return ''
-  return currentRoot.value.hint || ''
-})
-
-const currentCode = computed(() => {
-  if (!currentRoot.value) return ''
-  return currentRoot.value.code || ''
-})
-
-const remainingErrors = computed(() => {
-  return errorRadicals.value.length
-})
-
-const masteredCount = computed(() => {
-  return masteredRadicals.value.length
-})
-
-const masteryRate = computed(() => {
-  const totalErrors = errorRadicals.value.length + masteredRadicals.value.length
-  if (totalErrors === 0) return 0
-  return Math.round((masteredRadicals.value.length / totalErrors) * 100)
-})
-
-// 检查当前字根是否可以显示
 const canDisplayCurrentRoot = computed(() => {
   if (!currentRoot.value) return true
   const char = currentRoot.value.character
-  
-  // 检查是否是特殊字符
-  const isSpecial = isSpecialCharacter(char)
-  if (!isSpecial) return true
-  
-  // 检查是否可以显示
-  const canDisplay = canDisplayCharacter(char)
-  return canDisplay
+  return isSpecialCharacter(char) ? canDisplayCharacter(char) : true
 })
 
-// 获取字符的Unicode编码
 const charUnicode = computed(() => {
   if (!currentRoot.value) return ''
-  const char = currentRoot.value.character
-  return 'U+' + char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
+  return 'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
 })
 
-// 从本地存储加载错误字根
+// 统计
+const progress = computed(() => engine.progress.value)
+const accuracy = computed(() => engine.accuracy.value)
+const masteryRate = computed(() => engine.masteryRate.value)
+const masteredCount = computed(() => engine.masteredCount.value)
+const remainingCount = computed(() => errorRadicals.value.length - masteredCount.value)
+const elapsedTime = computed(() => engine.elapsedTime.value)
+const groupProgress = computed(() => engine.groupProgress.value)
+const totalCount = computed(() => engine.totalAttempts.value)
+const correctCount = computed(() => engine.totalCorrect.value)
+const wrongCount = computed(() => engine.totalWrong.value)
+const isComplete = computed(() => engine.isComplete.value)
+const isPaused = computed(() => engine.isPaused.value)
+
+// 当前字根统计
+const currentRootStats = computed(() => {
+  if (!currentRoot.value) return null
+  const rootId = `${currentRoot.value.character}-${currentRoot.value.code}`
+  return engine.getRootStats(rootId)
+})
+
+// 加载错误字根
 const loadErrorRadicals = () => {
-  try {
-    const saved = localStorage.getItem('errorRadicals')
-    if (saved) {
-      errorRadicals.value = JSON.parse(saved)
-    }
-    
-    const savedMastered = localStorage.getItem('masteredRadicals')
-    if (savedMastered) {
-      masteredRadicals.value = JSON.parse(savedMastered)
-    }
-    
-    const savedStats = localStorage.getItem('radicalStats')
-    if (savedStats) {
-      radicalStats.value = JSON.parse(savedStats)
-    }
-  } catch (error) {
-    console.error('加载错误字根失败:', error)
-    errorRadicals.value = []
-    masteredRadicals.value = []
-    radicalStats.value = {}
-  }
+  errorRadicals.value = safeGetItem(STORAGE_KEYS.ERROR_RADICALS, [])
+  masteredRadicals.value = safeGetItem(STORAGE_KEYS.MASTERED_RADICALS, [])
 }
 
-// 保存错误字根到本地存储
+// 保存错误字根
 const saveErrorRadicals = () => {
-  try {
-    localStorage.setItem('errorRadicals', JSON.stringify(errorRadicals.value))
-    localStorage.setItem('masteredRadicals', JSON.stringify(masteredRadicals.value))
-    localStorage.setItem('radicalStats', JSON.stringify(radicalStats.value))
-  } catch (error) {
-    console.error('保存错误字根失败:', error)
-  }
+  safeSetItem(STORAGE_KEYS.ERROR_RADICALS, errorRadicals.value)
+  safeSetItem(STORAGE_KEYS.MASTERED_RADICALS, masteredRadicals.value)
 }
 
-// 添加错误字根
-const addErrorRadical = (root) => {
-  if (!root) return
-  
-  const rootId = `${root.character}-${root.code}`
-  
-  // 如果已经在已掌握列表中，先移除
-  const masteredIndex = masteredRadicals.value.findIndex(r => 
-    `${r.character}-${r.code}` === rootId
-  )
-  if (masteredIndex !== -1) {
-    masteredRadicals.value.splice(masteredIndex, 1)
-  }
-  
-  // 添加到错误列表（如果不在列表中）
-  const errorIndex = errorRadicals.value.findIndex(r => 
-    `${r.character}-${r.code}` === rootId
-  )
-  if (errorIndex === -1) {
-    errorRadicals.value.push(root)
-  }
-  
-  // 更新统计信息
-  if (!radicalStats.value[rootId]) {
-    radicalStats.value[rootId] = {
-      errorCount: 0,
-      correctCount: 0,
-      lastPracticed: null,
-      consecutiveCorrect: 0
-    }
-  }
-  radicalStats.value[rootId].errorCount++
-  radicalStats.value[rootId].lastPracticed = new Date().toISOString()
-  radicalStats.value[rootId].consecutiveCorrect = 0
-  
-  saveErrorRadicals()
-}
-
-// 标记字根为已掌握
-const markAsMastered = (root) => {
-  if (!root) return
-  
-  const rootId = `${root.character}-${root.code}`
-  
-  // 从错误列表中移除
-  const errorIndex = errorRadicals.value.findIndex(r => 
-    `${r.character}-${r.code}` === rootId
-  )
-  if (errorIndex !== -1) {
-    errorRadicals.value.splice(errorIndex, 1)
-  }
-  
-  // 添加到已掌握列表（如果不在列表中）
-  const masteredIndex = masteredRadicals.value.findIndex(r => 
-    `${r.character}-${r.code}` === rootId
-  )
-  if (masteredIndex === -1) {
-    masteredRadicals.value.push(root)
-  }
-  
-  saveErrorRadicals()
-}
-
-// 洗牌算法
-const shuffleArray = (array) => {
-  const newArray = [...array]
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[newArray[i], newArray[j]] = [newArray[j], newArray[i]]
-  }
-  return newArray
-}
-
-// 初始化练习列表
-const initPracticeList = () => {
-  // 只使用错误字根进行练习
-  practiceList.value = shuffleArray([...errorRadicals.value])
-  currentIndex.value = 0
-  totalCount.value = 0
-  correctCount.value = 0
-  wrongCount.value = 0
-  elapsedTime.value = 0
-}
-
-// 开始练习
-const startPractice = () => {
+// 初始化练习
+const initPractice = () => {
   loadErrorRadicals()
-  
+
   if (errorRadicals.value.length === 0) {
-    feedback.value = '🎉 恭喜！目前没有需要练习的错误字根。'
-    feedbackType.value = 'success'
     return
   }
-  
-  initPracticeList()
-  loadCurrentRoot()
-  startTime.value = Date.now()
+
+  // 使用随机模式初始化
+  engine.initPractice(errorRadicals.value, 'random')
+  userInput.value = ''
+  showResult.value = false
+  feedback.value = ''
+  showResumeDialog.value = false
+  isRestarted.value = false
   startTimer()
-  feedback.value = `开始错误字根练习！共 ${errorRadicals.value.length} 个需要练习的字根`
-  feedbackType.value = 'info'
   focusInput()
 }
 
-// 加载当前字根
-const loadCurrentRoot = () => {
-  if (currentIndex.value >= practiceList.value.length) {
-    completePractice()
-    return
-  }
-  currentRoot.value = practiceList.value[currentIndex.value]
-  userInput.value = ''
-  isCorrect.value = false
-  isWrong.value = false
+const focusInput = () => {
+  nextTick(() => {
+    safeFocus(inputRef.value, 100)
+  })
 }
 
 // 验证输入
 const validateInput = () => {
-  if (!userInput.value || !currentRoot.value) return
+  if (!userInput.value || !currentRoot.value || showResult.value) return
 
-  totalCount.value++
   const input = userInput.value.toLowerCase().trim()
-  const code = currentRoot.value.code.toLowerCase()
-  const rootId = `${currentRoot.value.character}-${currentRoot.value.code}`
+  const code = currentCode.value.toLowerCase()
 
-  if (input === code) {
-    handleCorrect(rootId)
-  } else {
-    handleWrong(code, rootId)
+  if (!code) {
+    console.warn('当前字根没有编码信息')
+    return
   }
-}
 
-// 处理正确答案
-const handleCorrect = (rootId) => {
-  correctCount.value++
-  isCorrect.value = true
-  feedback.value = `✅ 正确！编码是：${currentCode.value}`
-  feedbackType.value = 'success'
-  
-  // 更新统计信息
-  if (!radicalStats.value[rootId]) {
-    radicalStats.value[rootId] = {
-      errorCount: 0,
-      correctCount: 0,
-      lastPracticed: null,
-      consecutiveCorrect: 0
+  showResult.value = true
+
+  const result = engine.validateInput(input, code)
+
+  if (result.isCorrect) {
+    isCorrect.value = true
+    const remaining = engine.config.repetitions - result.stats.consecutiveCorrect
+    feedback.value = `✅ 正确！还需 ${remaining} 遍`
+
+    if (result.stats.consecutiveCorrect >= engine.config.repetitions) {
+      feedback.value = '🎉 已掌握！'
+      removeFromErrors(currentRoot.value)
     }
-  }
-  radicalStats.value[rootId].correctCount++
-  radicalStats.value[rootId].lastPracticed = new Date().toISOString()
-  radicalStats.value[rootId].consecutiveCorrect++
-  
-  // 如果连续答对3次，标记为已掌握
-  if (radicalStats.value[rootId].consecutiveCorrect >= 3) {
-    markAsMastered(currentRoot.value)
-    feedback.value = `🎉 太棒了！字根 "${currentRoot.value.character}" 已掌握！`
-  }
-  
-  saveErrorRadicals()
 
-  setTimeout(() => {
-    nextRoot()
-  }, 800)
+    setTimeout(() => {
+      handleNext()
+    }, 800)
+  } else {
+    isCorrect.value = false
+    feedback.value = `❌ 错误！正确答案是 ${code.toUpperCase()}`
+
+    // 错误后跳过，继续循环本组
+    setTimeout(() => {
+      handleNext()
+    }, 1500)
+  }
+
+  saveProgress()
 }
 
-// 处理错误答案
-const handleWrong = (correctCode, rootId) => {
-  wrongCount.value++
-  isWrong.value = true
-  feedback.value = `❌ 错误！正确编码是：${correctCode}`
-  feedbackType.value = 'error'
-  
-  // 添加到错误字根列表
-  addErrorRadical(currentRoot.value)
-
-  setTimeout(() => {
-    nextRoot()
-  }, 1500)
+// 从错误列表移除
+const removeFromErrors = (root) => {
+  const rootId = `${root.character}-${root.code}`
+  const index = errorRadicals.value.findIndex(r => `${r.character}-${r.code}` === rootId)
+  if (index > -1) {
+    masteredRadicals.value.push(root)
+    errorRadicals.value.splice(index, 1)
+    saveErrorRadicals()
+  }
 }
 
-// 下一个字根
-const nextRoot = () => {
-  currentIndex.value++
-  feedback.value = ''
-  feedbackType.value = ''
-  loadCurrentRoot()
+// 处理下一个
+const handleNext = () => {
+  const result = engine.next()
+
+  if (result === 'complete') {
+    stopTimer()
+    feedback.value = `🎉 练习完成！掌握率 ${masteryRate.value}%`
+    clearProgress()
+    saveErrorRadicals()
+    return
+  }
+
+  if (result === 'next-group') {
+    feedback.value = '✨ 进入下一组！'
+  }
+
+  userInput.value = ''
+  showResult.value = false
   focusInput()
-}
-
-// 上一个字根
-const prevRoot = () => {
-  if (currentIndex.value > 0) {
-    currentIndex.value--
-    loadCurrentRoot()
-    feedback.value = ''
-    feedbackType.value = ''
-    focusInput()
-  }
+  saveProgress()
 }
 
 // 跳过当前字根
 const skipRoot = () => {
   feedback.value = '⏭️ 已跳过'
-  feedbackType.value = 'info'
+  showResult.value = true
+
   setTimeout(() => {
-    nextRoot()
-  }, 300)
-}
+    const result = engine.skip()
 
-// 完成练习
-const completePractice = () => {
-  stopTimer()
-  currentRoot.value = null
-  const timeSpent = formatTime(elapsedTime.value)
-  feedback.value = `🎉 练习完成！正确率：${accuracy.value}%，用时：${timeSpent}`
-  feedbackType.value = 'success'
-  isPaused.value = true
-}
+    if (result === 'complete') {
+      stopTimer()
+      return
+    }
 
-// 重新开始
-const restartPractice = () => {
-  isPaused.value = false
-  startPractice()
-}
-
-// 清除所有错误记录
-const clearAllErrors = () => {
-  if (confirm('确定要清除所有错误记录吗？这将重置您的练习进度。')) {
-    errorRadicals.value = []
-    masteredRadicals.value = []
-    radicalStats.value = {}
-    saveErrorRadicals()
-    startPractice()
-  }
+    userInput.value = ''
+    showResult.value = false
+    focusInput()
+    saveProgress()
+  }, 500)
 }
 
 // 暂停/继续
 const togglePause = () => {
-  isPaused.value = !isPaused.value
+  engine.togglePause()
   if (isPaused.value) {
     stopTimer()
     feedback.value = '⏸️ 已暂停'
-    feedbackType.value = 'info'
   } else {
     startTimer()
-    feedback.value = '▶️ 继续练习'
-    feedbackType.value = 'info'
+    feedback.value = ''
     focusInput()
   }
 }
 
-// 开始计时
+// 重新开始并返回首页
+const restartPractice = () => {
+  stopTimer()
+  clearProgress()
+  isRestarted.value = true
+  initPractice()
+}
+
+// 清除所有错误记录并返回首页
+const clearAllErrors = () => {
+  if (confirm('确定要清除所有错误记录吗？这将重置您的练习进度。')) {
+    errorRadicals.value = []
+    masteredRadicals.value = []
+    saveErrorRadicals()
+    clearProgress()
+    window.location.href = '/'
+  }
+}
+
+// 计时器
 const startTimer = () => {
   if (timer) clearInterval(timer)
   timer = setInterval(() => {
-    elapsedTime.value++
+    engine.updateElapsedTime()
   }, 1000)
 }
 
-// 停止计时
 const stopTimer = () => {
   if (timer) {
     clearInterval(timer)
@@ -395,585 +260,1019 @@ const stopTimer = () => {
   }
 }
 
-// 格式化时间
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+// 保存进度
+const saveProgress = () => {
+  const state = engine.serializeState()
+  state.errorRadicals = errorRadicals.value
+  state.masteredRadicals = masteredRadicals.value
+  safeSetItem(STORAGE_KEYS.PRACTICE_PROGRESS, state)
 }
 
-// 聚焦输入框
-const focusInput = () => {
-  setTimeout(() => {
-    if (inputRef.value) {
-      inputRef.value.focus()
-    }
-  }, 100)
+// 恢复进度
+const restoreProgress = async () => {
+  const saved = safeGetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
+  if (!saved) return false
+
+  if (Date.now() - saved.timestamp > PROGRESS_MAX_AGE) {
+    clearProgress()
+    return false
+  }
+
+  // 恢复错误字根列表
+  errorRadicals.value = saved.errorRadicals || []
+  masteredRadicals.value = saved.masteredRadicals || []
+
+  if (errorRadicals.value.length === 0) {
+    return false
+  }
+
+  // 恢复引擎状态
+  engine.deserializeState(saved, errorRadicals.value, 'random')
+
+  // 等待 Vue 更新 DOM
+  await nextTick()
+
+  // 恢复本地状态
+  userInput.value = ''
+  showResult.value = false
+  feedback.value = ''
+
+  // 启动计时器和聚焦
+  startTimer()
+  focusInput()
+  return true
 }
 
-// 键盘事件处理
+// 清除进度
+const clearProgress = () => {
+  safeSetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
+}
+
+// 键盘事件
 const handleKeydown = (e) => {
+  if (isComplete.value) return
+
   if (e.key === 'Enter') {
     e.preventDefault()
-    if (userInput.value) {
+    if (showResult.value) {
+      handleNext()
+    } else if (userInput.value) {
       validateInput()
-    } else {
-      nextRoot()
     }
   } else if (e.key === 'Escape') {
     e.preventDefault()
     togglePause()
   } else if (e.ctrlKey && e.key === 'ArrowRight') {
     e.preventDefault()
-    nextRoot()
-  } else if (e.ctrlKey && e.key === 'ArrowLeft') {
-    e.preventDefault()
-    prevRoot()
-  } else if (e.key === 'Tab') {
-    e.preventDefault()
-    skipRoot()
+    if (showResult.value) {
+      handleNext()
+    } else {
+      skipRoot()
+    }
   }
+}
+
+// 处理输入
+const handleInput = () => {
+  if (showResult.value) {
+    userInput.value = ''
+    return
+  }
+
+  if (userInput.value.length >= currentCode.value.length) {
+    validateInput()
+  }
+}
+
+// 处理恢复对话框
+const handleResume = async () => {
+  // 先恢复进度
+  await restoreProgress()
+  showResumeDialog.value = false
+}
+
+const handleRestartFromDialog = () => {
+  showResumeDialog.value = false
+  clearProgress()
+  isRestarted.value = true
+  initPractice()
 }
 
 // 生命周期
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
-  startPractice()
+
+  loadErrorRadicals()
+
+  const saved = safeGetItem(STORAGE_KEYS.PRACTICE_PROGRESS, null)
+  if (saved && !saved.isComplete && Date.now() - saved.timestamp < PROGRESS_MAX_AGE) {
+    showResumeDialog.value = true
+  } else {
+    initPractice()
+  }
 })
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   stopTimer()
+
+  if (!isRestarted.value && !isComplete.value && currentRoot.value) {
+    saveProgress()
+  }
+})
+
+// 监听完成状态
+watch(isComplete, (newVal) => {
+  if (newVal) {
+    stopTimer()
+    clearProgress()
+    saveErrorRadicals()
+  }
 })
 </script>
 
 <template>
-  <div class="error-practice-container">
-    <!-- 顶部统计栏 -->
-    <div class="stats-bar">
-      <div class="stat-item">
-        <span class="stat-label">错误字根</span>
-        <span class="stat-value error">{{ remainingErrors }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">已掌握</span>
-        <span class="stat-value success">{{ masteredCount }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">掌握率</span>
-        <span class="stat-value" :class="{ 'success': masteryRate >= 80, 'warning': masteryRate < 80 }">
-          {{ masteryRate }}%
-        </span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">正确率</span>
-        <span class="stat-value" :class="{ 'success': accuracy >= 80, 'warning': accuracy < 80 }">
-          {{ accuracy }}%
-        </span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">用时</span>
-        <span class="stat-value">{{ formatTime(elapsedTime) }}</span>
-      </div>
-    </div>
-
-    <!-- 进度条 -->
-    <div class="progress-bar">
-      <div class="progress-fill" :style="{ width: progress + '%' }"></div>
-    </div>
-
-    <!-- 主练习区域 -->
-    <div class="practice-area" v-if="currentRoot && !isPaused && errorRadicals.length > 0">
-      <!-- 字根显示 -->
-      <div class="root-display">
-        <div 
-          v-if="canDisplayCurrentRoot" 
-          class="root-character"
-        >
-          {{ currentRoot.character }}
-        </div>
-        <div 
-          v-else 
-          class="root-character root-unicode"
-        >
-          <div class="unicode-code">{{ charUnicode }}</div>
-          <div class="unicode-hint">{{ currentHint }}</div>
-        </div>
-      </div>
-      
-      <!-- 提示信息 -->
-      <div class="hint-display">
-        {{ currentHint }}
-      </div>
-
-      <!-- 输入区域 -->
-      <div class="input-area">
-        <input
-          ref="inputRef"
-          v-model="userInput"
-          type="text"
-          maxlength="10"
-          placeholder="输入字根编码"
-          class="code-input"
-          :class="{ 'correct': isCorrect, 'wrong': isWrong }"
-          @input="validateInput"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        
-        <!-- 反馈信息 -->
-        <div v-if="feedback" class="feedback-message" :class="feedbackType">
-          {{ feedback }}
-        </div>
-      </div>
-
-      <!-- 控制按钮 -->
-      <div class="control-buttons">
-        <button @click="prevRoot" class="btn btn-secondary" :disabled="currentIndex === 0">
-          ← 上一个
-        </button>
-        <button @click="skipRoot" class="btn btn-warning">
-          跳过
-        </button>
-        <button @click="nextRoot" class="btn btn-primary">
-          下一个 →
-        </button>
-        <button @click="togglePause" class="btn btn-secondary">
-          {{ isPaused ? '▶️ 继续' : '⏸️ 暂停' }}
-        </button>
-        <button @click="clearAllErrors" class="btn btn-danger">
-          🗑️ 清除记录
-        </button>
-      </div>
-    </div>
-
-    <!-- 无错误字根提示 -->
-    <div v-if="errorRadicals.length === 0" class="no-errors-message">
-      <div class="success-icon">🎉</div>
-      <h2>恭喜！没有需要练习的错误字根</h2>
-      <p>您的字根掌握情况非常好！继续保持！</p>
-      <div class="suggestions">
-        <p>建议：</p>
-        <ul>
-          <li>继续进行 <a href="/practice/modern">顺序字根练习</a></li>
-          <li>尝试 <a href="/practice/random">随机模式练习</a></li>
-          <li>挑战 <a href="/practice/top500">常用字根练习</a></li>
-        </ul>
-      </div>
-    </div>
-
-    <!-- 完成界面 -->
-    <div class="complete-screen" v-if="(!currentRoot || isPaused) && errorRadicals.length > 0">
-      <div v-if="isPaused" class="pause-content">
-        <h2>⏸️ 已暂停</h2>
-        <div class="complete-stats">
-          <div class="stat">
-            <span class="stat-number">{{ currentIndex }}</span>
-            <span class="stat-label">已完成</span>
-          </div>
-          <div class="stat">
-            <span class="stat-number">{{ accuracy }}%</span>
-            <span class="stat-label">正确率</span>
-          </div>
-          <div class="stat">
-            <span class="stat-number">{{ formatTime(elapsedTime) }}</span>
-            <span class="stat-label">用时</span>
-          </div>
-        </div>
-        <div class="complete-actions">
-          <button @click="togglePause" class="btn btn-large btn-primary">
+  <div class="tiger-practice-container">
+    <!-- 悬浮恢复对话框 -->
+    <div v-if="showResumeDialog" class="floating-resume-banner">
+      <div class="resume-content">
+        <span class="resume-text">💾 发现未完成的错误字根练习</span>
+        <div class="resume-buttons">
+          <button @click="handleResume" class="btn-resume btn-continue">
             继续练习
           </button>
-          <button @click="restartPractice" class="btn btn-large btn-secondary">
+          <button @click="handleRestartFromDialog" class="btn-resume btn-restart">
             重新开始
           </button>
         </div>
       </div>
+    </div>
 
-      <div v-else class="complete-content">
-        <h2>🎉 练习完成！</h2>
+    <header class="practice-header">
+      <h1 class="practice-title">错误字根练习</h1>
+      <div class="practice-mode">
+        <span class="mode-badge error-mode">错题模式</span>
+        <span class="mode-badge group-mode">分组练习</span>
+      </div>
+    </header>
+
+    <!-- 统计面板 -->
+    <div class="stats-panel">
+      <div class="stat-box">
+        <span class="stat-number">{{ remainingCount }}</span>
+        <span class="stat-label">待掌握</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number text-success">{{ masteredCount }}</span>
+        <span class="stat-label">已掌握</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number" :class="{ 'text-success': masteryRate >= 70, 'text-warning': masteryRate < 50 }">
+          {{ masteryRate }}%
+        </span>
+        <span class="stat-label">掌握率</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number" :class="{ 'text-success': accuracy >= 80, 'text-warning': accuracy < 60 }">
+          {{ accuracy }}%
+        </span>
+        <span class="stat-label">正确率</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
+        <span class="stat-label">队列</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ formatTime(elapsedTime) }}</span>
+        <span class="stat-label">用时</span>
+      </div>
+    </div>
+
+    <div class="progress-track">
+      <div class="progress-fill" :style="{ width: progress + '%' }"></div>
+    </div>
+
+    <!-- 组进度信息 -->
+    <div class="group-info" v-if="!isComplete && !isPaused && errorRadicals.length > 0">
+      <span>第 {{ groupProgress.current }}/{{ groupProgress.total }} 组</span>
+      <span>队列: {{ groupProgress.queueProgress }}/{{ groupProgress.queueTotal }}</span>
+      <span v-if="currentRootStats">
+        当前: {{ currentRootStats.consecutiveCorrect }}/{{ engine.config.repetitions }} 遍正确
+      </span>
+    </div>
+
+    <!-- 空状态 -->
+    <div v-if="errorRadicals.length === 0 && !isComplete" class="empty-state">
+      <div class="empty-icon">🎉</div>
+      <h2>恭喜！没有需要练习的错误字根</h2>
+      <p>您的字根掌握情况非常好！继续保持！</p>
+      <div class="empty-actions">
+        <a href="/practice/modern" class="btn btn-primary">顺序练习</a>
+        <a href="/practice/random" class="btn btn-secondary">随机练习</a>
+        <a href="/" class="btn btn-secondary">返回首页</a>
+      </div>
+    </div>
+
+    <!-- 主练习区域 -->
+    <main class="practice-main" v-if="!isComplete && errorRadicals.length > 0 && !isPaused">
+      <div class="character-display">
+        <div v-if="canDisplayCurrentRoot" class="character">
+          {{ currentRoot?.character }}
+        </div>
+        <div v-else class="character unicode-fallback">
+          <span class="unicode-code">{{ charUnicode }}</span>
+          <span class="unicode-hint">{{ currentHint }}</span>
+        </div>
+        <div class="character-hint">{{ currentHint }}</div>
+      </div>
+
+      <div class="input-section">
+        <div class="input-wrapper" :class="{ correct: showResult && isCorrect, wrong: showResult && !isCorrect }">
+          <input
+            ref="inputRef"
+            v-model="userInput"
+            @input="handleInput"
+            type="text"
+            class="code-input"
+            :placeholder="showResult ? '按 Enter 继续' : '输入编码'"
+            :disabled="showResult"
+            maxlength="2"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <div v-if="feedback" class="feedback-text" :class="{ success: isCorrect, error: !isCorrect }">
+            {{ feedback }}
+          </div>
+        </div>
+      </div>
+
+      <RadicalKeyboard
+        :current-code="currentCode"
+        :user-input="userInput"
+        :show-result="showResult"
+        :is-correct="isCorrect"
+      />
+
+      <div class="action-buttons">
+        <button @click="skipRoot" class="btn btn-secondary" :disabled="showResult">
+          <span class="btn-icon">⏭</span>
+          <span>跳过</span>
+          <kbd class="key-hint">Ctrl+→</kbd>
+        </button>
+        <button @click="togglePause" class="btn btn-secondary">
+          <span class="btn-icon">{{ isPaused ? '▶' : '⏸' }}</span>
+          <span>{{ isPaused ? '继续' : '暂停' }}</span>
+          <kbd class="key-hint">Esc</kbd>
+        </button>
+        <button @click="clearAllErrors" class="btn btn-danger">
+          <span class="btn-icon">🗑</span>
+          <span>清除记录</span>
+        </button>
+      </div>
+    </main>
+
+    <!-- 暂停界面 -->
+    <div v-if="isPaused && !isComplete" class="pause-overlay">
+      <div class="pause-content">
+        <div class="pause-icon">⏸</div>
+        <h2>练习已暂停</h2>
+        <div class="pause-stats">
+          <div class="pause-stat">
+            <span class="pause-value">{{ remainingCount }}</span>
+            <span class="pause-label">待掌握</span>
+          </div>
+          <div class="pause-stat">
+            <span class="pause-value">{{ masteredCount }}</span>
+            <span class="pause-label">已掌握</span>
+          </div>
+          <div class="pause-stat">
+            <span class="pause-value">{{ masteryRate }}%</span>
+            <span class="pause-label">掌握率</span>
+          </div>
+          <div class="pause-stat">
+            <span class="pause-value">{{ formatTime(elapsedTime) }}</span>
+            <span class="pause-label">用时</span>
+          </div>
+        </div>
+        <button @click="togglePause" class="btn btn-primary btn-large">
+          <span class="btn-icon">▶</span>
+          <span>继续练习</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 完成界面 - 只在还有错误字根时显示 -->
+    <div v-if="isComplete && errorRadicals.length > 0" class="complete-overlay">
+      <div class="complete-content">
+        <div class="complete-icon">🎉</div>
+        <h2>练习完成！</h2>
         <div class="complete-stats">
-          <div class="stat">
-            <span class="stat-number">{{ correctCount }}</span>
-            <span class="stat-label">正确</span>
+          <div class="complete-stat">
+            <span class="complete-value">{{ masteryRate }}%</span>
+            <span class="complete-label">掌握率</span>
           </div>
-          <div class="stat">
-            <span class="stat-number">{{ wrongCount }}</span>
-            <span class="stat-label">错误</span>
+          <div class="complete-stat">
+            <span class="complete-value">{{ masteredCount }}</span>
+            <span class="complete-label">已掌握</span>
           </div>
-          <div class="stat">
-            <span class="stat-number">{{ accuracy }}%</span>
-            <span class="stat-label">正确率</span>
+          <div class="complete-stat">
+            <span class="complete-value">{{ accuracy }}%</span>
+            <span class="complete-label">正确率</span>
           </div>
-          <div class="stat">
-            <span class="stat-number">{{ formatTime(elapsedTime) }}</span>
-            <span class="stat-label">用时</span>
+          <div class="complete-stat">
+            <span class="complete-value">{{ formatTime(elapsedTime) }}</span>
+            <span class="complete-label">用时</span>
           </div>
         </div>
         <div class="complete-message">
-          {{ accuracy >= 80 ? '太棒了！继续保持！' : '加油！多练习就能提高！' }}
+          {{ masteryRate >= 80 ? '太棒了！错误字根已大部分掌握！' :
+             masteryRate >= 50 ? '做得不错！继续加油！' :
+             '坚持练习，你一定能掌握所有字根！' }}
         </div>
         <div class="complete-actions">
-          <button @click="restartPractice" class="btn btn-large btn-primary">
-            再来一次
+          <button @click="restartPractice" class="btn btn-primary btn-large">
+            <span class="btn-icon">🔄</span>
+            <span>再来一次</span>
           </button>
-          <button @click="clearAllErrors" class="btn btn-large btn-danger">
-            🗑️ 清除记录
+          <button @click="clearAllErrors" class="btn btn-danger btn-large">
+            <span class="btn-icon">🗑</span>
+            <span>清除记录</span>
           </button>
         </div>
       </div>
     </div>
 
-    <!-- 键盘快捷键提示 -->
-    <div class="keyboard-hints">
-      <span class="hint">Enter - 提交</span>
-      <span class="hint">Tab - 跳过</span>
-      <span class="hint">Ctrl+→ - 下一个</span>
-      <span class="hint">Ctrl+← - 上一个</span>
-      <span class="hint">ESC - 暂停</span>
-    </div>
+    <footer class="shortcuts-hint">
+      <span class="shortcut"><kbd>Enter</kbd> 提交/继续</span>
+      <span class="shortcut"><kbd>Ctrl</kbd>+<kbd>→</kbd> 跳过</span>
+      <span class="shortcut"><kbd>Esc</kbd> 暂停</span>
+    </footer>
   </div>
 </template>
 
 <style scoped>
-/* 导入统一练习卡片样式 */
-@import url('../styles/practice-styles.css');
-
-/* 自定义样式 */
-.error-practice-container {
+.tiger-practice-container {
   max-width: 800px;
   margin: 0 auto;
-  padding: 15px;
+  padding: 1.5rem;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  position: relative;
 }
 
-/* 统计栏样式覆盖 */
-.stats-bar {
-  background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 50%, #fd79a8 100%);
-  box-shadow: 0 4px 15px rgba(253, 121, 168, 0.3);
+/* ===== 悬浮恢复对话框 ===== */
+.floating-resume-banner {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
+  border: 1px solid #e2e8f0;
+  padding: 1rem 1.5rem;
+  animation: slideDown 0.3s ease-out;
 }
 
-/* 进度条样式覆盖 */
-.progress-bar {
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.resume-content {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.resume-text {
+  font-weight: 600;
+  color: #1e293b;
+  font-size: 1rem;
+}
+
+.resume-buttons {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.btn-resume {
+  padding: 0.625rem 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.btn-resume:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-resume:active {
+  transform: translateY(0);
+}
+
+.btn-continue {
+  background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+  color: white;
+}
+
+.btn-continue::before {
+  content: '▶';
+  font-size: 0.75rem;
+}
+
+.btn-continue:hover {
+  background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+.btn-restart {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #475569;
+  border: 2px solid #e2e8f0;
+}
+
+.btn-restart::before {
+  content: '↺';
+  font-size: 0.875rem;
+}
+
+.btn-restart:hover {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+  color: #334155;
+}
+
+.practice-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.practice-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 0.5rem 0;
+}
+
+.practice-mode {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.mode-badge.error-mode {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.mode-badge.group-mode {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.stat-box {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.75rem;
+  text-align: center;
+  transition: box-shadow 0.2s;
+}
+
+.stat-box:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.stat-number {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin-bottom: 0.25rem;
+}
+
+.stat-number.text-success {
+  color: #16a34a;
+}
+
+.stat-number.text-warning {
+  color: #dc2626;
+}
+
+.stat-label {
+  font-size: 0.7rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.progress-track {
   height: 8px;
-  background: #e5e7eb;
+  background: #e2e8f0;
   border-radius: 4px;
-  margin-bottom: 30px;
   overflow: hidden;
+  margin-bottom: 0.75rem;
 }
 
 .progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #fd79a8 0%, #e17055 100%);
-  transition: width 0.3s ease;
+  background: linear-gradient(90deg, #ef4444, #f97316);
   border-radius: 4px;
+  transition: width 0.3s ease;
 }
 
-/* 练习区域样式覆盖 */
-.practice-area {
-  background: linear-gradient(135deg, #ffeaa7 0%, #fab1a0 50%, #fd79a8 100%);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+.group-info {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.875rem;
+  color: #64748b;
+  flex-wrap: wrap;
 }
 
-/* 字根显示样式覆盖 */
-.root-character {
-  font-size: 100px;
-  font-weight: bold;
-  color: #1f2937;
-  line-height: 1.2;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
-  animation: pulse 2s ease-in-out infinite;
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-radius: 16px;
+  border: 1px solid #bbf7d0;
 }
 
-.root-unicode {
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.empty-state h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #166534;
+  margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+  font-size: 1rem;
+  color: #15803d;
+  margin-bottom: 1.5rem;
+}
+
+.empty-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.practice-main {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 120px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 12px;
-  padding: 20px;
-  border: 2px dashed #9ca3af;
+  gap: 2rem;
+}
+
+.character-display {
+  text-align: center;
+}
+
+.character {
+  font-size: 8rem;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1;
+  margin-bottom: 0.5rem;
+  font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+}
+
+.character.unicode-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .unicode-code {
+  font-size: 2rem;
   font-family: 'Courier New', monospace;
-  font-size: 24px;
-  font-weight: bold;
-  color: #4b5563;
-  margin-bottom: 10px;
-  background: #f3f4f6;
-  padding: 10px 20px;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 0.5rem 1rem;
   border-radius: 8px;
 }
 
 .unicode-hint {
-  font-size: 18px;
-  color: #6b7280;
+  font-size: 1rem;
+  color: #64748b;
+}
+
+.character-hint {
+  font-size: 1.125rem;
+  color: #64748b;
   font-weight: 500;
-  text-align: center;
+}
+
+.input-section {
+  width: 100%;
   max-width: 300px;
 }
 
-/* 提示信息样式覆盖 */
-.hint-display {
-  text-align: center;
-  font-size: 18px;
-  color: #6b7280;
-  padding: 15px;
-  background: rgba(253, 121, 168, 0.1);
-  border-radius: 8px;
-  margin: 1.5rem auto;
-  max-width: 500px;
-  font-weight: 500;
-  border: 1px solid rgba(253, 121, 168, 0.2);
-}
-
-/* 输入区域样式覆盖 */
-.code-input:focus {
-  border-color: #fd79a8;
-  box-shadow: 0 0 0 4px rgba(253, 121, 168, 0.2);
-}
-
-/* 按钮样式覆盖 */
-.btn-primary {
-  background: linear-gradient(135deg, #fd79a8 0%, #e17055 100%);
-  color: white;
-  box-shadow: 0 8px 24px rgba(253, 121, 168, 0.3);
-}
-
-/* 无错误字根提示 */
-.no-errors-message {
-  background: linear-gradient(135deg, #a7e6c3 0%, #6ee7b7 50%, #34d399 100%);
-  border-radius: 16px;
-  padding: 60px 40px;
-  text-align: center;
-  margin-bottom: 20px;
-  box-shadow: 0 8px 30px rgba(52, 211, 153, 0.3);
-}
-
-.success-icon {
-  font-size: 60px;
-  margin-bottom: 20px;
-}
-
-.no-errors-message h2 {
-  font-size: 28px;
-  color: #1f2937;
-  margin-bottom: 15px;
-}
-
-.no-errors-message p {
-  font-size: 18px;
-  color: #374151;
-  margin-bottom: 25px;
-}
-
-.suggestions {
-  background: rgba(255, 255, 255, 0.9);
-  border-radius: 12px;
-  padding: 20px;
-  text-align: left;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.suggestions p {
-  font-weight: bold;
-  color: #1f2937;
-  margin-bottom: 10px;
-}
-
-.suggestions ul {
-  list-style: none;
-  padding: 0;
-}
-
-.suggestions li {
-  margin-bottom: 8px;
-  padding-left: 20px;
+.input-wrapper {
   position: relative;
 }
 
-.suggestions li:before {
-  content: "→";
+.input-wrapper.correct .code-input {
+  border-color: #22c55e;
+  background: #f0fdf4;
+}
+
+.input-wrapper.wrong .code-input {
+  border-color: #ef4444;
+  background: #fef2f2;
+}
+
+.code-input {
+  width: 100%;
+  padding: 1rem 1.5rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #1e293b;
+  background: white;
+  border: 2px solid #e2e8f0;
+  border-radius: 12px;
+  transition: all 0.2s;
+  outline: none;
+}
+
+.code-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.code-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.feedback-text {
   position: absolute;
+  bottom: -1.75rem;
   left: 0;
-  color: #34d399;
+  right: 0;
+  text-align: center;
+  font-size: 0.875rem;
+  font-weight: 500;
 }
 
-.suggestions a {
-  color: #fd79a8;
+.feedback-text.success {
+  color: #16a34a;
+}
+
+.feedback-text.error {
+  color: #dc2626;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
   text-decoration: none;
-  font-weight: bold;
 }
 
-.suggestions a:hover {
-  text-decoration: underline;
+.btn:hover:not(:disabled) {
+  transform: translateY(-1px);
 }
 
-/* 完成界面样式覆盖 */
-.complete-screen {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.9) 100%);
-  border-radius: 20px;
-  padding: 60px 40px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+.btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.btn-secondary {
+  background: white;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.btn-success {
+  background: #22c55e;
+  color: white;
+  border-color: #22c55e;
+}
+
+.btn-success:hover:not(:disabled) {
+  background: #16a34a;
+  border-color: #16a34a;
+}
+
+.btn-danger {
+  background: #ef4444;
+  color: white;
+  border-color: #ef4444;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #dc2626;
+  border-color: #dc2626;
+}
+
+.btn-large {
+  padding: 0.875rem 1.5rem;
+  font-size: 1rem;
+}
+
+.btn-icon {
+  font-size: 1.125rem;
+}
+
+.key-hint {
+  margin-left: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  font-family: inherit;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  color: #64748b;
+}
+
+.pause-overlay,
+.complete-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+
+.pause-content,
+.complete-content {
+  text-align: center;
+  padding: 2rem;
+  max-width: 500px;
+  width: 90%;
+}
+
+.pause-icon,
+.complete-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+}
+
+.pause-content h2,
+.complete-content h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 1.5rem 0;
+}
+
+.pause-stats,
+.complete-stats {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.pause-stat,
+.complete-stat {
   text-align: center;
 }
 
-.complete-screen h2 {
-  font-size: 32px;
-  background: linear-gradient(135deg, #fd79a8 0%, #e17055 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  margin-bottom: 40px;
-  font-weight: 900;
-}
-
-.complete-stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 30px;
-  margin-bottom: 30px;
-}
-
-.stat {
-  background: rgba(255, 255, 255, 0.8);
-  padding: 1.5rem;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
-}
-
-.stat-number {
-  font-size: 48px;
-  font-weight: 900;
-  background: linear-gradient(135deg, #fd79a8 0%, #e17055 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+.pause-value,
+.complete-value {
   display: block;
-  margin-bottom: 0.5rem;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #3b82f6;
+  margin-bottom: 0.25rem;
 }
 
-.stat-label {
-  font-size: 14px;
-  color: #6b7280;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  font-weight: 600;
+.pause-label,
+.complete-label {
+  font-size: 0.875rem;
+  color: #64748b;
 }
 
 .complete-message {
-  font-size: 20px;
-  color: #374151;
-  margin-bottom: 40px;
-  font-weight: bold;
+  font-size: 1.125rem;
+  color: #475569;
+  margin-bottom: 2rem;
 }
 
 .complete-actions {
   display: flex;
   justify-content: center;
-  gap: 20px;
+  gap: 1rem;
 }
 
-/* 键盘提示样式覆盖 */
-.keyboard-hints {
+.shortcuts-hint {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #e2e8f0;
   display: flex;
   justify-content: center;
-  gap: 20px;
-  margin-top: 30px;
+  gap: 1.5rem;
   flex-wrap: wrap;
 }
 
-.hint {
-  background: #f3f4f6;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #6b7280;
-  display: flex;
-  align-items: center;
-  gap: 5px;
+.shortcut {
+  font-size: 0.75rem;
+  color: #64748b;
 }
 
-.hint kbd {
-  background: white;
-  padding: 2px 8px;
+.shortcut kbd {
+  padding: 0.25rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
-  font-family: monospace;
-  font-size: 12px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  color: #475569;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .stats-bar {
-    flex-wrap: wrap;
-    gap: 10px;
+@media (max-width: 640px) {
+  .tiger-practice-container {
+    padding: 1rem;
   }
-  
-  .stat-item {
-    flex: 1 1 40%;
+
+  .floating-resume-banner {
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    top: 70px;
   }
-  
-  .root-character {
-    font-size: 70px;
-  }
-  
-  .practice-area {
-    padding: 25px 15px;
-  }
-  
-  .complete-stats {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 15px;
-  }
-  
-  .control-buttons {
+
+  .resume-content {
     flex-direction: column;
+    gap: 1rem;
   }
-  
+
+  .practice-title {
+    font-size: 1.5rem;
+  }
+
+  .stats-panel {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .stat-box {
+    padding: 0.5rem;
+  }
+
+  .stat-number {
+    font-size: 1.125rem;
+  }
+
+  .stat-label {
+    font-size: 0.65rem;
+  }
+
+  .group-info {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .character {
+    font-size: 6rem;
+  }
+
+  .code-input {
+    font-size: 1.25rem;
+    padding: 0.875rem 1.25rem;
+  }
+
+  .action-buttons {
+    gap: 0.5rem;
+  }
+
   .btn {
-    width: 100%;
-    justify-content: center;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.875rem;
   }
-  
-  .keyboard-hints {
-    gap: 10px;
+
+  .pause-stats,
+  .complete-stats {
+    flex-direction: column;
+    gap: 1rem;
   }
-  
-  .hint {
-    font-size: 10px;
-    padding: 4px 10px;
+
+  .shortcuts-hint {
+    gap: 0.75rem;
   }
 }
 
 @media (max-width: 480px) {
-  .stat-value {
-    font-size: 18px;
+  .stats-panel {
+    grid-template-columns: repeat(2, 1fr);
   }
-  
-  .root-character {
-    font-size: 50px;
+
+  .character {
+    font-size: 5rem;
   }
-  
+
+  .empty-actions {
+    flex-direction: column;
+  }
+
+  .shortcuts-hint {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-resume-banner {
+    animation: none;
+  }
+
+  .progress-fill,
+  .btn,
+  .stat-box,
   .code-input {
-    font-size: 18px;
-    padding: 10px 12px;
+    transition: none;
   }
-  
-  .complete-screen {
-    padding: 30px 15px;
+}
+
+@media (prefers-contrast: high) {
+  .code-input {
+    border-width: 3px;
   }
-  
-  .complete-screen h2 {
-    font-size: 20px;
-  }
-  
-  .stat-number {
-    font-size: 30px;
+
+  .btn {
+    border-width: 2px;
   }
 }
 </style>

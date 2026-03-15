@@ -1,13 +1,35 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { allRoots } from '../data/rootData.js'
 import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
 import { saveProgress, loadProgress, clearProgress } from '../utils/PracticeProgressManager.js'
+import {
+  safeGetItem,
+  safeSetItem,
+  isStorageAvailable
+} from '../utils/safeStorage.js'
+import {
+  shuffleArray,
+  safeParseInt,
+  safeParseNumber,
+  formatTime,
+  debounce,
+  safeFocus,
+  prefersReducedMotion
+} from '../utils/safeUtils.js'
 
 /**
- * 现代化字根练习组件
- * 参考 tiger-code 设计风格
+ * 现代化字根练习组件 - 健壮优化版本
+ * 优化点：
+ * 1. 使用安全存储工具处理 localStorage
+ * 2. 使用防抖处理输入验证
+ * 3. 增强边界检查
+ * 4. 支持减少动画偏好
  */
+
+// 常量定义
+const ERROR_RADICALS_KEY = 'errorRadicals'
+const PROGRESS_MAX_AGE = 7 * 24 * 60 * 60 * 1000 // 7天
 
 // 组件属性
 const props = defineProps({
@@ -94,15 +116,7 @@ const charUnicode = computed(() => {
   return 'U+' + char.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
 })
 
-// 洗牌算法
-const shuffleArray = (array) => {
-  const newArray = [...array]
-  for (let i = newArray.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[newArray[i], newArray[j]] = [newArray[j], newArray[i]]
-  }
-  return newArray
-}
+// 使用工具函数中的 shuffleArray
 
 // 初始化练习列表
 const initPracticeList = () => {
@@ -151,20 +165,25 @@ const loadCurrentRoot = () => {
   isWrong.value = false
 }
 
-// 验证输入
-const validateInput = () => {
+// 验证输入 - 使用防抖优化
+const validateInput = debounce(() => {
   if (!userInput.value || !currentRoot.value) return
 
   totalCount.value++
   const input = userInput.value.toLowerCase().trim()
-  const code = currentRoot.value.code.toLowerCase()
+  const code = currentRoot.value.code?.toLowerCase() || ''
+  
+  if (!code) {
+    console.warn('当前字根没有编码信息')
+    return
+  }
 
   if (input === code) {
     handleCorrect()
   } else {
     handleWrong(code)
   }
-}
+}, 150, false)
 
 // 处理正确答案
 const handleCorrect = () => {
@@ -216,24 +235,24 @@ const saveCurrentProgress = () => {
 
 // 恢复进度
 const restoreProgress = (progressData) => {
-  if (!progressData) return false
+  if (!progressData || typeof progressData !== 'object') return false
   
   try {
     // 检查进度是否过期（7天）
-    const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000
-    if (Date.now() - progressData.timestamp > SEVEN_DAYS) {
+    const timestamp = safeParseNumber(progressData.timestamp, 0)
+    if (Date.now() - timestamp > PROGRESS_MAX_AGE) {
       console.log('进度已过期')
       return false
     }
     
-    // 恢复状态
-    currentIndex.value = progressData.currentIndex || 0
-    practiceList.value = progressData.practiceList || []
-    correctCount.value = progressData.correctCount || 0
-    totalCount.value = progressData.totalCount || 0
-    wrongCount.value = progressData.wrongCount || 0
-    elapsedTime.value = progressData.elapsedTime || 0
-    isPaused.value = progressData.isPaused || false
+    // 恢复状态 - 使用安全解析
+    currentIndex.value = safeParseInt(progressData.currentIndex, 0)
+    practiceList.value = Array.isArray(progressData.practiceList) ? progressData.practiceList : []
+    correctCount.value = safeParseInt(progressData.correctCount, 0)
+    totalCount.value = safeParseInt(progressData.totalCount, 0)
+    wrongCount.value = safeParseInt(progressData.wrongCount, 0)
+    elapsedTime.value = safeParseInt(progressData.elapsedTime, 0)
+    isPaused.value = !!progressData.isPaused
     
     // 加载当前字根
     if (currentIndex.value < practiceList.value.length) {
@@ -258,26 +277,23 @@ const restoreProgress = (progressData) => {
   }
 }
 
-// 保存错误字根到本地存储
+// 保存错误字根到本地存储 - 使用安全存储
 const saveErrorRadical = (root) => {
   if (!root) return
   
-  try {
-    // 加载现有的错误字根
-    const saved = localStorage.getItem('errorRadicals')
-    let errorRadicals = saved ? JSON.parse(saved) : []
-    
-    const rootId = `${root.character}-${root.code}`
-    
-    // 检查是否已经存在
-    const exists = errorRadicals.some(r => `${r.character}-${r.code}` === rootId)
-    if (!exists) {
-      errorRadicals.push(root)
-      localStorage.setItem('errorRadicals', JSON.stringify(errorRadicals))
+  // 加载现有的错误字根
+  const errorRadicals = safeGetItem(ERROR_RADICALS_KEY, [])
+  
+  const rootId = `${root.character}-${root.code}`
+  
+  // 检查是否已经存在
+  const exists = errorRadicals.some(r => `${r.character}-${r.code}` === rootId)
+  if (!exists) {
+    errorRadicals.push(root)
+    const success = safeSetItem(ERROR_RADICALS_KEY, errorRadicals)
+    if (success) {
       console.log('错误字根已保存:', root.character)
     }
-  } catch (error) {
-    console.error('保存错误字根失败:', error)
   }
 }
 
@@ -357,20 +373,13 @@ const stopTimer = () => {
   }
 }
 
-// 格式化时间
-const formatTime = (seconds) => {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
+// 格式化时间 - 使用工具函数
 
-// 聚焦输入框
+// 聚焦输入框 - 使用 safeFocus
 const focusInput = () => {
-  setTimeout(() => {
-    if (inputRef.value) {
-      inputRef.value.focus()
-    }
-  }, 100)
+  nextTick(() => {
+    safeFocus(inputRef.value, 50)
+  })
 }
 
 // 键盘事件处理

@@ -4,22 +4,47 @@ import { defineConfig } from 'vitepress'
 export default defineConfig({
   lang: 'zh-CN',
   title: "字源形码",
-  description: "入门简单且性能强的形码输入法",
+  description: "字源形码 - 入门简单的形码输入法，仅需20个核心字根，30分钟即可上手打字",
   lastUpdated: true,
   cleanUrls: true,
+
+  // 性能优化配置
+  cacheDir: '.vitepress/cache',
+
+  // 构建优化
+  vite: {
+    build: {
+      chunkSizeWarningLimit: 1000
+    },
+    // 优化开发体验
+    server: {
+      host: true
+    }
+  },
+  
   head: [
-    ['meta', { name: 'keywords', content: '字源,形码,输入法,五笔,拼音,短拼' }],
+    ['meta', { name: 'keywords', content: '字源,形码,输入法,五笔,拼音,短拼,字根练习' }],
     ['meta', { name: 'author', content: '字源输入法' }],
+    ['meta', { name: 'viewport', content: 'width=device-width, initial-scale=1.0' }],
+    ['meta', { name: 'robots', content: 'index, follow' }],
+    ['meta', { property: 'og:title', content: '字源形码 - 入门简单的形码输入法' }],
+    ['meta', { property: 'og:description', content: '字源形码仅需20个核心字根，30分钟即可上手打字。四码定长，无重码或极低选重，打字流畅不停顿。' }],
+    ['meta', { property: 'og:type', content: 'website' }],
+    ['meta', { name: 'twitter:card', content: 'summary_large_image' }],
+    ['meta', { name: 'twitter:title', content: '字源形码 - 入门简单的形码输入法' }],
+    ['meta', { name: 'twitter:description', content: '仅需20个核心字根，30分钟即可上手打字' }],
     ['link', { rel: 'icon', href: '/字源图标.png' }],
-    // 导入 Noto Sans CJK SC 字体
-    ['link', { 
-      rel: 'stylesheet', 
-      href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap' 
+    ['link', { rel: 'preconnect', href: 'https://fonts.googleapis.com' }],
+    ['link', { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' }],
+    // 预加载关键字体
+    ['link', {
+      rel: 'preload',
+      href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap',
+      as: 'style'
     }],
     ['link', {
-      rel: 'preconnect',
-      href: 'https://fonts.gstatic.com',
-      crossorigin: ''
+      rel: 'stylesheet',
+      href: 'https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&display=swap'
     }]
   ],
   markdown: {
@@ -60,12 +85,22 @@ export default defineConfig({
     },
     nav: [
       { text: '首页', link: '/' },
-      { text: '输入法介绍', link: '/introduction' },
-      { text: '字根练习', link: '/practice/typing' },
+      { text: '快速入门', link: '/introduction' },
+      { text: '学习路线', link: '/route' },
+      {
+        text: '字根练习',
+        items: [
+          { text: '所有字根', link: '/practice/typing' },
+          { text: '顺序练习', link: '/practice/modern' },
+          { text: '随机练习', link: '/practice/random' },
+          { text: '常用字根', link: '/practice/top500' },
+          { text: '错题本', link: '/practice/error' }
+        ]
+      },
       { text: '字源形码', link: '/xingma/index' },
       { text: '短拼拼音', link: '/duanpin' },
-      { 
-        text: '更多工具', 
+      {
+        text: '更多工具',
         items: [
           { text: '输入法测评', link: 'https://ceping.shurufa.app/', target: '_blank' },
           { text: 'YB6B 测评', link: 'https://yb6b.github.io/#/', target: '_blank' },

@@ -1,11 +1,14 @@
 <script setup>
-import { ref, onMounted, computed, onUnmounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted, nextTick } from 'vue'
 import { allRoots } from '../data/rootData.js'
 import { loadProgress, saveProgress, clearProgress, shouldRestoreProgress } from '../utils/progressManager.js'
+import { formatTime, safeFocus } from '../utils/safeUtils.js'
+import { isSpecialCharacter, canDisplayCharacter } from '../utils/fontChecker.js'
 
 const currentRoot = ref(null)
 const userInput = ref('')
 const feedback = ref('')
+const isCorrect = ref(false)
 const correctCount = ref(0)
 const answeredRoots = ref(0)
 const practiceMode = ref('order') // 'order' or 'shuffle'
@@ -15,18 +18,22 @@ const isComplete = ref(false)
 const fontLoaded = ref(false)
 const progressRestored = ref(false)
 const showResumeDialog = ref(false)
-const showCrossResumeDialog = ref(false) // 新增：十字练习恢复对话框
+const showCrossResumeDialog = ref(false)
 const savedProgress = ref(null)
-const savedCrossState = ref(null) // 保存十字练习状态
-// 添加：追踪中文输入状态
+const savedCrossState = ref(null)
+const inputRef = ref(null)
 const isComposing = ref(false)
-// 新增：十字练习相关状态
-const isCrossPractice = ref(false) // 是否启用十字练习模式
-const currentGroup = ref(0) // 当前组别
-const groupRepetitions = ref(0) // 当前组已练习的遍数
-const groupRoots = ref([]) // 当前组的字根
-const totalGroups = ref(0) // 总组数
-const completedGroups = ref(0) // 已完成的组数
+const isCrossPractice = ref(false)
+const currentGroup = ref(0)
+const groupRepetitions = ref(0)
+const groupRoots = ref([])
+const totalGroups = ref(0)
+const completedGroups = ref(0)
+
+// 计时器
+let timer = null
+const startTime = ref(null)
+const elapsedTime = ref(0)
 
 const totalRoots = computed(() => practiceRoots.value.length)
 const accuracy = computed(() => {
@@ -36,10 +43,20 @@ const progress = computed(() => {
   return `${correctCount.value}/${totalRoots.value}`
 })
 
-// 新增：计算十字练习的进度
 const crossPracticeProgress = computed(() => {
   if (!isCrossPractice.value) return ''
   return `第 ${currentGroup.value + 1}/${totalGroups.value} 组 (已练习 ${groupRepetitions.value}/3 遍)`
+})
+
+const canDisplayCurrentRoot = computed(() => {
+  if (!currentRoot.value) return true
+  const char = currentRoot.value.character
+  return isSpecialCharacter(char) ? canDisplayCharacter(char) : true
+})
+
+const charUnicode = computed(() => {
+  if (!currentRoot.value) return ''
+  return 'U+' + currentRoot.value.character.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')
 })
 
 const shuffleArray = (array) => {
@@ -53,26 +70,22 @@ const shuffleArray = (array) => {
   return result
 }
 
-// 新增：初始化十字练习
 const initCrossPractice = () => {
   if (!fontLoaded.value) return
   
   const roots = [...allRoots]
   totalGroups.value = Math.ceil(roots.length / 10)
   
-  // 从保存的进度中恢复
   const savedCrossProgress = loadCrossPracticeProgress()
   if (savedCrossProgress) {
     completedGroups.value = savedCrossProgress.completedGroups || 0
     currentGroup.value = savedCrossProgress.currentGroup || 0
     groupRepetitions.value = savedCrossProgress.groupRepetitions || 0
     
-    // 确保值是数字类型
     completedGroups.value = Number(completedGroups.value)
     currentGroup.value = Number(currentGroup.value)
     groupRepetitions.value = Number(groupRepetitions.value)
     
-    // 如果已完成所有组，直接标记完成
     if (completedGroups.value >= totalGroups.value) {
       isComplete.value = true
       feedback.value = '🎉 恭喜完成所有十字练习！'
@@ -87,14 +100,12 @@ const initCrossPractice = () => {
   loadCurrentGroup()
 }
 
-// 新增：加载当前组的字根
 const loadCurrentGroup = () => {
   const roots = [...allRoots]
   const startIdx = currentGroup.value * 10
   const endIdx = Math.min(startIdx + 10, roots.length)
   groupRoots.value = roots.slice(startIdx, endIdx)
   
-  // 根据当前模式设置练习顺序
   if (practiceMode.value === 'order') {
     practiceRoots.value = [...groupRoots.value]
   } else {
@@ -108,11 +119,9 @@ const loadCurrentGroup = () => {
   nextRoot()
 }
 
-// 新增：处理组内练习完成
 const handleGroupCompleted = () => {
   groupRepetitions.value++
   
-  // 保存当前组的进度
   saveCrossPracticeProgress({
     completedGroups: completedGroups.value,
     currentGroup: currentGroup.value,
@@ -121,7 +130,6 @@ const handleGroupCompleted = () => {
   })
   
   if (groupRepetitions.value >= 3) {
-    // 完成当前组
     completedGroups.value++
     saveCrossPracticeProgress({
       completedGroups: completedGroups.value,
@@ -131,24 +139,271 @@ const handleGroupCompleted = () => {
     })
     
     if (completedGroups.value >= totalGroups.value) {
-      // 所有组都已完成
       isComplete.value = true
       feedback.value = '🎉 恭喜完成所有十字练习！'
       return
     }
     
-    // 进入下一组
     currentGroup.value = completedGroups.value
     groupRepetitions.value = 0
     feedback.value = `✅ 完成第 ${completedGroups.value} 组！进入第 ${currentGroup.value + 1} 组`
   } else {
-    // 重新练习当前组
     feedback.value = `✅ 完成第 ${groupRepetitions.value}/3 遍练习，继续下一遍！`
   }
   
   setTimeout(() => {
     loadCurrentGroup()
   }, 1500)
+}
+
+const startPractice = (ignoreSavedProgress = false) => {
+  if (!fontLoaded.value) return
+  
+  if (ignoreSavedProgress) {
+    if (isCrossPractice.value) {
+      clearCrossPracticeProgress()
+      clearCrossPracticeState()
+    } else {
+      clearProgress()
+    }
+  }
+  
+  correctCount.value = 0
+  answeredRoots.value = 0
+  isComplete.value = false
+  progressRestored.value = false
+  
+  startTimer()
+  focusInput()
+  
+  if (isCrossPractice.value) {
+    initCrossPractice()
+    return
+  }
+  
+  if (practiceMode.value === 'order') {
+    practiceRoots.value = [...allRoots]
+  } else {
+    practiceRoots.value = shuffleArray([...allRoots])
+  }
+  
+  nextRoot()
+}
+
+const startTimer = () => {
+  stopTimer()
+  startTime.value = Date.now()
+  elapsedTime.value = 0
+  
+  timer = setInterval(() => {
+    elapsedTime.value = Math.floor((Date.now() - startTime.value) / 1000)
+  }, 1000)
+}
+
+const stopTimer = () => {
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
+}
+
+const focusInput = () => {
+  nextTick(() => {
+    safeFocus(inputRef.value, 100)
+  })
+}
+
+const toggleCrossPractice = () => {
+  if (!fontLoaded.value) return
+  
+  isCrossPractice.value = !isCrossPractice.value
+  
+  if (isCrossPractice.value) {
+    initCrossPractice()
+  } else {
+    startPractice(true)
+  }
+  
+  saveCrossPracticeState({
+    isCrossPractice: isCrossPractice.value,
+    practiceMode: practiceMode.value,
+    currentGroup: currentGroup.value,
+    groupRepetitions: groupRepetitions.value,
+    completedGroups: completedGroups.value
+  })
+}
+
+const toggleOrderMode = () => {
+  if (!fontLoaded.value) return
+  
+  practiceMode.value = 'order'
+  
+  if (isCrossPractice.value) {
+    loadCurrentGroup()
+    saveCrossPracticeState({
+      isCrossPractice: true,
+      practiceMode: 'order',
+      currentGroup: currentGroup.value,
+      groupRepetitions: groupRepetitions.value,
+      completedGroups: completedGroups.value
+    })
+  } else {
+    startPractice(true)
+  }
+}
+
+const toggleShuffleMode = () => {
+  if (!fontLoaded.value) return
+  
+  practiceMode.value = 'shuffle'
+  
+  if (isCrossPractice.value) {
+    loadCurrentGroup()
+    saveCrossPracticeState({
+      isCrossPractice: true,
+      practiceMode: 'shuffle',
+      currentGroup: currentGroup.value,
+      groupRepetitions: groupRepetitions.value,
+      completedGroups: completedGroups.value
+    })
+  } else {
+    startPractice(true)
+  }
+}
+
+const nextRoot = () => {
+  if (answeredRoots.value < practiceRoots.value.length) {
+    currentRoot.value = practiceRoots.value[answeredRoots.value]
+    userInput.value = ''
+    feedback.value = ''
+  } else {
+    if (isCrossPractice.value) {
+      handleGroupCompleted()
+      return
+    }
+    
+    isComplete.value = true
+    feedback.value = '🎉 恭喜完成所有字根练习！'
+  }
+  
+  if (!isCrossPractice.value) {
+    saveProgress(
+      practiceMode.value,
+      correctCount.value,
+      answeredRoots.value,
+      practiceRoots.value,
+      isComplete.value
+    )
+  }
+}
+
+const checkAnswer = () => {
+  if (!userInput.value || !currentRoot.value || isComplete.value || isComposing.value) return
+
+  const input = userInput.value.toLowerCase().trim()
+  const code = currentRoot.value.code.toLowerCase()
+
+  showFlash.value = true
+  setTimeout(() => {
+    showFlash.value = false
+  }, 300)
+
+  if (input === code) {
+    correctCount.value++
+    isCorrect.value = true
+    feedback.value = '✅ 正确！'
+    
+    // 立即跳转到下一个字根
+    answeredRoots.value++
+    userInput.value = ''
+    nextRoot()
+    focusInput()
+  } else {
+    isCorrect.value = false
+    feedback.value = `❌ 错误！正确答案是 ${code.toUpperCase()}`
+    
+    setTimeout(() => {
+      answeredRoots.value++
+      userInput.value = ''
+      nextRoot()
+      focusInput()
+    }, 1200)
+  }
+}
+
+const saveCrossPracticeProgress = (progressData) => {
+  try {
+    localStorage.setItem('crossPracticeProgress_all', JSON.stringify(progressData))
+  } catch (error) {
+    console.error('保存十字练习进度失败:', error)
+  }
+}
+
+const loadCrossPracticeProgress = () => {
+  try {
+    const saved = localStorage.getItem('crossPracticeProgress_all')
+    return saved ? JSON.parse(saved) : null
+  } catch (error) {
+    console.error('加载十字练习进度失败:', error)
+    return null
+  }
+}
+
+const clearCrossPracticeProgress = () => {
+  localStorage.removeItem('crossPracticeProgress_all')
+}
+
+const saveCrossPracticeState = (stateData) => {
+  try {
+    localStorage.setItem('crossPracticeState_all', JSON.stringify(stateData))
+  } catch (error) {
+    console.error('保存十字练习状态失败:', error)
+  }
+}
+
+const loadCrossPracticeState = () => {
+  try {
+    const saved = localStorage.getItem('crossPracticeState_all')
+    return saved ? JSON.parse(saved) : null
+  } catch (error) {
+    console.error('加载十字练习状态失败:', error)
+    return null
+  }
+}
+
+const clearCrossPracticeState = () => {
+  localStorage.removeItem('crossPracticeState_all')
+}
+
+const resumeProgress = () => {
+  if (savedProgress.value) {
+    initPractice(
+      savedProgress.value.mode,
+      savedProgress.value.practiceRoots,
+      savedProgress.value.correctCount,
+      savedProgress.value.answeredRoots,
+      savedProgress.value.isComplete
+    )
+    showResumeDialog.value = false
+    progressRestored.value = true
+    startTimer()
+    focusInput()
+  }
+}
+
+const resumeCrossPractice = () => {
+  showCrossResumeDialog.value = false
+  isCrossPractice.value = true
+  practiceMode.value = savedCrossState.value.practiceMode || 'shuffle'
+  
+  currentGroup.value = savedCrossState.value.currentGroup
+  groupRepetitions.value = savedCrossState.value.groupRepetitions
+  completedGroups.value = savedCrossState.value.completedGroups
+  
+  progressRestored.value = true
+  initCrossPractice()
+  startTimer()
+  focusInput()
 }
 
 const initPractice = (mode, roots, correct, answered, complete) => {
@@ -165,398 +420,6 @@ const initPractice = (mode, roots, correct, answered, complete) => {
   }
 }
 
-const startPractice = (ignoreSavedProgress = false) => {
-  if (!fontLoaded.value) return
-  
-  // 清除之前的进度
-  if (ignoreSavedProgress) {
-    if (isCrossPractice.value) {
-      clearCrossPracticeProgress()
-      clearCrossPracticeState()
-    } else {
-      clearProgress()
-    }
-  }
-  
-  correctCount.value = 0
-  answeredRoots.value = 0
-  isComplete.value = false
-  progressRestored.value = false
-  
-  if (isCrossPractice.value) {
-    // 如果是十字练习模式，重新初始化
-    initCrossPractice()
-    return
-  }
-  
-  if (practiceMode.value === 'order') {
-    practiceRoots.value = [...allRoots]
-  } else {
-    practiceRoots.value = shuffleArray([...allRoots])
-  }
-  
-  nextRoot()
-  
-  // 注意：这里不保存进度，因为 answeredRoots = 0
-}
-
-// 新增：切换十字练习模式
-const toggleCrossPractice = () => {
-  if (!fontLoaded.value) return
-  
-  isCrossPractice.value = !isCrossPractice.value
-  
-  if (isCrossPractice.value) {
-    // 进入十字练习模式
-    // 保持当前的练习模式（顺序或乱序）
-    initCrossPractice()
-  } else {
-    // 退出十字练习模式，恢复普通练习
-    startPractice(true)
-  }
-  
-  // 保存十字练习状态
-  saveCrossPracticeState({
-    isCrossPractice: isCrossPractice.value,
-    practiceMode: practiceMode.value,
-    currentGroup: currentGroup.value,
-    groupRepetitions: groupRepetitions.value,
-    completedGroups: completedGroups.value
-  })
-}
-
-const toggleOrderMode = () => {
-  if (!fontLoaded.value) return
-  
-  practiceMode.value = 'order'
-  
-  if (isCrossPractice.value) {
-    // 在十字练习模式下，只重新加载当前组，不重置进度
-    loadCurrentGroup()
-    
-    // 保存状态
-    saveCrossPracticeState({
-      isCrossPractice: true,
-      practiceMode: 'order',
-      currentGroup: currentGroup.value,
-      groupRepetitions: groupRepetitions.value,
-      completedGroups: completedGroups.value
-    })
-  } else {
-    startPractice(true) // 忽略保存的进度，重新开始
-  }
-}
-
-const toggleShuffleMode = () => {
-  if (!fontLoaded.value) return
-  
-  practiceMode.value = 'shuffle'
-  
-  if (isCrossPractice.value) {
-    // 在十字练习模式下，只重新加载当前组，不重置进度
-    loadCurrentGroup()
-    
-    // 保存状态
-    saveCrossPracticeState({
-      isCrossPractice: true,
-      practiceMode: 'shuffle',
-      currentGroup: currentGroup.value,
-      groupRepetitions: groupRepetitions.value,
-      completedGroups: completedGroups.value
-    })
-  } else {
-    startPractice(true) // 忽略保存的进度，重新开始
-  }
-}
-
-const nextRoot = () => {
-  if (answeredRoots.value < practiceRoots.value.length) {
-    currentRoot.value = practiceRoots.value[answeredRoots.value]
-    userInput.value = '' // 确保输入框清空
-    feedback.value = ''
-  } else {
-    if (isCrossPractice.value) {
-      handleGroupCompleted()
-      return
-    }
-    
-    isComplete.value = true
-    feedback.value = '🎉 恭喜完成所有字根练习！'
-  }
-  
-  // 保存进度
-  if (!isCrossPractice.value) {
-    saveProgress(
-      practiceMode.value,
-      correctCount.value,
-      answeredRoots.value,
-      practiceRoots.value,
-      isComplete.value
-    )
-  } else {
-    // 保存十字练习状态
-    saveCrossPracticeState({
-      isCrossPractice: true,
-      practiceMode: practiceMode.value,
-      currentGroup: currentGroup.value,
-      groupRepetitions: groupRepetitions.value,
-      completedGroups: completedGroups.value
-    })
-  }
-}
-
-// 新增：保存十字练习进度
-const saveCrossPracticeProgress = (progressData) => {
-  try {
-    localStorage.setItem('crossPracticeProgress_all', JSON.stringify(progressData))
-    console.log('十字练习进度已保存')
-  } catch (error) {
-    console.error('保存十字练习进度失败:', error)
-  }
-}
-
-// 新增：加载十字练习进度
-const loadCrossPracticeProgress = () => {
-  try {
-    const saved = localStorage.getItem('crossPracticeProgress_all')
-    return saved ? JSON.parse(saved) : null
-  } catch (error) {
-    console.error('加载十字练习进度失败:', error)
-    return null
-  }
-}
-
-// 新增：清除十字练习进度
-const clearCrossPracticeProgress = () => {
-  localStorage.removeItem('crossPracticeProgress_all')
-  console.log('十字练习进度已清除')
-}
-
-// 新增：清除十字练习状态
-const clearCrossPracticeState = () => {
-  localStorage.removeItem('crossPracticeState_all')
-  console.log('十字练习状态已清除')
-}
-
-// 新增：保存十字练习状态（包括是否启用、当前组等）
-const saveCrossPracticeState = (stateData) => {
-  try {
-    localStorage.setItem('crossPracticeState_all', JSON.stringify(stateData))
-    console.log('十字练习状态已保存')
-  } catch (error) {
-    console.error('保存十字练习状态失败:', error)
-  }
-}
-
-// 新增：加载十字练习状态
-const loadCrossPracticeState = () => {
-  try {
-    const saved = localStorage.getItem('crossPracticeState_all')
-    return saved ? JSON.parse(saved) : null
-  } catch (error) {
-    console.error('加载十字练习状态失败:', error)
-    return null
-  }
-}
-
-// 新增：封装输入处理逻辑
-const handleProcessedInput = (input) => {
-  if (!fontLoaded.value || isComplete.value || isComposing.value) return
-  
-  // 只取第一个字母
-  const validInput = input.charAt(0).toLowerCase()
-  
-  if (validInput.length === 1 && !isComplete.value) {
-    answeredRoots.value++
-    const userAnswer = validInput
-    const correctAnswer = currentRoot.value.code.toLowerCase()
-    
-    if (userAnswer === correctAnswer) {
-      correctCount.value++
-      // 答对后保存进度
-      if (!isCrossPractice.value) {
-        saveProgress(
-          practiceMode.value,
-          correctCount.value,
-          answeredRoots.value,
-          practiceRoots.value,
-          isComplete.value
-        )
-      } else {
-        // 保存十字练习状态
-        saveCrossPracticeState({
-          isCrossPractice: true,
-          practiceMode: practiceMode.value,
-          currentGroup: currentGroup.value,
-          groupRepetitions: groupRepetitions.value,
-          completedGroups: completedGroups.value
-        })
-        
-        // 也保存十字练习进度
-        saveCrossPracticeProgress({
-          completedGroups: completedGroups.value,
-          currentGroup: currentGroup.value,
-          groupRepetitions: groupRepetitions.value,
-          lastCompletedTime: new Date().toISOString()
-        })
-      }
-      
-      // 答对后直接清空输入框
-      userInput.value = ''
-      
-      if (answeredRoots.value === practiceRoots.value.length) {
-        if (isCrossPractice.value) {
-          handleGroupCompleted()
-          return
-        }
-        
-        isComplete.value = true
-        feedback.value = '🎉 恭喜完成所有字根练习！'
-      } else {
-        nextRoot()
-      }
-    } else {
-      showFlash.value = true
-      feedback.value = `❌ 错误！正确答案是: ${correctAnswer}`
-      setTimeout(() => {
-        userInput.value = ''
-        showFlash.value = false
-        feedback.value = ''
-        answeredRoots.value--
-        
-        // 答错后，如果 answeredRoots 变为0，不保存进度
-        if (answeredRoots.value >= 1 && !isCrossPractice.value) {
-          saveProgress(
-            practiceMode.value,
-            correctCount.value,
-            answeredRoots.value,
-            practiceRoots.value,
-            isComplete.value
-          )
-        } else if (answeredRoots.value >= 1 && isCrossPractice.value) {
-          saveCrossPracticeState({
-            isCrossPractice: true,
-            practiceMode: practiceMode.value,
-            currentGroup: currentGroup.value,
-            groupRepetitions: groupRepetitions.value,
-            completedGroups: completedGroups.value
-          })
-          
-          // 也保存十字练习进度
-          saveCrossPracticeProgress({
-            completedGroups: completedGroups.value,
-            currentGroup: currentGroup.value,
-            groupRepetitions: groupRepetitions.value,
-            lastCompletedTime: new Date().toISOString()
-          })
-        }
-      }, 500)
-    }
-  }
-}
-
-// 修改：处理输入
-const handleInput = (e) => {
-  if (!fontLoaded.value || isComplete.value || isComposing.value) return
-  
-  const input = e.target.value
-  
-  // 只允许字母输入，且只取第一个字符
-  const letterMatch = input.match(/^[a-zA-Z]/)
-  if (!letterMatch) {
-    // 如果不是字母，清空输入
-    e.target.value = ''
-    userInput.value = ''
-    return
-  }
-  
-  // 处理输入
-  handleProcessedInput(letterMatch[0])
-  
-  // 确保输入框清空
-  if (!showFlash.value) {
-    userInput.value = ''
-    e.target.value = ''
-  }
-}
-
-// 新增：处理中文输入法开始
-const handleCompositionStart = () => {
-  isComposing.value = true
-}
-
-// 新增：处理中文输入法结束
-const handleCompositionEnd = (e) => {
-  isComposing.value = false
-  // 在中文输入结束后，尝试处理输入
-  if (e.data && /^[a-zA-Z]$/.test(e.data)) {
-    handleProcessedInput(e.data)
-  }
-}
-
-const handleResume = () => {
-  if (savedProgress.value) {
-    initPractice(
-      savedProgress.value.mode,
-      savedProgress.value.practiceRoots,
-      savedProgress.value.correctCount,
-      savedProgress.value.answeredRoots,
-      savedProgress.value.isComplete
-    )
-    progressRestored.value = true
-    showResumeDialog.value = false
-    
-    // 更新当前根
-    if (!isComplete.value && answeredRoots.value < practiceRoots.value.length) {
-      currentRoot.value = practiceRoots.value[answeredRoots.value]
-    }
-    
-    feedback.value = `✅ 已恢复进度！已完成 ${answeredRoots.value}/${practiceRoots.value.length} 个字根`
-    
-    // 恢复十字练习状态
-    if (isCrossPractice.value) {
-      saveCrossPracticeState({
-        isCrossPractice: true,
-        practiceMode: practiceMode.value,
-        currentGroup: currentGroup.value,
-        groupRepetitions: groupRepetitions.value,
-        completedGroups: completedGroups.value
-      })
-    }
-  }
-}
-
-const handleCrossResume = () => {
-  if (savedCrossState.value) {
-    isCrossPractice.value = true
-    practiceMode.value = savedCrossState.value.practiceMode || 'shuffle'
-    
-    // 确保值是数字类型
-    currentGroup.value = Number(savedCrossState.value.currentGroup) || 0
-    groupRepetitions.value = Number(savedCrossState.value.groupRepetitions) || 0
-    completedGroups.value = Number(savedCrossState.value.completedGroups) || 0
-    
-    progressRestored.value = true
-    showCrossResumeDialog.value = false
-    
-    // 初始化十字练习
-    initCrossPractice()
-    
-    feedback.value = `✅ 已恢复十字练习进度：第 ${currentGroup.value + 1}/${totalGroups.value} 组 (已练习 ${groupRepetitions.value}/3 遍)`
-  }
-}
-
-const handleCrossRestart = () => {
-  showCrossResumeDialog.value = false
-  isCrossPractice.value = true
-  startPractice(true)
-}
-
-const handleRestart = () => {
-  showResumeDialog.value = false
-  startPractice(true)
-}
-
 const loadFonts = async () => {
   try {
     const testElement = document.createElement('div')
@@ -570,263 +433,235 @@ const loadFonts = async () => {
     document.body.removeChild(testElement)
     
     fontLoaded.value = true
-    console.log('字体加载成功，可以显示特殊字根')
   } catch (error) {
     console.error('字体加载失败:', error)
     fontLoaded.value = true
   }
 }
 
-// 监听页面卸载事件，确保进度保存
-const handleBeforeUnload = () => {
-  if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
-    if (!isCrossPractice.value) {
-      saveProgress(
-        practiceMode.value,
-        correctCount.value,
-        answeredRoots.value,
-        practiceRoots.value,
-        isComplete.value
-      )
-    } else {
-      // 保存十字练习进度和状态
-      saveCrossPracticeProgress({
-        completedGroups: completedGroups.value,
-        currentGroup: currentGroup.value,
-        groupRepetitions: groupRepetitions.value,
-        lastCompletedTime: new Date().toISOString()
-      })
-      
-      saveCrossPracticeState({
-        isCrossPractice: true,
-        practiceMode: practiceMode.value,
-        currentGroup: currentGroup.value,
-        groupRepetitions: groupRepetitions.value,
-        completedGroups: completedGroups.value
-      })
-    }
-  }
-}
-
 onMounted(async () => {
-  // 加载字体
   await loadFonts()
   
-  // 检查是否有保存的十字练习状态
   const crossState = loadCrossPracticeState()
-  const crossProgress = loadCrossPracticeProgress() // 确保同时加载进度
+  const crossProgress = loadCrossPracticeProgress()
   
   if (crossState && crossState.isCrossPractice) {
     savedCrossState.value = crossState
     
-    // 合并状态和进度数据
     if (crossProgress) {
       savedCrossState.value.currentGroup = Number(crossProgress.currentGroup || crossState.currentGroup) || 0
       savedCrossState.value.groupRepetitions = Number(crossProgress.groupRepetitions || crossState.groupRepetitions) || 0
       savedCrossState.value.completedGroups = Number(crossProgress.completedGroups || crossState.completedGroups) || 0
     }
     
-    // 检查是否有未完成的十字练习
     if (crossProgress && Number(crossProgress.completedGroups) < Math.ceil(allRoots.length / 10)) {
       showCrossResumeDialog.value = true
     } else {
-      // 没有需要恢复的进度，直接初始化
       isCrossPractice.value = true
       practiceMode.value = crossState.practiceMode || 'shuffle'
-      
-      // 确保值是数字类型
       currentGroup.value = savedCrossState.value.currentGroup
       groupRepetitions.value = savedCrossState.value.groupRepetitions
       completedGroups.value = savedCrossState.value.completedGroups
-      
       progressRestored.value = true
-      
-      // 初始化十字练习
       initCrossPractice()
+      startTimer()
+      focusInput()
     }
   } else {
-    // 加载保存的进度
     const progressData = loadProgress()
     savedProgress.value = progressData
     
     if (progressData && shouldRestoreProgress(progressData)) {
       showResumeDialog.value = true
     } else {
-      // 没有可恢复的进度，开始新练习
       practiceMode.value = 'order'
       startPractice(true)
     }
   }
-  
-  // 添加页面卸载监听
-  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
-  // 移除监听器
-  window.removeEventListener('beforeunload', handleBeforeUnload)
-  
-  // 离开页面时保存进度 - 只有 answeredRoots >= 1 时才保存
-  if (fontLoaded.value && !isComplete.value && answeredRoots.value >= 1) {
-    if (!isCrossPractice.value) {
-      saveProgress(
-        practiceMode.value,
-        correctCount.value,
-        answeredRoots.value,
-        practiceRoots.value,
-        isComplete.value
-      )
-    } else {
-      // 保存十字练习进度
-      saveCrossPracticeProgress({
-        completedGroups: completedGroups.value,
-        currentGroup: currentGroup.value,
-        groupRepetitions: groupRepetitions.value,
-        lastCompletedTime: new Date().toISOString()
-      })
-      
-      // 保存十字练习状态
-      saveCrossPracticeState({
-        isCrossPractice: true,
-        practiceMode: practiceMode.value,
-        currentGroup: currentGroup.value,
-        groupRepetitions: groupRepetitions.value,
-        completedGroups: completedGroups.value
-      })
-    }
-  }
+  stopTimer()
 })
 </script>
 
 <template>
   <div class="root-practice">
-    <div class="practice-area" :class="{ 'fonts-loaded': fontLoaded }">
-      <div class="stats">
-        <span>🎯 正确率: {{ accuracy }}%</span>
-        <span>📊 进度: {{ progress }}</span>
-        <span v-if="isCrossPractice" class="cross-progress">{{ crossPracticeProgress }}</span>
+    <!-- 练习头部 -->
+    <div class="practice-header">
+      <h1 class="practice-title">字根练习</h1>
+      <div class="practice-mode">
+        <span class="mode-badge" :class="practiceMode">
+          {{ practiceMode === 'order' ? '🔄 顺序练习' : '🎲 乱序练习' }}
+        </span>
+        <span v-if="isCrossPractice" class="mode-badge group-mode">
+          ✳️ 十字练习
+        </span>
       </div>
-      
-      <div class="character-container">
-        <div class="character-display">
-          <span 
-            class="character" 
-            :class="{ 'special-character': currentRoot?.character && currentRoot.character.length === 1 && currentRoot.character.charCodeAt(0) > 127 }"
-          >
-            {{ currentRoot?.character || '🎉' }}
-          </span>
-          <div v-if="!fontLoaded" class="font-loading">
-            <div class="loading-spinner"></div>
-            <span>加载特殊字体中...</span>
-          </div>
-        </div>
-        <div class="hint-display">
-          {{ isComplete ? '完成！' : currentRoot?.hint || '' }}
-        </div>
-      </div>
-      
-      <div class="input-area">
-        <input
-          v-model="userInput"
-          @input="handleInput"
-          @compositionstart="handleCompositionStart"
-          @compositionend="handleCompositionEnd"
-          :placeholder="isComplete ? '练习完成' : '请输入字根编码'"
-          class="code-input"
-          :class="{ 'flash-red': showFlash }"
-          :disabled="isComplete || !fontLoaded"
-          maxlength="1"
-          autofocus
-        />
-      </div>
-      
-      <div class="feedback">{{ feedback }}</div>
+    </div>
 
-      <!-- 恢复进度对话框（普通练习） -->
-      <div v-if="showResumeDialog && !isCrossPractice" class="resume-overlay">
-        <div class="resume-dialog">
-          <div class="resume-icon">💾</div>
-          <h2>发现未完成的练习</h2>
-          <p>检测到您之前有未完成的练习，要继续吗？</p>
-          <div class="progress-info">
-            <span>📝 练习模式: {{ savedProgress?.mode === 'order' ? '顺序练习' : '乱序练习' }}</span>
-            <span>✅ 已完成: {{ savedProgress?.answeredRoots || 0 }}/{{ savedProgress?.practiceRoots?.length || allRoots.length }}</span>
-            <span>🎯 正确率: {{ savedProgress ? Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) : 0 }}%</span>
-          </div>
-          <div class="dialog-buttons">
-            <button @click="handleResume" class="resume-btn">
-              ✅ 继续练习
-            </button>
-            <button @click="handleRestart" class="restart-btn">
-              🔄 重新开始
-            </button>
-          </div>
-        </div>
+    <!-- 统计面板 -->
+    <div class="stats-panel">
+      <div class="stat-box">
+        <span class="stat-number">{{ progress }}</span>
+        <span class="stat-label">进度</span>
       </div>
-
-      <!-- 恢复进度对话框（十字练习） -->
-      <div v-if="showCrossResumeDialog" class="resume-overlay">
-        <div class="resume-dialog">
-          <div class="resume-icon">✳️</div>
-          <h2>发现未完成的十字练习</h2>
-          <p>检测到您之前有未完成的十字练习，要继续吗？</p>
-          <div class="progress-info">
-            <!-- 修正：从合并数据中正确获取 groupRepetitions -->
-            <span>✅ 当前进度: 第 {{ Number(savedCrossState?.currentGroup) + 1 }}/{{ Math.ceil(allRoots.length / 10) }} 组 (已练习 {{ Number(savedCrossState?.groupRepetitions) || 0 }}/3 遍)</span>
-          </div>
-          <div class="dialog-buttons">
-            <button @click="handleCrossResume" class="resume-btn">
-              ✅ 继续练习
-            </button>
-            <button @click="handleCrossRestart" class="restart-btn">
-              🔄 重新开始
-            </button>
-          </div>
-        </div>
+      <div class="stat-box">
+        <span class="stat-number text-success">{{ accuracy }}%</span>
+        <span class="stat-label">正确率</span>
       </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ correctCount }}</span>
+        <span class="stat-label">正确</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ answeredRoots }}</span>
+        <span class="stat-label">已答</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ totalRoots }}</span>
+        <span class="stat-label">总数</span>
+      </div>
+      <div class="stat-box">
+        <span class="stat-number">{{ formatTime(elapsedTime) }}</span>
+        <span class="stat-label">用时</span>
+      </div>
+    </div>
 
-      <!-- 完成覆盖层 -->
-      <div v-if="isComplete" class="completion-overlay">
-        <div class="completion-content">
-          <div class="completion-icon">🎉</div>
-          <h2>恭喜完成！</h2>
-          <p>正确率: {{ accuracy }}%</p>
-          <p>完成进度: {{ progress }}</p>
-          <div class="completion-buttons">
-            <button @click="startPractice" class="completion-restart-btn">
-              🔄 再来一次
-            </button>
-            <button @click="() => {
-              if (isCrossPractice) {
-                clearCrossPracticeProgress()
-                clearCrossPracticeState()
-              } else {
-                clearProgress()
-              }
-            }" class="completion-clear-btn">
-              🗑️ 清除进度
-            </button>
-          </div>
+    <!-- 进度条 -->
+    <div class="progress-track">
+      <div class="progress-fill" :style="{ width: `${(correctCount / totalRoots) * 100}%` }"></div>
+    </div>
+
+    <!-- 十字练习进度信息 -->
+    <div v-if="isCrossPractice" class="group-info">
+      <span>📊 {{ crossPracticeProgress }}</span>
+      <span>✅ 已完成 {{ completedGroups }}/{{ totalGroups }} 组</span>
+    </div>
+
+    <!-- 恢复进度对话框 -->
+    <div v-if="showResumeDialog && savedProgress" class="resume-dialog">
+      <div class="resume-content">
+        <h3>📝 发现保存的进度</h3>
+        <p>上次练习：{{ savedProgress.correctCount }}/{{ savedProgress.answeredRoots }} 个字根</p>
+        <p>正确率：{{ Math.round((savedProgress.correctCount / savedProgress.answeredRoots) * 100) }}%</p>
+        <div class="resume-buttons">
+          <button @click="resumeProgress" class="btn-resume btn-continue">
+            继续练习
+          </button>
+          <button @click="startPractice(true)" class="btn-resume btn-restart">
+            重新开始
+          </button>
         </div>
       </div>
     </div>
-    
+
+    <!-- 十字练习恢复对话框 -->
+    <div v-if="showCrossResumeDialog && savedCrossState" class="resume-dialog">
+      <div class="resume-content">
+        <h3>✳️ 发现十字练习进度</h3>
+        <p>当前进度：第 {{ savedCrossState.currentGroup + 1 }}/{{ Math.ceil(allRoots.length / 10) }} 组</p>
+        <p>当前组练习：{{ savedCrossState.groupRepetitions }}/3 遍</p>
+        <div class="resume-buttons">
+          <button @click="resumeCrossPractice" class="btn-resume btn-continue">
+            继续练习
+          </button>
+          <button @click="startPractice(true)" class="btn-resume btn-restart">
+            重新开始
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 练习主区域 -->
+    <div class="practice-main">
+      <div class="character-display">
+        <div v-if="currentRoot" class="character" :class="{ 'unicode-fallback': !canDisplayCurrentRoot }">
+          <span v-if="canDisplayCurrentRoot">{{ currentRoot.character }}</span>
+          <div v-else class="unicode-fallback">
+            <div class="unicode-code">{{ charUnicode }}</div>
+            <div class="unicode-hint">字根：{{ currentRoot.hint }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-section">
+        <div class="input-area">
+          <input
+            ref="inputRef"
+            v-model="userInput"
+            @keyup.enter="checkAnswer"
+            @compositionstart="isComposing = true"
+            @compositionend="isComposing = false"
+            class="code-input"
+            :class="{ 'flash-red': showFlash }"
+            :disabled="!fontLoaded || isComplete"
+            placeholder="输入编码"
+            autocomplete="off"
+            spellcheck="false"
+            maxlength="4"
+          />
+        </div>
+        
+        <div v-if="feedback" class="feedback" :class="{ 'correct': isCorrect, 'error': !isCorrect }">
+          {{ feedback }}
+        </div>
+      </div>
+    </div>
+
+    <!-- 控制按钮 -->
     <div class="controls">
-      <button @click="toggleOrderMode" class="mode-btn" :class="{ 'mode-active': practiceMode === 'order' }">
+      <button @click="toggleOrderMode" class="control-btn" :class="{ 'active': practiceMode === 'order' }">
         🔄 顺序练习
       </button>
-      <button @click="toggleShuffleMode" class="mode-btn" :class="{ 'mode-active': practiceMode === 'shuffle' }">
+      <button @click="toggleShuffleMode" class="control-btn" :class="{ 'active': practiceMode === 'shuffle' }">
         🎲 乱序练习
       </button>
-      <button @click="toggleCrossPractice" class="cross-btn" :class="{ 'cross-active': isCrossPractice }">
+      <button @click="toggleCrossPractice" class="control-btn" :class="{ 'active': isCrossPractice }">
         ✳️ 十字练习
       </button>
-      <button @click="startPractice(true)" class="restart-btn" :disabled="!fontLoaded">
+      <button @click="startPractice(true)" class="control-btn restart-btn" :disabled="!fontLoaded">
         🔄 重新开始
       </button>
     </div>
+
+    <!-- 完成状态 -->
+    <div v-if="isComplete" class="completion-screen">
+      <div class="completion-content">
+        <h2>🎉 练习完成！</h2>
+        <div class="completion-stats">
+          <div class="completion-stat">
+            <span class="stat-number">{{ correctCount }}</span>
+            <span class="stat-label">正确数量</span>
+          </div>
+          <div class="completion-stat">
+            <span class="stat-number">{{ accuracy }}%</span>
+            <span class="stat-label">正确率</span>
+          </div>
+          <div class="completion-stat">
+            <span class="stat-number">{{ formatTime(elapsedTime) }}</span>
+            <span class="stat-label">总用时</span>
+          </div>
+        </div>
+        <div class="completion-actions">
+          <button @click="startPractice(true)" class="btn-resume btn-continue">
+            重新练习
+          </button>
+          <button @click="clearProgress" class="completion-clear-btn">
+            🗑️ 清除进度
+          </button>
+        </div>
+      </div>
+    </div>
     
-    <div class="font-info" v-if="fontLoaded">
+    <!-- 字体加载提示 -->
+    <div v-if="!fontLoaded" class="font-loading">
+      <div class="loading-spinner"></div>
+      <p>正在加载字体...</p>
+    </div>
+    
+    <!-- 提示信息 -->
+    <div v-else class="font-info">
       <p v-if="!isCrossPractice">💡 提示：练习进度会永久保存到本地，关闭页面后仍可继续。</p>
       <p v-else>💡 提示：十字练习将字根分为每组10个，每组需练习3遍才能进入下一组。进度永久保存。</p>
     </div>
@@ -834,12 +669,563 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 保持原有字体样式不变 */
-@import url('../styles/fonts.css');
+/* 虎码风格现代化样式 - 与虎码输入法网站保持一致 */
+.root-practice {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: var(--vp-c-bg);
+  border-radius: 16px;
+  box-shadow: var(--shadow-md);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.practice-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.practice-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--tiger-primary);
+  margin: 0 0 1rem 0;
+  letter-spacing: -0.02em;
+}
+
+.practice-mode {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-2);
+  border: 2px solid var(--vp-c-border);
+  transition: all var(--transition-normal);
+}
+
+.mode-badge.order {
+  background: var(--tiger-primary);
+  color: white;
+  border-color: var(--tiger-primary);
+}
+
+.mode-badge.shuffle {
+  background: var(--tiger-info);
+  color: white;
+  border-color: var(--tiger-info);
+}
+
+.mode-badge.group-mode {
+  background: var(--tiger-success);
+  color: white;
+  border-color: var(--tiger-success);
+}
+
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-box {
+  background: var(--vp-c-bg-soft);
+  border: 2px solid var(--vp-c-border);
+  border-radius: 12px;
+  padding: 1.25rem 1rem;
+  text-align: center;
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-box::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: var(--tiger-primary);
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.stat-box:hover::before {
+  opacity: 1;
+}
+
+.stat-box:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--tiger-primary);
+}
+
+.stat-number {
+  display: block;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--vp-c-text-1);
+  margin-bottom: 0.25rem;
+  line-height: 1;
+}
+
+.stat-number.text-success {
+  color: var(--tiger-success);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--vp-c-text-3);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.progress-track {
+  height: 12px;
+  background: var(--vp-c-border);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 2rem;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tiger-primary), var(--tiger-info));
+  border-radius: 6px;
+  transition: width var(--transition-normal);
+  position: relative;
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 20px;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3));
+  border-radius: 0 6px 6px 0;
+}
+
+.group-info {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+  font-size: 0.9rem;
+  color: var(--vp-c-text-2);
+  flex-wrap: wrap;
+}
+
+.practice-main {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.character-display {
+  text-align: center;
+  position: relative;
+}
+
+.character {
+  font-size: 8rem;
+  font-weight: 800;
+  color: var(--vp-c-text-1);
+  line-height: 1;
+  margin-bottom: 1rem;
+  font-family: 'Noto Sans SC', 'Source Han Sans SC', 'Microsoft YaHei', sans-serif;
+  text-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  transition: transform var(--transition-normal);
+}
+
+.character:hover {
+  transform: scale(1.05);
+}
+
+.character.unicode-fallback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.unicode-code {
+  font-size: 2rem;
+  font-family: 'Courier New', monospace;
+  color: var(--vp-c-text-2);
+  background: var(--vp-c-bg-mute);
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  border: 2px solid var(--vp-c-border);
+  font-weight: 600;
+}
+
+.unicode-hint {
+  font-size: 1rem;
+  color: var(--vp-c-text-2);
+  text-align: center;
+  font-weight: 500;
+}
+
+.input-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.input-area {
+  position: relative;
+}
+
+.code-input {
+  padding: 1.25rem 2rem;
+  font-size: 1.75rem;
+  text-align: center;
+  border: 3px solid var(--vp-c-border);
+  border-radius: 16px;
+  width: 240px;
+  outline: none;
+  transition: all var(--transition-normal);
+  font-family: inherit;
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.code-input:focus {
+  border-color: var(--tiger-primary);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.2);
+  transform: translateY(-1px);
+}
+
+.code-input.flash-red {
+  animation: flashRed 0.6s;
+  border-color: var(--tiger-error);
+}
+
+.code-input:disabled {
+  background: var(--vp-c-bg-mute);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.feedback {
+  font-size: 1.25rem;
+  font-weight: 700;
+  text-align: center;
+  min-height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  transition: all var(--transition-normal);
+}
+
+.feedback.correct {
+  color: var(--tiger-success);
+  background: rgba(34, 197, 94, 0.1);
+  border: 2px solid var(--tiger-success);
+}
+
+.feedback.error {
+  color: var(--tiger-error);
+  background: rgba(239, 68, 68, 0.1);
+  border: 2px solid var(--tiger-error);
+}
+
+.controls {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin-bottom: 2rem;
+}
+
+.control-btn {
+  padding: 0.875rem 1.75rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  border: 3px solid var(--vp-c-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  background: var(--vp-c-bg);
+  color: var(--vp-c-text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: relative;
+  overflow: hidden;
+}
+
+.control-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: var(--tiger-primary);
+  transition: left var(--transition-normal);
+  z-index: 0;
+}
+
+.control-btn:hover::before {
+  left: 0;
+}
+
+.control-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--tiger-primary);
+}
+
+.control-btn.active {
+  background: var(--tiger-primary);
+  color: white;
+  border-color: var(--tiger-primary);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-brand);
+}
+
+.control-btn.active::before {
+  left: 0;
+}
+
+.control-btn span {
+  position: relative;
+  z-index: 1;
+}
+
+.control-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.resume-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.resume-content {
+  background: var(--vp-c-bg);
+  border-radius: 20px;
+  padding: 2.5rem;
+  text-align: center;
+  max-width: 450px;
+  box-shadow: var(--shadow-lg);
+  border: 3px solid var(--vp-c-border);
+  animation: slideUp 0.3s ease-out;
+}
+
+.resume-content h3 {
+  font-size: 1.75rem;
+  color: var(--tiger-primary);
+  margin-bottom: 1.5rem;
+  font-weight: 800;
+}
+
+.resume-content p {
+  color: var(--vp-c-text-2);
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.resume-buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.btn-resume {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-shadow: var(--shadow-md);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-continue {
+  background: var(--tiger-success);
+  color: white;
+}
+
+.btn-continue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(34, 197, 94, 0.4);
+}
+
+.btn-restart {
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  border: 3px solid var(--vp-c-border);
+}
+
+.btn-restart:hover {
+  background: var(--vp-c-bg-mute);
+  border-color: var(--tiger-primary);
+  transform: translateY(-2px);
+}
+
+.completion-screen {
+  text-align: center;
+  padding: 3rem;
+  background: linear-gradient(135deg, var(--vp-c-bg-soft), var(--vp-c-bg));
+  border-radius: 20px;
+  border: 3px solid var(--tiger-primary);
+  margin-bottom: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.completion-screen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--tiger-primary), var(--tiger-success));
+}
+
+.completion-content h2 {
+  font-size: 2.5rem;
+  color: var(--tiger-primary);
+  margin-bottom: 2rem;
+  font-weight: 900;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.completion-stats {
+  display: flex;
+  justify-content: center;
+  gap: 2.5rem;
+  margin-bottom: 2.5rem;
+  flex-wrap: wrap;
+}
+
+.completion-stat {
+  text-align: center;
+  padding: 1.5rem;
+  background: var(--vp-c-bg);
+  border-radius: 16px;
+  border: 2px solid var(--vp-c-border);
+  min-width: 120px;
+}
+
+.completion-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.completion-clear-btn {
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  border: 3px solid var(--tiger-error);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  background: var(--vp-c-bg);
+  color: var(--tiger-error);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.completion-clear-btn:hover {
+  background: var(--tiger-error);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.3);
+}
+
+.font-loading {
+  text-align: center;
+  padding: 3rem;
+  color: var(--vp-c-text-2);
+}
+
+.loading-spinner {
+  display: inline-block;
+  width: 40px;
+  height: 40px;
+  border: 4px solid var(--vp-c-border);
+  border-radius: 50%;
+  border-top-color: var(--tiger-primary);
+  animation: spin 1s linear infinite;
+  margin-bottom: 1.5rem;
+}
+
+.font-info {
+  text-align: center;
+  padding: 1.5rem;
+  background: linear-gradient(135deg, var(--vp-c-bg-soft), var(--vp-c-bg-mute));
+  border-radius: 12px;
+  color: var(--vp-c-text-2);
+  font-size: 0.9rem;
+  border: 1px solid var(--vp-c-border);
+  line-height: 1.6;
+}
 
 @keyframes flashRed {
-  0% { border-color: #e74c3c; box-shadow: 0 0 0 3px rgba(231, 76, 60, 0.5); }
-  100% { border-color: #3498db; box-shadow: 0 0 0 0 rgba(231, 76, 60, 0); }
+  0% { 
+    transform: translateX(0); 
+    border-color: var(--tiger-error); 
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3); 
+  }
+  25% { 
+    transform: translateX(-4px); 
+  }
+  75% { 
+    transform: translateX(4px); 
+  }
+  100% { 
+    transform: translateX(0); 
+    border-color: var(--vp-c-border); 
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); 
+  }
 }
 
 @keyframes spin {
@@ -847,356 +1233,70 @@ onUnmounted(() => {
   100% { transform: rotate(360deg); }
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-.root-practice {
-  max-width: 600px;
-  margin: 1.5rem auto;
-  padding: 1.5rem;
-  border: 1px solid #eaecef;
-  border-radius: 8px;
-  background: #f8f9fa;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .root-practice {
+    padding: 1rem;
+    margin: 0.5rem;
+  }
+  
+  .practice-title {
+    font-size: 2rem;
+  }
+  
+  .stats-panel {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+  }
+  
+  .character {
+    font-size: 6rem;
+  }
+  
+  .controls {
+    flex-direction: column;
+    align-items: center;
+  }
+  
+  .control-btn {
+    width: 250px;
+  }
+  
+  .code-input {
+    width: 200px;
+    font-size: 1.5rem;
+  }
 }
 
-.practice-area {
-  text-align: center;
-  margin-bottom: 1.5rem;
-  padding: 1.2rem;
-  border-radius: 8px;
-  background: white;
-  min-height: 280px;
-  position: relative;
-  transition: all 0.3s ease;
-}
-
-.fonts-loaded {
-  opacity: 1;
-  transition: opacity 0.5s ease;
-}
-
-.stats {
-  display: flex;
-  justify-content: space-around;
-  margin-bottom: 0.8rem;
-  font-weight: bold;
-  color: #2c3e50;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-
-.cross-progress {
-  color: #e74c3c;
-  font-size: 0.9rem;
-}
-
-.character-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 1rem;
-  margin: 1.2rem 0;
-  flex-direction: column;
-}
-
-.character-display {
-  position: relative;
-  min-height: 3rem;
-}
-
-.character {
-  font-size: 3.5rem;
-  font-weight: bold;
-  color: #2c3e50;
-  display: block;
-  transition: all 0.3s ease;
-  font-family: 'CJK-Extended', 'Noto Sans CJK SC', 'Source Han Sans SC', 'Microsoft YaHei', 'SimSun', 'Arial Unicode MS', sans-serif;
-}
-
-.special-character {
-  font-size: 3.2rem;
-}
-
-.hint-display {
-  display: flex;
-  align-items: center;
-  font-size: 1.3rem;
-  font-weight: bold;
-  color: #3498db;
-  background: #e3f2fd;
-  padding: 0.4rem 1rem;
-  border-radius: 20px;
-  min-width: 80px;
-  text-align: center;
-  margin-top: 0.3rem;
-}
-
-.font-loading {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  text-align: center;
-  color: #7f8c8d;
-  width: 100%;
-}
-
-.loading-spinner {
-  display: inline-block;
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(52, 152, 219, 0.3);
-  border-radius: 50%;
-  border-top-color: #3498db;
-  animation: spin 1s linear infinite;
-  margin: 0 auto 8px;
-}
-
-.input-area {
-  margin: 1rem 0;
-}
-
-.code-input {
-  padding: 0.75rem;
-  font-size: 1.5rem;
-  text-align: center;
-  border: 3px solid #3498db;
-  border-radius: 8px;
-  width: 180px;
-  margin: 0 auto;
-  outline: none;
-  transition: all 0.3s;
-  font-family: inherit;
-}
-
-.code-input::placeholder {
-  color: #95a5a6;
-  opacity: 1;
-  font-size: 1rem;
-}
-
-.code-input:focus {
-  border-color: #2980b9;
-  box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.3);
-}
-
-.code-input.flash-red {
-  animation: flashRed 0.5s;
-}
-
-.code-input:disabled {
-  background: #f8f9fa;
-  cursor: not-allowed;
-  opacity: 0.8;
-}
-
-.feedback {
-  margin: 0.8rem 0;
-  font-size: 1.3rem;
-  font-weight: bold;
-  min-height: 1.8rem;
-  color: #e74c3c;
-}
-
-/* 恢复进度对话框样式 */
-.resume-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 8px;
-  z-index: 20;
-}
-
-.resume-dialog {
-  background: white;
-  border-radius: 12px;
-  padding: 1.5rem;
-  text-align: center;
-  max-width: 90%;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.2);
-  animation: fadeIn 0.3s ease;
-}
-
-.resume-icon {
-  font-size: 2.5rem;
-  margin-bottom: 0.8rem;
-  color: #3498db;
-}
-
-.resume-dialog h2 {
-  font-size: 1.6rem;
-  color: #2c3e50;
-  margin-bottom: 0.5rem;
-}
-
-.resume-dialog p {
-  color: #7f8c8d;
-  margin-bottom: 1rem;
-  font-size: 1rem;
-}
-
-.progress-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  margin-bottom: 1rem;
-  padding: 0.8rem;
-  background: #f8f9fa;
-  border-radius: 8px;
-  text-align: left;
-}
-
-.progress-info span {
-  font-weight: bold;
-  color: #2c3e50;
-}
-
-.dialog-buttons {
-  display: flex;
-  gap: 0.8rem;
-  justify-content: center;
-}
-
-.resume-btn, .restart-btn {
-  padding: 0.7rem 1.2rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.95rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.resume-btn {
-  background: #3498db;
-  color: white;
-}
-
-.resume-btn:hover {
-  background: #2980b9;
-  transform: translateY(-2px);
-}
-
-.restart-btn {
-  background: #e74c3c;
-  color: white;
-}
-
-.restart-btn:hover {
-  background: #c0392b;
-  transform: translateY(-2px);
-}
-
-/* 完成覆盖层样式 */
-.completion-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(255, 255, 255, 0.95);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-radius: 8px;
-  z-index: 10;
-  backdrop-filter: blur(2px);
-}
-
-.completion-content {
-  text-align: center;
-  padding: 1.5rem;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-  max-width: 90%;
-}
-
-.completion-icon {
-  font-size: 3.5rem;
-  margin-bottom: 0.8rem;
-  color: #27ae60;
-  animation: bounce 1s infinite;
-}
-
-@keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-8px); }
-}
-
-.completion-content h2 {
-  font-size: 1.8rem;
-  color: #2c3e50;
-  margin-bottom: 0.5rem;
-}
-
-.completion-content p {
-  font-size: 1.1rem;
-  color: #3498db;
-  margin: 0.4rem 0;
-  font-weight: bold;
-}
-
-.completion-buttons {
-  display: flex;
-  gap: 0.8rem;
-  justify-content: center;
-  margin-top: 1.2rem;
-}
-
-.completion-restart-btn {
-  padding: 0.7rem 1.8rem;
-  background: #27ae60;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(39, 174, 96, 0.4);
-}
-
-.completion-restart-btn:hover {
-  background: #219653;
-  transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(39, 174, 96, 0.6);
-}
-
-.completion-clear-btn {
-  padding: 0.7rem 1.8rem;
-  background: #95a5a6;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: bold;
-  cursor: pointer;
-  transition: all 0.3s;
-  box-shadow: 0 2px 8px rgba(149, 165, 166, 0.4);
-}
-
-.completion-clear-btn:hover {
-  background: #7f8c8d;
-  transform: translateY(-2px);
-  box-shadow: 0 3px 12px rgba(149, 165, 166, 0.6);
-}
-
-.controls {
-  display: flex;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 0.8rem;
-  flex-wrap: wrap;
+@media (max-width: 480px) {
+  .stats-panel {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .character {
+    font-size: 4.5rem;
+  }
+  
+  .code-input {
+    width: 180px;
+    font-size: 1.25rem;
+    padding: 1rem 1.5rem;
+  }
+  
+  .practice-title {
+    font-size: 1.75rem;
+  }
 }
 
 .mode-btn {
@@ -1278,17 +1378,6 @@ onUnmounted(() => {
 .restart-btn:disabled {
   background: #bdc3c7;
   cursor: not-allowed;
-  transform: none;
   opacity: 0.7;
-}
-
-.font-info {
-  margin-top: 0.8rem;
-  padding: 0.4rem;
-  background: #f8f9fa;
-  border-radius: 4px;
-  font-size: 0.8rem;
-  color: #7f8c8d;
-  text-align: center;
 }
 </style>

@@ -1,0 +1,32 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Setup Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install dependencies
+        run: npm install
+      - name: Build docs
+        run: npm run docs:build
+      - name: Start static server for E2E tests
+        run: |
+          npx http-server docs/.vitepress/dist -p 5173 -q &
+          sleep 2
+      - name: Install Playwright browsers
+        run: npx playwright install
+      - name: Run E2E tests
+        run: npx playwright test
+        env:
+          BASE_URL: http://localhost:5173
