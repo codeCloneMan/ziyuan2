@@ -1,0 +1,37 @@
+# Cloudflare Pages 配置
+# 用于配置 Cloudflare Pages 的构建和部署设置
+
+[build]
+  # 构建命令
+  command = "pnpm docs:build"
+  
+  # 发布目录（VitePress 构建输出目录）
+  publish = "docs/.vitepress/dist"
+  
+  # 构建环境变量
+  [build.environment]
+    NODE_VERSION = "18"
+    NPM_FLAGS = "--legacy-peer-deps"
+
+# 路由规则
+[[redirects]]
+  # 将所有 HTTP 请求重定向到 HTTPS
+  from = "http:///*"
+  to = "https://:splat"
+  status = 301
+  force = true
+
+[[headers]]
+  # 为构建产物添加缓存头
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# SPA 支持 - 将所有 404 重定向到 index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 404
