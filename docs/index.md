@@ -10,7 +10,7 @@ hero:
   actions:
     - theme: brand
       text: 开始练习
-      link: /practice/modern
+      link: /practice/top500
     - theme: alt
       text: 了解更多
       link: /xingma/index
@@ -45,6 +45,6 @@ features:
 
 ## 友情推荐
 
-- 极致手感「冰雪四拼」拼音方案：https://input.tansongchen.com/
-- 制作自己的形码方案工具：https://chaifen.app/
+- 极致手感「冰雪四拼」拼音方案：[冰雪四拼](https://input.tansongchen.com/)
+- 制作自己的形码方案工具：[拆分工具](https://chaifen.app/)
 

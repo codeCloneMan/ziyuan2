@@ -40,16 +40,13 @@ export default defineConfig({
           '/roots/': [{
             text: '字根大全',
             items: [
-              { text: '所有字根', link: '/roots/index' }
+              { text: '字根大全', link: '/roots/index' }
             ]
           }],
           '/xingma/': [{
             text: '目录展示',
             items: [
-              { text: '字源了解', link: '/xingma/liaojie' },
-              { text: '字根详解', link: '/xingma/zigen' },
-              { text: '前五百字', link: '/xingma/qianwubai' },
-              { text: '字根练习', link: '/xingma/zigenlianxi' }
+              { text: '字源了解', link: '/xingma/liaojie' }
             ]
           }],
           '/practice/': [{
@@ -58,7 +55,7 @@ export default defineConfig({
               { text: '常用字根练习', link: '/practice/top500' },
               { text: '顺序练习', link: '/practice/modern' },
               { text: '随机练习', link: '/practice/random' },
-              { text: '错误字根练习', link: '/practice/error' }
+              { text: '错题本', link: '/practice/error' }
             ]
           }]
         },
@@ -230,8 +227,7 @@ export default defineConfig({
           '/tw/xingma/': [{
             text: '目錄展示',
             items: [
-              { text: '字源了解', link: '/tw/xingma/index' },
-              { text: '快速入門', link: '/tw/introduction' }
+              { text: '字源了解', link: '/tw/xingma/index' }
             ]
           }],
           '/tw/practice/': [{
@@ -240,7 +236,7 @@ export default defineConfig({
               { text: '常用字根練習', link: '/tw/practice/top500' },
               { text: '順序練習', link: '/tw/practice/modern' },
               { text: '隨機練習', link: '/tw/practice/random' },
-              { text: '錯誤字根練習', link: '/tw/practice/error' }
+              { text: '錯題本', link: '/tw/practice/error' }
             ]
           }]
         },

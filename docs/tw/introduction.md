@@ -48,7 +48,7 @@ Q W E R T Y U I O P
 
 ### 第三步：開始練習
 
-[開始順序練習 →](/practice/modern)
+[開始常用字根練習 →](/tw/practice/top500)
 
 ## 📖 學習建議
 
@@ -80,10 +80,10 @@ Q W E R T Y U I O P
 
 | 練習模式 | 說明 | 推薦階段 |
 |---------|------|---------|
-| [順序練習](/practice/modern) | 按順序學習所有字根 | 入門期 ✅ |
-| [隨機練習](/practice/random) | 隨機抽測字根 | 練習期 ✅ |
-| [常用字根](/practice/top500) | 專項練習高頻字根 | 進階期 ✅ |
-| [錯題本](/practice/error) | 練習錯誤字根 | 持續 ✅ |
+| [常用字根](/tw/practice/top500) | 專項練習高頻字根 | 入門期 ✅ |
+| [順序練習](/tw/practice/modern) | 按順序學習所有字根 | 練習期 ✅ |
+| [隨機練習](/tw/practice/random) | 隨機抽測字根 | 進階期 ✅ |
+| [錯題本](/tw/practice/error) | 練習錯誤字根 | 持續 ✅ |
 
 ## ❓ 常見問題
 
@@ -107,18 +107,18 @@ Q W E R T Y U I O P
 
 [字源安裝包下載](http://ziyuan.ysepan.com/)
 
-支持 Windows、macOS、Linux 等平台。
+支持 Windows、安卓 雙平台。
 
 ## 🤝 社區支持
 
 - **QQ 群**：點擊頁面右上角 QQ 圖標加入
-- **官方網站**：http://ziyuan.ysepan.com/
+- **官方網站**：[字源資源站](http://ziyuan.ysepan.com/)
 
 ## 💡 立即開始
 
 準備好開始學習了嗎？
 
-[開始順序練習 →](/practice/modern)
+[開始常用字根練習 →](/tw/practice/top500)
 
 ---
 

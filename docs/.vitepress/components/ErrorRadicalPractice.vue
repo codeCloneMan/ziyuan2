@@ -530,11 +530,7 @@ watch(isComplete, (newVal) => {
     </div>
 
     <header class="practice-header">
-      <h1 class="practice-title">错误字根练习</h1>
-      <div class="practice-mode">
-        <span class="mode-badge error-mode">错题模式</span>
-        <span class="mode-badge group-mode">分组练习</span>
-      </div>
+      <h1 class="practice-title">错题本</h1>
     </header>
 
     <!-- 统计面板 -->
@@ -757,6 +753,7 @@ watch(isComplete, (newVal) => {
   max-width: 800px;
   margin: 0 auto;
   padding: 1.5rem;
+  padding-top: 0.5rem;
   font-family:
     -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   position: relative;
@@ -874,31 +871,6 @@ watch(isComplete, (newVal) => {
   font-weight: 700;
   color: #1e293b;
   margin: 0 0 0.5rem 0;
-}
-
-.practice-mode {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.mode-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.35rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.875rem;
-  font-weight: 500;
-}
-
-.mode-badge.error-mode {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.mode-badge.group-mode {
-  background: #d1fae5;
-  color: #047857;
 }
 
 .stats-panel {

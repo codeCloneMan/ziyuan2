@@ -21,7 +21,7 @@ title: 快速入门
 
 ### 适用广泛
 - 日常办公、专业写作、编程开发
-- Windows、macOS、Linux 全平台支持
+- Windows、安卓 双平台支持
 
 ## 🚀 快速开始
 
@@ -48,7 +48,7 @@ Q W E R T Y U I O P
 
 ### 第三步：开始练习
 
-[开始顺序练习 →](/practice/modern)
+[开始常用字根练习 →](/practice/top500)
 
 ## 📖 学习建议
 
@@ -80,9 +80,9 @@ Q W E R T Y U I O P
 
 | 练习模式 | 说明 | 推荐阶段 |
 |---------|------|---------|
-| [顺序练习](/practice/modern) | 按顺序学习所有字根 | 入门期 ✅ |
-| [随机练习](/practice/random) | 随机抽测字根 | 练习期 ✅ |
-| [常用字根](/practice/top500) | 专项练习高频字根 | 进阶期 ✅ |
+| [常用字根](/practice/top500) | 专项练习高频字根 | 入门 ✅ |
+| [顺序练习](/practice/modern) | 按顺序学习所有字根 | 练习期 ✅ |
+| [随机练习](/practice/random) | 随机抽测字根 | 进阶篇 ✅ |
 | [错题本](/practice/error) | 练习错误字根 | 持续 ✅ |
 
 ## ❓ 常见问题
@@ -107,18 +107,18 @@ Q W E R T Y U I O P
 
 [字源安装包下载](http://ziyuan.ysepan.com/)
 
-支持 Windows、macOS、Linux 等平台。
+支持 Windows、安卓 双平台。
 
 ## 🤝 社区支持
 
 - **QQ 群**：点击页面右上角 QQ 图标加入
-- **官方网站**：http://ziyuan.ysepan.com/
+- **官方网站**：[字源资源站](http://ziyuan.ysepan.com/)
 
 ## 💡 立即开始
 
 准备好开始学习了吗？
 
-[开始顺序练习 →](/practice/modern)
+[开始常用字根练习 →](/practice/top500)
 
 ---
 

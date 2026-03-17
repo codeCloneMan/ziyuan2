@@ -228,7 +228,7 @@ const handleRootClick = (root) => {
 .roots-gallery {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 0 2rem 2rem;
 }
 
 /* 头部 */

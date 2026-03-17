@@ -10,10 +10,10 @@ hero:
   actions:
     - theme: brand
       text: 開始練習
-      link: /practice/modern
+      link: /tw/practice/top500
     - theme: alt
       text: 了解更多
-      link: /xingma/index
+      link: /tw/xingma/index
 
 features:
   - title: 簡單易學
@@ -27,15 +27,15 @@ features:
     icon: 📚
   - title: 順序練習
     details: 系統化學習所有字根，循序漸進掌握編碼
-    link: /practice/modern
+    link: /tw/practice/modern
     icon: 📖
   - title: 隨機練習
     details: 隨機抽測字根記憶，檢驗真實掌握程度
-    link: /practice/random
+    link: /tw/practice/random
     icon: 🎲
   - title: 常見根練習
     details: 專項練習高頻字根，快速提升打字速度
-    link: /practice/top500
+    link: /tw/practice/top500
     icon: 🔥
 ---
 
@@ -45,5 +45,5 @@ features:
 
 ## 友情推薦
 
-- 極致手感「冰雪四拼」拼音方案：https://input.tansongchen.com/
-- 製作自己的形碼方案工具：https://chaifen.app/
+- 極致手感「冰雪四拼」拼音方案：[冰雪四拼](https://input.tansongchen.com/)
+- 製作自己的形碼方案工具：[拆分工具](https://chaifen.app/)

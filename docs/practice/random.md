@@ -1,9 +1,9 @@
 ---
 outline: deep
-title: 随机字根练习
+title: 随机练习
 ---
 
-<TigerPractice mode="random" title="随机字根练习" />
+<TigerPractice mode="random" title="随机练习" />
 
 <script setup>
 import TigerPractice from '../.vitepress/components/TigerPractice.vue'

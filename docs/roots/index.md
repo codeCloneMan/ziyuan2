@@ -4,9 +4,11 @@ title: 字根大全
 description: 浏览和学习所有字根，支持搜索、筛选和排序
 ---
 
-# 字根大全
+<div class="roots-gallery-page">
 
 <RootsGallery />
+
+</div>
 
 ## 使用说明
 

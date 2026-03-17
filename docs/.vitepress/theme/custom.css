@@ -139,6 +139,33 @@ body {
   border-bottom: 1px solid rgba(226, 232, 240, 0.6);
 }
 
+/* 移动端导航栏优化 */
+@media (max-width: 768px) {
+  /* 确保导航栏在移动端正常显示 */
+  .VPNav {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1000 !important;
+  }
+
+  /* 移动端菜单按钮样式优化 */
+  .VPNav .VPNavBarHamburger {
+    display: flex !important;
+  }
+
+  /* 确保内容区域不被导航栏遮挡 */
+  .VPContent {
+    padding-top: var(--vp-nav-height) !important;
+  }
+
+  /* 移动端侧边栏优化 */
+  .VPSidebar {
+    z-index: 1001 !important;
+  }
+}
+
 /* 暗色模式覆盖 - 现代毛玻璃 */
 .dark {
   --vp-c-bg: #0f172a;
@@ -168,6 +195,21 @@ body {
   backdrop-filter: blur(12px) saturate(180%);
   -webkit-backdrop-filter: blur(12px) saturate(180%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ========== 字根大全页面样式 ========== */
+
+/* 减小字根大全页面的顶部空白 */
+/* 使用类名选择器替代 :has() 以提高兼容性 */
+.roots-gallery-page .VPDocWrapper,
+.roots-gallery-page .VPDocContent {
+  padding-top: 0 !important;
+}
+
+/* 备用：针对所有文档页面减小顶部间距 */
+.VPDoc .VPDocWrapper,
+.VPDoc .VPDocContent {
+  padding-top: 0.5rem;
 }
 
 /* ========== 现代化组件样式 ========== */
@@ -425,11 +467,67 @@ li::before {
 
 /* ========== 暗色模式现代化样式 ========== */
 
+/* 暗色模式基础文字颜色 */
+.dark {
+  color: var(--vp-c-text-1);
+}
+
+/* 暗色模式链接颜色 */
+.dark a {
+  color: var(--vp-c-brand-light);
+}
+
+.dark a:hover {
+  color: #a78bfa;
+}
+
+/* 暗色模式段落和文字 */
+.dark p,
+.dark span,
+.dark li,
+.dark td,
+.dark th {
+  color: var(--vp-c-text-1);
+}
+
+.dark .vp-doc p,
+.dark .vp-doc li,
+.dark .vp-doc td {
+  color: var(--vp-c-text-2);
+}
+
+/* 暗色模式标题 */
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4,
+.dark h5,
+.dark h6 {
+  color: var(--vp-c-text-1);
+}
+
+.dark .vp-doc h1,
+.dark .vp-doc h2,
+.dark .vp-doc h3 {
+  color: var(--vp-c-text-1);
+}
+
+/* 暗色模式自定义块 */
 .dark .custom-block,
 .dark .vp-doc .custom-block {
   background: linear-gradient(135deg, rgba(30, 41, 59, 0.9), rgba(15, 23, 42, 0.9));
   backdrop-filter: blur(8px);
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* 暗色模式自定义块文字 */
+.dark .custom-block p,
+.dark .custom-block li {
+  color: var(--vp-c-text-2);
+}
+
+.dark .custom-block .custom-block-title {
+  color: var(--vp-c-text-1);
 }
 
 .dark input[type="text"],
@@ -469,6 +567,186 @@ li::before {
 .dark .VPButton.alt:hover,
 .dark button.alt:hover {
   border-color: #8b5cf6;
+  background: rgba(30, 41, 59, 0.8);
+}
+
+/* 暗色模式按钮文字 */
+.dark button,
+.dark .VPButton {
+  color: var(--vp-c-text-1);
+}
+
+.dark button.modern-button.brand,
+.dark .btn.modern-button.brand {
+  color: white;
+}
+
+/* 暗色模式输入框文字 */
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--vp-c-text-3);
+}
+
+.dark input,
+.dark textarea,
+.dark select {
+  color: var(--vp-c-text-1);
+}
+
+/* 暗色模式表格文字 */
+.dark table,
+.dark th,
+.dark td {
+  color: var(--vp-c-text-1);
+}
+
+.dark th {
+  color: var(--vp-c-text-1);
+  font-weight: 600;
+}
+
+.dark td {
+  color: var(--vp-c-text-2);
+}
+
+/* 暗色模式列表项标记 */
+.dark li::before {
+  color: #a78bfa;
+}
+
+/* 暗色模式分割线 */
+.dark hr {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 暗色模式引用块 */
+.dark blockquote {
+  background: rgba(30, 41, 59, 0.6);
+  border-left-color: var(--vp-c-brand);
+  color: var(--vp-c-text-2);
+}
+
+/* 暗色模式导航菜单 */
+.dark .VPNavBarMenu {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+.dark .VPNavBarMenu .items {
+  background: rgba(15, 23, 42, 0.95);
+}
+
+/* 暗色模式下拉菜单 */
+.dark .VPMenu {
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .VPMenu .items {
+  background: transparent;
+}
+
+.dark .VPMenu .item {
+  color: var(--vp-c-text-1);
+}
+
+.dark .VPMenu .item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 暗色模式大纲导航 */
+.dark .VPDocAsideOutline {
+  background: transparent;
+}
+
+.dark .VPDocAsideOutline .outline-link {
+  color: var(--vp-c-text-2);
+}
+
+.dark .VPDocAsideOutline .outline-link:hover {
+  color: var(--vp-c-brand-light);
+}
+
+.dark .VPDocAsideOutline .outline-link.active {
+  color: var(--vp-c-brand);
+}
+
+/* 暗色模式页脚 */
+.dark .VPFooter {
+  background: rgba(15, 23, 42, 0.8);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dark .VPFooter p {
+  color: var(--vp-c-text-2);
+}
+
+/* 暗色模式搜索框 */
+.dark .VPNavBarSearch {
+  background: rgba(30, 41, 59, 0.6);
+}
+
+.dark .VPNavBarSearch input {
+  background: rgba(30, 41, 59, 0.8);
+  color: var(--vp-c-text-1);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 暗色模式移动端菜单 */
+.dark .VPNavScreen {
+  background: rgba(15, 23, 42, 0.98);
+}
+
+.dark .VPNavScreen .container {
+  background: transparent;
+}
+
+.dark .VPNavScreen .items {
+  background: transparent;
+}
+
+.dark .VPNavScreen .item {
+  color: var(--vp-c-text-1);
+}
+
+.dark .VPNavScreen .item:hover {
+  color: var(--vp-c-brand-light);
+}
+
+/* 暗色模式侧边栏菜单 */
+.dark .VPSidebarItem {
+  color: var(--vp-c-text-1);
+}
+
+.dark .VPSidebarItem:hover {
+  color: var(--vp-c-brand-light);
+}
+
+.dark .VPSidebarItem.active {
+  color: var(--vp-c-brand);
+}
+
+/* 暗色模式徽章 */
+.dark .VPBadge {
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+}
+
+/* 暗色模式标签 */
+.dark .VPTag {
+  background: rgba(30, 41, 59, 0.6);
+  color: var(--vp-c-text-2);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+/* 暗色模式卡片标题 */
+.dark .card h3,
+.dark .panel h3 {
+  color: var(--vp-c-text-1);
+}
+
+.dark .card p,
+.dark .panel p {
+  color: var(--vp-c-text-2);
   background: rgba(30, 41, 59, 0.8);
 }
 

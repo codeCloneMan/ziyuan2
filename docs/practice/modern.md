@@ -1,9 +1,9 @@
 ---
 outline: deep
-title: 顺序字根练习
+title: 顺序练习
 ---
 
-<TigerPractice mode="order" title="顺序字根练习" />
+<TigerPractice mode="order" title="顺序练习" />
 
 <script setup>
 import TigerPractice from '../.vitepress/components/TigerPractice.vue'
