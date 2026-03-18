@@ -6,17 +6,12 @@
     "text": { "zh": "快速入門", "en": "Getting Started", "tw": "快速入門" }
   },
   {
-    "key": "route",
-    "link": "/tw/route",
-    "text": { "zh": "學習路線", "en": "Learning Route", "tw": "學習路線" }
-  },
-  {
     "key": "practice",
     "text": { "zh": "字根練習", "en": "Root Practice", "tw": "字根練習" },
     "children": [
       {
-        "link": "/tw/practice/typing",
-        "text": { "zh": "所有字根", "en": "All Roots", "tw": "所有字根" }
+        "link": "/tw/practice/top500",
+        "text": { "zh": "常用字根", "en": "Common Roots", "tw": "常用字根" }
       },
       {
         "link": "/tw/practice/modern",
@@ -26,12 +21,13 @@
         "link": "/tw/practice/random",
         "text": { "zh": "隨機練習", "en": "Random", "tw": "隨機練習" }
       },
-      {
-        "link": "/tw/practice/top500",
-        "text": { "zh": "常用字根", "en": "Common Roots", "tw": "常用字根" }
-      },
       { "link": "/tw/practice/error", "text": { "zh": "錯題本", "en": "Error", "tw": "錯題本" } }
     ]
+  },
+  {
+    "key": "roots",
+    "link": "/tw/roots/index",
+    "text": { "zh": "字根大全", "en": "Root Gallery", "tw": "字根大全" }
   },
   {
     "key": "xingma",

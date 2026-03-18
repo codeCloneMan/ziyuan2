@@ -5,18 +5,17 @@
     "link": "/introduction",
     "text": { "zh": "快速入门", "en": "Getting Started" }
   },
-  { "key": "route", "link": "/route", "text": { "zh": "学习路线", "en": "Learning Route" } },
   {
     "key": "practice",
     "text": { "zh": "字根练习", "en": "Root Practice" },
     "children": [
-      { "link": "/practice/typing", "text": { "zh": "所有字根", "en": "All Roots" } },
+      { "link": "/practice/top500", "text": { "zh": "常用字根", "en": "Common Roots" } },
       { "link": "/practice/modern", "text": { "zh": "顺序练习", "en": "Order" } },
       { "link": "/practice/random", "text": { "zh": "随机练习", "en": "Random" } },
-      { "link": "/practice/top500", "text": { "zh": "常用字根", "en": "Common Roots" } },
       { "link": "/practice/error", "text": { "zh": "错题本", "en": "Error" } }
     ]
   },
+  { "key": "roots", "link": "/roots/index", "text": { "zh": "字根大全", "en": "Root Gallery" } },
   { "key": "xingma", "link": "/xingma/index", "text": { "zh": "字源形码", "en": "Tiger Origin" } },
   { "key": "duanpin", "link": "/duanpin", "text": { "zh": "短拼拼音", "en": "Duanpin" } }
 ]

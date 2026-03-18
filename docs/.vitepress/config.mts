@@ -119,6 +119,7 @@ export default defineConfig({
               { text: 'Error Book', link: '/en/practice/error' }
             ]
           },
+          { text: 'Root Gallery', link: '/en/roots/index' },
           { text: 'Tiger Origin', link: '/en/xingma/index' },
           { text: 'Duanpin', link: '/en/duanpin' },
           {
@@ -133,6 +134,12 @@ export default defineConfig({
           }
         ],
         sidebar: {
+          '/en/roots/': [{
+            text: 'Root Gallery',
+            items: [
+              { text: 'Root Gallery', link: '/en/roots/index' }
+            ]
+          }],
           '/en/xingma/': [{
             text: 'Contents',
             items: [
@@ -210,6 +217,7 @@ export default defineConfig({
               { text: '錯題本', link: '/tw/practice/error' }
             ]
           },
+          { text: '字根大全', link: '/tw/roots/index' },
           { text: '字源形碼', link: '/tw/xingma/index' },
           { text: '短拼拼音', link: '/tw/duanpin' },
           {
@@ -224,6 +232,12 @@ export default defineConfig({
           }
         ],
         sidebar: {
+          '/tw/roots/': [{
+            text: '字根大全',
+            items: [
+              { text: '字根大全', link: '/tw/roots/index' }
+            ]
+          }],
           '/tw/xingma/': [{
             text: '目錄展示',
             items: [
@@ -288,6 +302,12 @@ export default defineConfig({
   lastUpdated: true,
   cleanUrls: true,
   
+  themeConfig: {
+    search: {
+      provider: 'local'
+    }
+  },
+
   // 忽略死链检查（避免构建失败）
   ignoreDeadLinks: true,
 

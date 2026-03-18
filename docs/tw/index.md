@@ -1,49 +1,33 @@
 ---
-# https://vitepress.dev/reference/default-theme-home-page
 layout: home
 
 hero:
   name: "字源形碼"
-  text: "簡單易學的形碼輸入法"
-  tagline: 僅20個核心字根，30分鐘即可上手打字
-
+  text: "高效能 26 鍵形碼輸入方案"
+  tagline: 低重碼、舒適指法、完整生態，讓上手速度和輸入效率同步提升
   actions:
     - theme: brand
-      text: 開始練習
+      text: 立即開始練習
       link: /tw/practice/top500
-    - theme: alt
-      text: 了解更多
-      link: /tw/xingma/index
 
 features:
-  - title: 簡單易學
-    details: 僅20個核心字根，一眼就能記住，30分鐘即可上手打字
-    icon: 🎯
-  - title: 快速輸入
-    details: 四碼定長，無重碼或極低選重，打字流暢不停頓
+  - title: 低重碼高流暢
+    details: 高頻字輸入中斷更少，整體打字節奏更連續自然。
     icon: ⚡
-  - title: 科學拆字
-    details: 基於漢字字源和結構，符合漢字自然規律
-    icon: 📚
-  - title: 順序練習
-    details: 系統化學習所有字根，循序漸進掌握編碼
-    link: /tw/practice/modern
-    icon: 📖
-  - title: 隨機練習
-    details: 隨機抽測字根記憶，檢驗真實掌握程度
-    link: /tw/practice/random
-    icon: 🎲
-  - title: 常見根練習
-    details: 專項練習高頻字根，快速提升打字速度
+  - title: 字根邏輯清晰
+    details: 以字形結構與字源為基礎，規則穩定，記憶與遷移成本更低。
+    icon: 🧩
+  - title: 大字集支援
+    details: 覆蓋擴展漢字場景，日常寫作與專業內容都能更安心輸入。
+    icon: 🀄
+  - title: 刻意練習路徑
+    details: 內建順序、隨機、高頻與錯題練習，幫助穩步建立肌肉記憶。
     link: /tw/practice/top500
-    icon: 🔥
+    icon: 🎯
+  - title: 社群與工具鏈
+    details: 教程、練習器與周邊工具完善，學習和遷移更加順手。
+    icon: 🤝
+  - title: 跨平台可用
+    details: 與主流輸入法環境相容，桌面和行動端都能保持一致體驗。
+    icon: 💻
 ---
-
-## 下載安裝
-
-[字源安裝包下載](http://ziyuan.ysepan.com/)
-
-## 友情推薦
-
-- 極致手感「冰雪四拼」拼音方案：[冰雪四拼](https://input.tansongchen.com/)
-- 製作自己的形碼方案工具：[拆分工具](https://chaifen.app/)

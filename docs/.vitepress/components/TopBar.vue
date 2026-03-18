@@ -5,6 +5,11 @@
         <span class="tiger-badge" aria-hidden="true">🐯</span>
         <span class="brand-text">字源形码</span>
       </a>
+      <div class="search-box">
+        <ClientOnly>
+          <VPNavBarSearch />
+        </ClientOnly>
+      </div>
       <nav class="main-nav" aria-label="Main navigation">
         <template v-for="(item, idx) in navConfig" :key="idx">
           <div
@@ -69,47 +74,41 @@
       @touchmove="onTouchMove"
       @touchend="onTouchEnd"
     >
-      <a href="/" class="nav-link" @click="handleNavClick($event, '/', '')">首页</a>
-      <a href="/introduction" class="nav-link" @click="handleNavClick($event, '/introduction', '')"
-        >快速入门</a
-      >
+      <template v-for="(item, idx) in navConfig" :key="`m-${idx}`">
+        <div v-if="item.children && item.children.length" class="mobile-sub">
+          <div class="nav-link mobile-sub-title">{{ textFor(item) }}</div>
+          <a
+            v-for="(child, cidx) in item.children"
+            :key="`m-${idx}-${cidx}`"
+            :href="child.link"
+            class="nav-link"
+            :target="child.target || '_self'"
+            @click="handleNavClick($event, child.link, child.target)"
+          >
+            {{ child.text?.[locale] ?? child.label ?? 'Item' }}
+          </a>
+        </div>
+        <a
+          v-else
+          :href="item.link"
+          class="nav-link"
+          :target="item.target || '_self'"
+          @click="handleNavClick($event, item.link, item.target)"
+        >
+          {{ textFor(item) }}
+        </a>
+      </template>
       <div class="mobile-sub">
-        <div class="nav-link" style="font-weight: 700">字根练习</div>
+        <div class="nav-link mobile-sub-title">{{ localeMenuTitle }}</div>
         <a
-          href="/practice/top500"
+          v-for="lang in localeCycle"
+          :key="`lang-${lang}`"
+          href="#"
           class="nav-link"
-          @click="handleNavClick($event, '/practice/top500', '')"
-          >常用字根</a
+          @click.prevent="switchLocale(lang)"
         >
-        <a
-          href="/practice/modern"
-          class="nav-link"
-          @click="handleNavClick($event, '/practice/modern', '')"
-          >顺序练习</a
-        >
-        <a
-          href="/practice/random"
-          class="nav-link"
-          @click="handleNavClick($event, '/practice/random', '')"
-          >随机练习</a
-        >
-        <a
-          href="/practice/error"
-          class="nav-link"
-          @click="handleNavClick($event, '/practice/error', '')"
-          >错题本</a
-        >
-      </div>
-      <a href="/xingma/index" class="nav-link" @click="handleNavClick($event, '/xingma/index', '')"
-        >字源形码</a
-      >
-      <a href="/duanpin" class="nav-link" @click="handleNavClick($event, '/duanpin', '')"
-        >短拼拼音</a
-      >
-      <div class="mobile-sub">
-        <div class="nav-link" style="font-weight: 700">友情链接</div>
-        <a href="https://ceping.shurufa.app/" target="_blank" class="nav-link">输入法测评</a>
-        <a href="https://yb6b.github.io/#/" target="_blank" class="nav-link">YB6B 测评</a>
+          {{ localeDisplayName[lang] }}
+        </a>
       </div>
     </nav>
   </header>
@@ -117,6 +116,7 @@
 
 <script setup>
 import { ref, onMounted, computed, reactive, watch } from 'vue'
+import { VPNavBarSearch } from 'vitepress/theme'
 const isMobile = ref(false)
 const mobileOpen = ref(false)
 const fashionOn = ref(false)
@@ -128,30 +128,56 @@ function toggleFashion() {
 const isDark = ref(false)
 // Stage 3: navigation data + locale (zh/en) - data-driven nav via i18n JSON
 const locale = ref('zh')
-const localeLabel = computed(() => (locale.value === 'zh' ? 'English' : '中文'))
+const localeCycle = ['zh', 'tw', 'en']
+const localeDisplayName = {
+  zh: '简体中文',
+  tw: '繁體中文',
+  en: 'English',
+}
+const localeLabel = computed(() => {
+  const currentIndex = localeCycle.indexOf(locale.value)
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % localeCycle.length
+  return localeDisplayName[localeCycle[nextIndex]]
+})
+const localeMenuTitle = computed(() => {
+  if (locale.value === 'en') return 'Language'
+  if (locale.value === 'tw') return '語言'
+  return '语言'
+})
 const navZH = ref([])
+const navTW = ref([])
 const navEN = ref([])
 const navConfig = ref([])
 const dropdownOpenMap = reactive({})
 function setNavConfigLocale() {
-  navConfig.value = locale.value === 'zh' ? navZH.value : navEN.value
+  if (locale.value === 'en') {
+    navConfig.value = navEN.value
+    return
+  }
+  if (locale.value === 'tw') {
+    navConfig.value = navTW.value
+    return
+  }
+  navConfig.value = navZH.value
 }
 function toggleLocale() {
-  locale.value = locale.value === 'zh' ? 'en' : 'zh'
-  localStorage.setItem('zt-lang', locale.value)
-  // Navigate to corresponding language path
+  const currentIndex = localeCycle.indexOf(locale.value)
+  const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % localeCycle.length
+  switchLocale(localeCycle[nextIndex])
+}
+function switchLocale(targetLang) {
+  locale.value = targetLang
+  localStorage.setItem('zt-lang', targetLang)
   const path = window.location.pathname
-  const isEn = path.startsWith('/en')
-  const targetLang = locale.value
+  const basePath = path.replace(/^\/(en|tw)(?=\/|$)/, '') || '/'
+  let nextPath = basePath
   if (targetLang === 'en') {
-    if (isEn) return
-    const newPath = path === '/' ? '/en/' : '/en' + path
-    window.location.assign(newPath)
-  } else {
-    if (!isEn) return
-    const rest = path.startsWith('/en/') ? path.slice(3) : path
-    const newPath = rest === '' ? '/' : rest
-    window.location.assign(newPath)
+    nextPath = basePath === '/' ? '/en/' : `/en${basePath}`
+  } else if (targetLang === 'tw') {
+    nextPath = basePath === '/' ? '/tw/' : `/tw${basePath}`
+  }
+  if (nextPath !== path) {
+    window.location.assign(nextPath)
   }
 }
 function textFor(item) {
@@ -235,23 +261,31 @@ onMounted(() => {
     fashionOn.value = true
     document.body.classList.add('theme-fashion')
   }
-  // load navigation translations (zh/en) as data-driven config
-  Promise.all([import('../../i18n/nav.zh.json'), import('../../i18n/nav.en.json')])
-    .then(([zh, en]) => {
+  const path = window.location.pathname
+  if (path.startsWith('/en')) {
+    locale.value = 'en'
+  } else if (path.startsWith('/tw')) {
+    locale.value = 'tw'
+  }
+  Promise.all([
+    import('../../i18n/nav.zh.json'),
+    import('../../i18n/nav.tw.json'),
+    import('../../i18n/nav.en.json'),
+  ])
+    .then(([zh, tw, en]) => {
       navZH.value = zh.default ?? zh
+      navTW.value = tw.default ?? tw
       navEN.value = en.default ?? en
       setNavConfigLocale()
     })
     .catch(() => {
-      // Fallbacks if dynamic imports fail
       navZH.value = [{ key: 'home', link: '/', text: { zh: '首页', en: 'Home' } }]
-      navEN.value = [{ key: 'home', link: '/en/index', text: { zh: '首页', en: 'Home' } }]
+      navTW.value = [{ key: 'home', link: '/tw/', text: { zh: '首頁', en: 'Home', tw: '首頁' } }]
+      navEN.value = [{ key: 'home', link: '/en/', text: { zh: '首页', en: 'Home' } }]
       setNavConfigLocale()
     })
-  // read initial language from localStorage and apply
   const storedLang = localStorage.getItem('zt-lang')
-  if (storedLang) locale.value = storedLang
-  // react to locale changes
+  if (storedLang && localeCycle.includes(storedLang)) locale.value = storedLang
   watch(locale, () => setNavConfigLocale())
 })
 // computed style for mobile menu drag translation
@@ -320,6 +354,12 @@ const mobileMenuStyle = computed(() => ({
     -apple-system,
     'Noto Sans SC',
     sans-serif;
+}
+.search-box {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding-left: 32px;
 }
 .main-nav {
   display: flex;
@@ -406,9 +446,17 @@ const mobileMenuStyle = computed(() => ({
   border-left: 2px solid var(--border);
   margin-left: 8px;
 }
+.mobile-sub-title {
+  font-weight: 700;
+}
 @media (max-width: 860px) {
   .main-nav {
     display: none;
+  }
+  .search-box {
+    padding-left: 12px;
+    flex: 1;
+    justify-content: flex-end;
   }
   .menu-toggle {
     display: inline-flex;

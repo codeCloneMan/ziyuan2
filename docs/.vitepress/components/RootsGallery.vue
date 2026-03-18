@@ -239,7 +239,7 @@ const handleRootClick = (root) => {
 .gallery-title {
   font-size: 2rem;
   font-weight: bold;
-  color: #1e293b;
+  color: var(--vp-c-text-1);
   margin-bottom: 0.5rem;
   background: linear-gradient(135deg, #667eea, #764ba2);
   -webkit-background-clip: text;
@@ -249,7 +249,7 @@ const handleRootClick = (root) => {
 
 .gallery-stats {
   font-size: 1rem;
-  color: #64748b;
+  color: var(--vp-c-text-2);
 }
 
 .stat-highlight {
