@@ -1,17 +1,17 @@
 {
+  "files": [],
+  "references": [
+    {
+      "path": "./tsconfig.app.json"
+    },
+    {
+      "path": "./tsconfig.node.json"
+    }
+  ],
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "Bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "strict": true,
-    "allowJs": false,
-    "noEmit": true,
-    "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "types": ["node"]
-  },
-  "include": ["docs/.vitepress/**/*.ts", "docs/.vitepress/**/*.mts", "tests/**/*.ts"],
-  "exclude": ["node_modules", "docs/.vitepress/dist"]
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  }
 }
