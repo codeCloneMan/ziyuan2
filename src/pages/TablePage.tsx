@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { keyGroups, rootMappings, keyboardRows, findRootsByKey } from '@/data/roots';
+import { renderableKeyGroups, keyboardRows } from '@/data/roots';
 import RootCharDisplay from '@/components/RootCharDisplay';
 import { Search, Keyboard } from 'lucide-react';
 
@@ -12,11 +12,11 @@ export default function TablePage() {
 
   const filteredGroups = useMemo(() => {
     if (selectedKey) {
-      return keyGroups.filter((g) => g.key === selectedKey);
+      return renderableKeyGroups.filter((g) => g.key === selectedKey);
     }
     if (searchQuery.trim()) {
       const query = searchQuery.trim().toLowerCase();
-      return keyGroups
+      return renderableKeyGroups
         .map((g) => ({
           ...g,
           roots: g.roots.filter(
@@ -29,10 +29,18 @@ export default function TablePage() {
         }))
         .filter((g) => g.roots.length > 0);
     }
-    return keyGroups;
+    return renderableKeyGroups;
   }, [searchQuery, selectedKey]);
 
-  const totalRoots = rootMappings.length;
+  const totalRoots = renderableKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
+
+  const renderableRootCountBykey = useMemo(() => {
+    const map: Record<string, number> = {};
+    renderableKeyGroups.forEach((g) => {
+      map[g.key] = g.roots.length;
+    });
+    return map;
+  }, []);
 
   return (
     <div className="mx-auto max-w-6xl px-3 sm:px-4 py-8 sm:py-12">
@@ -66,7 +74,7 @@ export default function TablePage() {
         {keyboardRows.map((row, rowIndex) => (
           <div key={rowIndex} className="flex gap-1 sm:gap-1.5" style={{ paddingLeft: `${rowIndex * 10}px` }}>
             {row.map((key) => {
-              const roots = findRootsByKey(key);
+              const rootCount = renderableRootCountBykey[key] || 0;
               const isSelected = selectedKey === key;
               return (
                 <button
@@ -83,7 +91,7 @@ export default function TablePage() {
                 >
                   <span className="text-[10px] sm:text-sm font-bold">{key.toUpperCase()}</span>
                   <span className={`text-[8px] sm:text-[10px] ${isSelected ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>
-                    {roots.length}
+                    {rootCount}
                   </span>
                 </button>
               );

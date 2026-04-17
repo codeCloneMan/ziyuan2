@@ -25,6 +25,8 @@ const externalLinks = [
   { label: '我爱打字', href: 'https://www.52dazi.cn/home', icon: ExternalLink },
   { label: '天珩字库', href: 'http://cheonhyeong.com/Simplified/download.html', icon: ExternalLink },
   { label: '汉典', href: 'https://www.zdic.net/', icon: ExternalLink },
+  { label: '冰雪拼音', href: 'https://input.tansongchen.com/', icon: ExternalLink },
+  { label: '汉字拆分系统', href: 'https://chaifen.app/', icon: ExternalLink },
 ];
 
 function useTheme() {

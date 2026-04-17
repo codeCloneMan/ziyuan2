@@ -31,6 +31,7 @@ import {
   Trash2,
   BookOpen,
 } from 'lucide-react';
+import { useLocalStorage } from '@/hooks/use-local-storage';
 
 const modeConfig: Record<PracticeMode, { label: string; icon: typeof Shuffle; description: string }> = {
   random: { label: '随机练习', icon: Shuffle, description: '随机出题，全面覆盖' },
@@ -38,6 +39,8 @@ const modeConfig: Record<PracticeMode, { label: string; icon: typeof Shuffle; de
   weak: { label: '弱项强化', icon: Zap, description: '针对错误字根强化' },
   common: { label: '常用字根', icon: BookOpen, description: '去除繁体字根，专注简体' },
 };
+
+const MODES: PracticeMode[] = ['random', 'sequential', 'weak', 'common'];
 
 const KEY_COLORS: Record<string, string> = {
   correct: 'bg-emerald-500 text-white border-emerald-600 shadow-emerald-200 dark:shadow-emerald-900',
@@ -54,6 +57,12 @@ function getRootsForMode(mode: PracticeMode): RootMapping[] {
 export default function PracticePage() {
   const [mode, setMode] = useState<PracticeMode>('random');
   const [persistData, setPersistData] = usePracticePersist(mode);
+  const [allPersistData, setAllPersistData] = useLocalStorage<Record<PracticeMode, PracticePersistData>>('ziyuan-all-practice', {
+    random: defaultPracticeData,
+    sequential: defaultPracticeData,
+    weak: defaultPracticeData,
+    common: defaultPracticeData,
+  });
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentRoot, setCurrentRoot] = useState<RootMapping>(practiceRootMappings[0]);
   const [stats, setStats] = useState<PracticeStats>({
@@ -71,7 +80,6 @@ export default function PracticePage() {
 
   const activeRoots = getRootsForMode(mode);
 
-  // 获取弱项字根列表
   const weakRoots = Object.entries(persistData.wrongCountMap)
     .filter(([, count]) => count > 0)
     .sort((a, b) => b[1] - a[1])
@@ -167,8 +175,41 @@ export default function PracticePage() {
 
         return next;
       });
+
+      setAllPersistData((prev) => {
+        const currentData = prev[mode] || defaultPracticeData;
+        const nextData: PracticePersistData = {
+          stats: {
+            totalAttempts: currentData.stats.totalAttempts + 1,
+            correctAttempts: currentData.stats.correctAttempts + (isCorrect ? 1 : 0),
+            maxStreak: Math.max(currentData.stats.maxStreak, currentMaxStreak),
+            totalScore: currentData.stats.totalScore + (isCorrect ? 10 + Math.min(currentStreak, 10) : 0),
+          },
+          wrongCountMap: { ...currentData.wrongCountMap },
+          correctCountMap: { ...currentData.correctCountMap },
+          sequentialIndex:
+            mode === 'sequential'
+              ? currentData.sequentialIndex + 1
+              : currentData.sequentialIndex,
+          lastPracticeTime: Date.now(),
+        };
+
+        if (isCorrect) {
+          nextData.correctCountMap[rootChar] = (currentData.correctCountMap[rootChar] || 0) + 1;
+          if (nextData.wrongCountMap[rootChar] && nextData.wrongCountMap[rootChar] > 0) {
+            nextData.wrongCountMap[rootChar] = Math.max(0, currentData.wrongCountMap[rootChar] - 1);
+          }
+        } else {
+          nextData.wrongCountMap[rootChar] = (currentData.wrongCountMap[rootChar] || 0) + 1;
+        }
+
+        return {
+          ...prev,
+          [mode]: nextData,
+        };
+      });
     },
-    [mode, setPersistData]
+    [mode, setPersistData, setAllPersistData]
   );
 
   // 处理键盘输入
@@ -299,42 +340,62 @@ export default function PracticePage() {
         )}
 
         {/* 历史统计 */}
-        {persistData.stats.totalAttempts > 0 && (
+        {allPersistData[mode].stats.totalAttempts > 0 && (
           <Card className="mt-6 sm:mt-8 border-border bg-card/80">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle className="text-base sm:text-lg text-foreground">历史学习记录</CardTitle>
-                <Button variant="ghost" size="sm" onClick={clearPersist} className="gap-1 text-red-400 hover:text-red-600">
+                <Button variant="ghost" size="sm" onClick={() => {
+                  setAllPersistData((prev) => ({
+                    ...prev,
+                    [mode]: defaultPracticeData,
+                  }));
+                }} className="gap-1 text-red-400 hover:text-red-600">
                   <Trash2 className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">清除记录</span>
                 </Button>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
-                <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{persistData.stats.totalAttempts}</div>
-                  <div className="text-xs text-muted-foreground">累计练习</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{totalAccuracy}%</div>
-                  <div className="text-xs text-muted-foreground">历史正确率</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-amber-500">{persistData.stats.maxStreak}</div>
-                  <div className="text-xs text-muted-foreground">历史最高连击</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{weakRoots.length}</div>
-                  <div className="text-xs text-muted-foreground">待强化字根</div>
-                </div>
-              </div>
-              {mode === 'sequential' && (
-                <div className="mt-3 sm:mt-4 rounded-lg bg-primary/5 p-3 text-center text-sm text-muted-foreground">
-                  顺序练习进度：{persistData.sequentialIndex} / {activeRoots.length}
-                  {persistData.sequentialIndex >= activeRoots.length && '（已完成一轮）'}
-                </div>
-              )}
+              {(() => {
+                const data = allPersistData[mode];
+                const Icon = modeConfig[mode].icon;
+                const accuracy = data.stats.totalAttempts > 0
+                  ? Math.round((data.stats.correctAttempts / data.stats.totalAttempts) * 100)
+                  : 0;
+                const modeWeakRoots = Object.entries(data.wrongCountMap)
+                  .filter(([, count]) => count > 0)
+                  .length;
+
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-4">
+                      <div className="text-center">
+                        <div className="text-xl sm:text-2xl font-bold text-foreground">{data.stats.totalAttempts}</div>
+                        <div className="text-xs text-muted-foreground">累计练习</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xl sm:text-2xl font-bold text-foreground">{accuracy}%</div>
+                        <div className="text-xs text-muted-foreground">历史正确率</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xl sm:text-2xl font-bold text-amber-500">{data.stats.maxStreak}</div>
+                        <div className="text-xs text-muted-foreground">历史最高连击</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-xl sm:text-2xl font-bold text-foreground">{modeWeakRoots}</div>
+                        <div className="text-xs text-muted-foreground">待强化字根</div>
+                      </div>
+                    </div>
+                    {mode === 'sequential' && data.sequentialIndex > 0 && (
+                      <div className="mt-3 sm:mt-4 rounded-lg bg-primary/5 p-3 text-center text-sm text-muted-foreground">
+                        顺序练习进度：{data.sequentialIndex} / {activeRoots.length}
+                        {data.sequentialIndex >= activeRoots.length && '（已完成一轮）'}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         )}

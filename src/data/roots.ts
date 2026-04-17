@@ -159,9 +159,10 @@ function isPUARoot(cp: number): boolean {
          (cp >= 0x20000 && cp <= 0x2A6DF); // CJK Extension B
 }
 
-/** 判断字根是否可在浏览器中正常渲染（PUA区字根无法渲染） */
+/** 判断字根是否可在浏览器中正常渲染（PUA区字根和扩展B区字根无法渲染） */
 export function isRenderableRoot(cp: number): boolean {
-  return !(cp >= 0xE000 && cp <= 0xF8FF); // Private Use Area
+  return !(cp >= 0xE000 && cp <= 0xF8FF) && // Private Use Area
+         !(cp >= 0x20000 && cp <= 0x2A6DF); // CJK Extension B
 }
 
 /** 所有字根映射列表 */
@@ -180,9 +181,20 @@ export const rootMappings: RootMapping[] = rawRoots.map(([char, key]) => {
 /** 可练习字根列表（排除PUA区不可渲染字根） */
 export const practiceRootMappings: RootMapping[] = rootMappings.filter(r => isRenderableRoot(r.codePoint));
 
-/** 按键分组的字根映射 */
+/** 按键分组的字根映射（包含所有字根，用于字根总表） */
 export const keyGroups: KeyGroup[] = Object.entries(
   rootMappings.reduce<Record<string, RootMapping[]>>((acc, root) => {
+    if (!acc[root.key]) acc[root.key] = [];
+    acc[root.key].push(root);
+    return acc;
+  }, {})
+)
+  .sort(([a], [b]) => a.localeCompare(b))
+  .map(([key, roots]) => ({ key, roots }));
+
+/** 可渲染字根的按键分组（排除PUA和扩展B区不可渲染字根，用于字根总表展示） */
+export const renderableKeyGroups: KeyGroup[] = Object.entries(
+  practiceRootMappings.reduce<Record<string, RootMapping[]>>((acc, root) => {
     if (!acc[root.key]) acc[root.key] = [];
     acc[root.key].push(root);
     return acc;
