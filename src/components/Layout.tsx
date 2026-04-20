@@ -7,14 +7,19 @@ import {
   BookOpen, Keyboard, Home, Image,
   Sun, Moon, Menu, X, Search,
   ExternalLink, MessageCircle, HardDrive,
+  HelpCircle, PenTool,
 } from 'lucide-react';
 import { rootMappings } from '@/data/roots';
+import { charCodeData } from '@/data/charCodeData';
+import { flatFAQs } from '@/data/faqData';
 
 const navItems = [
   { path: '/', label: '首页', icon: Home },
   { path: '/practice', label: '字根练习', icon: Keyboard },
+  { path: '/whole-char', label: '整字练习', icon: PenTool },
   { path: '/table', label: '字根表', icon: BookOpen },
   { path: '/chart', label: '字根图', icon: Image },
+  { path: '/faq', label: '常见问题', icon: HelpCircle },
 ];
 
 const externalLinks = [
@@ -53,11 +58,39 @@ export default function Layout() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
-  const searchResults = searchQuery.trim()
-    ? rootMappings.filter(r => {
-        const q = searchQuery.trim().toLowerCase();
-        return r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q));
-      }).slice(0, 10)
+  // 搜索结果：字根、汉字和FAQ
+  interface SearchResult {
+    type: 'root' | 'char' | 'faq';
+    char?: string;
+    key?: string;
+    code?: string;
+    desc?: string;
+    isPUA?: boolean;
+    q?: string;  // FAQ问题
+    a?: string;  // FAQ答案
+    category?: string;  // FAQ分类
+  }
+
+  const q = searchQuery.trim().toLowerCase();
+
+  const searchResults: SearchResult[] = q
+    ? [
+        // 搜索字根
+        ...rootMappings
+          .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
+          .slice(0, 3)
+          .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA })),
+        // 搜索汉字
+        ...charCodeData
+          .filter(d => d.char.includes(q) || d.code.toLowerCase().includes(q))
+          .slice(0, 3)
+          .map(d => ({ type: 'char' as const, char: d.char, code: d.code })),
+        // 搜索FAQ
+        ...flatFAQs
+          .filter(faq => faq.q.toLowerCase().includes(q) || faq.a.toLowerCase().includes(q))
+          .slice(0, 4)
+          .map(faq => ({ type: 'faq' as const, q: faq.q, a: faq.a, category: faq.category })),
+      ]
     : [];
 
   useEffect(() => {
@@ -95,24 +128,34 @@ export default function Layout() {
             <Button variant="ghost" size="sm" className="h-8 w-8 sm:h-9 sm:w-9 p-0 text-muted-foreground" onClick={toggle}>
               {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
-            <div className="hidden md:block relative">
+            <div className="hidden md:block relative" ref={(node) => {
+              // 点击外部关闭下拉菜单
+              if (node) {
+                const handleClickOutside = (e: MouseEvent) => {
+                  if (!node.contains(e.target as Node)) {
+                    setToolsOpen(false);
+                  }
+                };
+                if (toolsOpen) {
+                  setTimeout(() => document.addEventListener('click', handleClickOutside), 0);
+                  return () => document.removeEventListener('click', handleClickOutside);
+                }
+              }
+            }}>
               <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground hover:text-foreground" onClick={() => setToolsOpen(!toolsOpen)}>
                 <ExternalLink className="h-4 w-4" />更多
               </Button>
               {toolsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setToolsOpen(false)} />
-                  <div className="absolute right-0 top-full mt-2 z-50 w-56 rounded-xl border border-border bg-popover p-2 shadow-lg">
-                    {externalLinks.map(link => {
-                      const Icon = link.icon;
-                      return (
-                        <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-accent/10 transition-colors" onClick={() => setToolsOpen(false)}>
-                          <Icon className="h-4 w-4 text-muted-foreground" />{link.label}
-                        </a>
-                      );
-                    })}
-                  </div>
-                </>
+                <div className="absolute right-0 top-full mt-2 z-50 w-56 rounded-xl border border-border bg-popover p-2 shadow-lg">
+                  {externalLinks.map(link => {
+                    const Icon = link.icon;
+                    return (
+                      <a key={link.label} href={link.href} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-accent/10 transition-colors" onClick={() => setToolsOpen(false)}>
+                        <Icon className="h-4 w-4 text-muted-foreground" />{link.label}
+                      </a>
+                    );
+                  })}
+                </div>
               )}
             </div>
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0 md:hidden text-muted-foreground" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
@@ -125,14 +168,55 @@ export default function Layout() {
           <div className="border-t border-border px-3 sm:px-4 py-3 bg-background/95 backdrop-blur-md">
             <div className="mx-auto max-w-xl relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input placeholder="搜索字根、键位或描述..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="border-border pl-10 focus:border-primary" autoFocus />
+              <Input placeholder="搜索字根、汉字或编码..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="border-border pl-10 focus:border-primary" autoFocus />
               {searchResults.length > 0 && (
                 <div className="absolute top-full mt-2 left-0 right-0 rounded-xl border border-border bg-popover p-2 shadow-lg z-50 max-h-64 overflow-y-auto">
                   {searchResults.map((r, idx) => (
-                    <Link key={`${r.char}-${r.key}-${idx}`} to="/table" className="flex items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-accent/10 transition-colors" onClick={() => { setSearchOpen(false); setSearchQuery(''); }}>
-                      <span className="font-medium text-popover-foreground">{r.isPUA && r.desc ? r.desc : r.char}</span>
-                      <span className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-primary text-xs font-bold">{r.key.toUpperCase()}</span>
-                    </Link>
+                    r.type === 'root' ? (
+                      <Link
+                        key={`root-${r.char}-${r.key}-${idx}`}
+                        to="/table"
+                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-accent/10 transition-colors"
+                        onClick={() => { setSearchOpen(false); setSearchQuery(''); }}
+                      >
+                        <span className="font-medium text-popover-foreground">
+                          {r.isPUA && r.desc ? r.desc : r.char}
+                          <span className="ml-2 text-xs text-muted-foreground">字根</span>
+                        </span>
+                        <span className="flex h-6 w-6 items-center justify-center rounded bg-primary/10 text-primary text-xs font-bold">
+                          {r.key?.toUpperCase()}
+                        </span>
+                      </Link>
+                    ) : r.type === 'char' ? (
+                      <Link
+                        key={`char-${r.char}-${r.code}-${idx}`}
+                        to="/whole-char"
+                        className="flex items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-accent/10 transition-colors"
+                        onClick={() => { setSearchOpen(false); setSearchQuery(''); }}
+                      >
+                        <span className="font-medium text-popover-foreground">
+                          {r.char}
+                          <span className="ml-2 text-xs text-muted-foreground">汉字</span>
+                        </span>
+                        <span className="flex items-center justify-center rounded bg-emerald-500/10 text-emerald-600 text-xs font-bold px-2 py-0.5">
+                          {r.code?.toUpperCase()}
+                        </span>
+                      </Link>
+                    ) : (
+                      <Link
+                        key={`faq-${idx}`}
+                        to="/faq"
+                        className="flex flex-col rounded-lg px-3 py-2 text-sm hover:bg-accent/10 transition-colors"
+                        onClick={() => { setSearchOpen(false); setSearchQuery(''); }}
+                      >
+                        <span className="font-medium text-popover-foreground flex items-center gap-2">
+                          <HelpCircle className="h-3.5 w-3.5 text-amber-500" />
+                          {r.q}
+                          <span className="text-xs text-muted-foreground">[{r.category}]</span>
+                        </span>
+                        <span className="text-xs text-muted-foreground mt-0.5 line-clamp-1">{r.a}</span>
+                      </Link>
+                    )
                   ))}
                 </div>
               )}

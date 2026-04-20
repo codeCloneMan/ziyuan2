@@ -3,12 +3,15 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { renderableKeyGroups, keyboardRows } from '@/data/roots';
+import { getExamplesByRoot } from '@/data/rootExamples';
 import RootCharDisplay from '@/components/RootCharDisplay';
-import { Search, Keyboard } from 'lucide-react';
+import { Search, Keyboard, X, BookOpen } from 'lucide-react';
+import type { RootMapping } from '@/data/roots';
 
 export default function TablePage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [selectedRoot, setSelectedRoot] = useState<RootMapping | null>(null);
 
   const filteredGroups = useMemo(() => {
     if (selectedKey) {
@@ -128,7 +131,8 @@ export default function TablePage() {
                     root={root}
                     size="sm"
                     showDesc={true}
-                    className="cursor-default"
+                    className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
+                    onClick={() => setSelectedRoot(root)}
                   />
                 ))}
               </div>
@@ -141,6 +145,85 @@ export default function TablePage() {
         <div className="py-12 sm:py-16 text-center text-muted-foreground">
           <Keyboard className="mx-auto mb-4 h-10 w-10 sm:h-12 sm:w-12" />
           <p>没有找到匹配的字根</p>
+        </div>
+      )}
+
+      {/* 字根详情弹窗 */}
+      {selectedRoot && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          onClick={() => setSelectedRoot(null)}
+        >
+          <Card
+            className="w-full max-w-md border-border bg-card shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardHeader className="relative pb-3">
+              <button
+                onClick={() => setSelectedRoot(null)}
+                className="absolute right-3 top-3 flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary transition-colors"
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+              <div className="flex items-center gap-4">
+                <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-primary text-2xl sm:text-3xl font-bold text-primary-foreground">
+                  {selectedRoot.key.toUpperCase()}
+                </div>
+                <div>
+                  <CardTitle className="text-xl sm:text-2xl text-foreground mb-1">
+                    字根详情
+                  </CardTitle>
+                  <Badge variant="outline" className="border-border text-muted-foreground">
+                    键位 {selectedRoot.key.toUpperCase()}
+                  </Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* 字根展示 */}
+              <div className="flex items-center justify-center py-4">
+                <div className="flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-3xl border-2 border-border bg-card">
+                  <RootCharDisplay
+                    root={selectedRoot}
+                    size="xl"
+                    showDesc={false}
+                    className="text-4xl sm:text-5xl"
+                  />
+                </div>
+              </div>
+              
+              {/* 字根描述 */}
+              {selectedRoot.desc && (
+                <div className="text-center">
+                  <Badge variant="secondary" className="bg-secondary text-secondary-foreground text-sm">
+                    {selectedRoot.desc}
+                  </Badge>
+                </div>
+              )}
+
+              {/* 例字展示 */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <BookOpen className="h-4 w-4" />
+                  常见例字
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {getExamplesByRoot(selectedRoot.char).length > 0 ? (
+                    getExamplesByRoot(selectedRoot.char).slice(0, 8).map((char, idx) => (
+                      <div
+                        key={idx}
+                        className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border border-border bg-card text-lg sm:text-xl font-medium text-foreground hover:border-primary/50 hover:bg-accent/10 transition-colors cursor-default"
+                      >
+                        {char}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted-foreground">暂无例字数据</p>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
     </div>

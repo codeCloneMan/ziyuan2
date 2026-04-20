@@ -7,7 +7,7 @@ import {
   CardDescription,
   CardContent,
 } from '@/components/ui/card';
-import { Keyboard, BookOpen, Zap, Target, Trophy, ArrowRight, Image, Sparkles, Heart, Star } from 'lucide-react';
+import { Keyboard, BookOpen, Zap, Target, Trophy, ArrowRight, Image, Sparkles, Heart, Star, TrendingUp, Brain, Clock, Award } from 'lucide-react';
 import { rootMappings, commonRootMappings } from '@/data/roots';
 
 const features = [
@@ -74,14 +74,47 @@ const keyLayout = [
   { label: '下排 ZXCVBNM', desc: '天类字根：五行加日月', example: '金木水火土，日月祭今古' },
 ];
 
+// 性能数据
+const performanceData = [
+  { label: '字根总数', value: '241', desc: '同源字根归并后' },
+  { label: '平均码长', value: '2.8', desc: '当量仅1.3' },
+  { label: 'GB2312选重', value: '7字', desc: '绝大多数无需选重' },
+  { label: '学习天数', value: '2-7天', desc: '即可日常打字' },
+];
+
+// 艾宾浩斯记忆曲线数据
+const memoryCurveData = [
+  { day: '即时', retention: 100 },
+  { day: '1天', retention: 37 },
+  { day: '2天', retention: 28 },
+  { day: '6天', retention: 25 },
+  { day: '31天', retention: 21 },
+];
+
+// 学习路线
+const learningPath = [
+  { step: 1, title: '了解字源形码', desc: '阅读介绍，理解设计理念', time: '10分钟', icon: BookOpen },
+  { step: 2, title: '查看字根图', desc: '整体把握字根分布规律', time: '20分钟', icon: Image },
+  { step: 3, title: '顺序练习', desc: '按顺序逐个记忆字根', time: '1-2天', icon: Target },
+  { step: 4, title: '随机练习', desc: '巩固记忆，查漏补缺', time: '持续', icon: Zap },
+  { step: 5, title: '弱项强化', desc: '针对错误字根重点突破', time: '持续', icon: Brain },
+  { step: 6, title: '实战打字', desc: '安装输入法，开始使用', time: '终身', icon: Keyboard },
+];
+
 export default function HomePage() {
   return (
     <div className="flex flex-col">
-      {/* Hero */}
+      {/* Hero - 增强动态背景 */}
       <section className="relative overflow-hidden py-16 sm:py-20 md:py-32">
         <div className="absolute inset-0 -z-10">
-          <div className="absolute left-1/4 top-1/4 h-72 w-72 rounded-full bg-primary/10 blur-3xl" />
-          <div className="absolute right-1/4 bottom-1/4 h-72 w-72 rounded-full bg-amber-200/30 dark:bg-amber-500/10 blur-3xl" />
+          {/* 动态渐变背景 */}
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-amber-500/5" />
+          {/* 浮动光球 */}
+          <div className="absolute left-1/4 top-1/4 h-72 w-72 rounded-full bg-primary/10 blur-3xl animate-pulse" />
+          <div className="absolute right-1/4 bottom-1/4 h-72 w-72 rounded-full bg-amber-200/30 dark:bg-amber-500/10 blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+          <div className="absolute left-1/2 top-1/2 h-96 w-96 rounded-full bg-blue-200/20 dark:bg-blue-500/5 blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+          {/* 装饰网格 */}
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,#8080800a_1px,transparent_1px),linear-gradient(to_bottom,#8080800a_1px,transparent_1px)] bg-[size:24px_24px]" />
         </div>
         <div className="mx-auto max-w-4xl px-4 text-center">
           <div className="mb-4 sm:mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-secondary px-3 sm:px-4 py-1.5 text-xs sm:text-sm text-muted-foreground">
@@ -185,6 +218,103 @@ export default function HomePage() {
             <p className="mt-2 text-xs sm:text-sm text-amber-600 dark:text-amber-400">
               "一二三四五六七八九十"安排在最上面一排键；"丨丿丶乚"分别安排在 LMVD 上，皆取象形
             </p>
+          </div>
+        </div>
+      </section>
+
+      {/* 性能数据展示 */}
+      <section className="py-12 sm:py-16 bg-gradient-to-r from-primary/5 via-background to-amber-500/5">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="mb-8 sm:mb-10 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold text-foreground">卓越性能</h2>
+            <p className="mt-2 sm:mt-3 text-muted-foreground">低重码、手感佳、易上手</p>
+          </div>
+          <div className="grid gap-4 sm:gap-6 grid-cols-2 md:grid-cols-4">
+            {performanceData.map((item) => (
+              <Card key={item.label} className="border-border bg-card/80 backdrop-blur-sm hover:shadow-lg transition-shadow">
+                <CardContent className="p-4 sm:p-6 text-center">
+                  <div className="text-2xl sm:text-3xl font-bold text-primary mb-1">{item.value}</div>
+                  <div className="text-xs sm:text-sm font-medium text-foreground mb-1">{item.label}</div>
+                  <div className="text-[10px] sm:text-xs text-muted-foreground">{item.desc}</div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* 记忆曲线与学习方法 */}
+      <section className="border-t border-border py-12 sm:py-20">
+        <div className="mx-auto max-w-5xl px-4">
+          <div className="mb-8 sm:mb-12 text-center">
+            <h2 className="text-2xl sm:text-3xl font-bold text-foreground">科学记忆法</h2>
+            <p className="mt-2 sm:mt-3 text-muted-foreground">基于艾宾浩斯遗忘曲线，高效掌握字根</p>
+          </div>
+          
+          <div className="grid gap-6 md:grid-cols-2">
+            {/* 记忆曲线图 */}
+            <Card className="border-border bg-card/80">
+              <CardHeader>
+                <CardTitle className="text-base sm:text-lg text-foreground flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  艾宾浩斯遗忘曲线
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {memoryCurveData.map((item, index) => (
+                    <div key={item.day} className="flex items-center gap-3">
+                      <div className="w-12 sm:w-16 text-xs sm:text-sm text-muted-foreground text-right">{item.day}</div>
+                      <div className="flex-1 h-6 sm:h-8 bg-secondary rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-primary to-amber-500 transition-all duration-500"
+                          style={{ 
+                            width: `${item.retention}%`,
+                            animationDelay: `${index * 100}ms`
+                          }}
+                        />
+                      </div>
+                      <div className="w-10 sm:w-12 text-xs sm:text-sm font-medium text-foreground">{item.retention}%</div>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-4 text-xs sm:text-sm text-muted-foreground">
+                  💡 通过定期复习，可将记忆保持率提升至90%以上
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* 学习路线 */}
+            <Card className="border-border bg-card/80">
+              <CardHeader>
+                <CardTitle className="text-base sm:text-lg text-foreground flex items-center gap-2">
+                  <Award className="h-5 w-5 text-primary" />
+                  学习路线
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2 sm:space-y-3">
+                  {learningPath.map((item, index) => {
+                    const Icon = item.icon;
+                    return (
+                      <div key={item.step} className="flex items-start gap-2 sm:gap-3">
+                        <div className="flex h-6 w-6 sm:h-8 sm:w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs sm:text-sm font-bold">
+                          {item.step}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary flex-shrink-0" />
+                            <span className="text-xs sm:text-sm font-medium text-foreground">{item.title}</span>
+                            <span className="text-[10px] sm:text-xs text-muted-foreground bg-secondary px-1.5 sm:px-2 py-0.5 rounded">{item.time}</span>
+                          </div>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 ml-5 sm:ml-6">{item.desc}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </section>
