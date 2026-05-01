@@ -7,7 +7,7 @@ import {
   BookOpen, Keyboard, Home, Image,
   Sun, Moon, Menu, X, Search,
   ExternalLink, MessageCircle, HardDrive,
-  HelpCircle, PenTool,
+  HelpCircle, PenTool, BarChart3,
 } from 'lucide-react';
 import { rootMappings } from '@/data/roots';
 import { charCodeData } from '@/data/charCodeData';
@@ -19,11 +19,12 @@ const navItems = [
   { path: '/whole-char', label: '整字练习', icon: PenTool },
   { path: '/table', label: '字根表', icon: BookOpen },
   { path: '/chart', label: '字根图', icon: Image },
+  { path: '/evaluate', label: '码表测评', icon: BarChart3 },
   { path: '/faq', label: '常见问题', icon: HelpCircle },
 ];
 
 const externalLinks = [
-  { label: 'QQ群：261418302', href: 'https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0', icon: MessageCircle },
+  { label: 'QQ群', href: 'https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0', icon: MessageCircle },
   { label: '网盘下载', href: 'http://ziyuan.ysepan.com/', icon: HardDrive },
   { label: '宇浩测码', href: 'https://ceping.shurufa.app/', icon: ExternalLink },
   { label: 'yb测码', href: 'https://yb6b.github.io/#/', icon: ExternalLink },
@@ -32,6 +33,8 @@ const externalLinks = [
   { label: '汉典', href: 'https://www.zdic.net/', icon: ExternalLink },
   { label: '冰雪拼音', href: 'https://input.tansongchen.com/', icon: ExternalLink },
   { label: '汉字拆分系统', href: 'https://chaifen.app/', icon: ExternalLink },
+  { label: '好码测评', href: 'https://chs.hertz.ltd/#evaluate', icon: ExternalLink },
+  { label: '虎测评', href: 'https://assess.tiger-code.com/', icon: ExternalLink },
 ];
 
 function useTheme() {
