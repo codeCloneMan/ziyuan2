@@ -6,6 +6,7 @@ import TablePage from '@/pages/TablePage';
 import ChartPage from '@/pages/ChartPage';
 import FAQPage from '@/pages/FAQPage';
 import EvaluatePage from '@/pages/EvaluatePage';
+import SplitSearchPage from '@/pages/SplitSearchPage';
 import Layout from '@/components/Layout';
 
 const router = createHashRouter([
@@ -20,6 +21,7 @@ const router = createHashRouter([
       { path: 'chart', element: <ChartPage /> },
       { path: 'faq', element: <FAQPage /> },
       { path: 'evaluate', element: <EvaluatePage /> },
+      { path: 'split-search', element: <SplitSearchPage /> },
     ],
   },
 ]);

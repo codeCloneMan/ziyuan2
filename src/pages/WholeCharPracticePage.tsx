@@ -9,7 +9,7 @@ import { top500Chars } from '@/data/commonChars';
 import type { WholeCharMode } from '@/types';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
-import { Play, RotateCcw, Info, Trash2, GraduationCap, Star } from 'lucide-react';
+import { Play, RotateCcw, Info, Trash2, GraduationCap, Star, Trophy } from 'lucide-react';
 
 const modeConfig: Record<WholeCharMode, { label: string; icon: typeof Star; description: string }> = {
   progressive: { label: '全部汉字', icon: GraduationCap, description: '科学记忆，逐步掌握全部汉字' },
@@ -226,122 +226,201 @@ export default function WholeCharPracticePage() {
   const learningStats = getLearning().stats;
   const weakItems = Object.entries(currentData.wrongCountMap).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]).map(([c]) => c);
 
+  // 未开始时显示模式选择
   if (!isPlaying) {
     return (
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold mb-2">整字练习</h1>
-          <p className="text-muted-foreground">根据汉字打出对应的编码，共 {charCodeData.length} 个编码</p>
-        </div>
+      <div className="min-h-screen bg-background">
+        {/* Hero区 */}
+        <section className="py-16 sm:py-20">
+          <div className="container-page text-center max-w-4xl">
+            <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
+              <Info className="h-4 w-4 mr-1.5" />
+              整字编码练习系统
+            </Badge>
+            
+            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
+              整字
+              <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 练习</span>
+            </h1>
+            
+            <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+              根据汉字打出对应的编码
+              <br className="hidden sm:block" />
+              共 <span className="font-bold text-foreground">{charCodeData.length}</span> 个编码
+            </p>
+          </div>
+        </section>
 
         {/* 模式选择 */}
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 mb-6">
-          {(['progressive', 'progressive500'] as WholeCharMode[]).map((m) => {
-            const config = modeConfig[m];
-            const Icon = config.icon;
-            const isActive = mode === m;
-            return (
-              <Card
-                key={m}
-                className={cn(
-                  'cursor-pointer border-2 transition-all hover:shadow-lg',
-                  isActive ? 'border-primary bg-primary/5 shadow-lg' : 'border-border bg-card hover:border-primary/30'
-                )}
-                onClick={() => setMode(m)}
-              >
-                <CardHeader className="text-center p-4">
-                  <Icon className={cn('mx-auto mb-2 h-8 w-8', isActive ? 'text-primary' : 'text-muted-foreground')} />
-                  <CardTitle className={cn('text-lg', isActive ? 'text-foreground' : 'text-muted-foreground')}>
-                    {config.label}
-                  </CardTitle>
-                  <p className="text-sm text-muted-foreground">{config.description}</p>
-                </CardHeader>
-              </Card>
-            );
-          })}
-        </div>
+        <section className="pb-8 sm:pb-12">
+          <div className="container-page max-w-3xl mx-auto">
+            <h2 className="text-xl font-bold text-center mb-6">选择你的练习模式</h2>
+            
+            <div className="grid gap-6 grid-cols-1 sm:grid-cols-2">
+              {(['progressive', 'progressive500'] as WholeCharMode[]).map((m, idx) => {
+                const config = modeConfig[m];
+                const Icon = config.icon;
+                const isActive = mode === m;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={cn(
+                      'card-feature text-left stagger-item',
+                      isActive && 'border-primary ring-2 ring-primary/20'
+                    )}
+                    style={{ animationDelay: `${idx * 100}ms` }}
+                  >
+                    <div className={cn(
+                      'w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-colors',
+                      isActive ? 'bg-primary/15' : 'bg-muted/80'
+                    )}>
+                      <Icon className={cn(
+                        'h-7 w-7 transition-colors',
+                        isActive ? 'text-primary' : 'text-muted-foreground'
+                      )} />
+                    </div>
+                    
+                    <h3 className={cn(
+                      'text-xl font-bold mb-2 transition-colors',
+                      isActive ? 'text-foreground' : 'text-muted-foreground'
+                    )}>
+                      {config.label}
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {config.description}
+                    </p>
+
+                    {isActive && (
+                      <div className="mt-4 pt-4 border-t border-border/60">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+                          <Star className="h-4 w-4" fill="currentColor" />
+                          已选择
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         {/* 学习进度 */}
-        <Card className="mb-6 border-border bg-card/80">
-          <CardHeader>
-            <CardTitle className="text-lg text-foreground flex items-center gap-2">
-              <GraduationCap className="h-5 w-5 text-primary" />
-              {mode === 'progressive' ? '全部汉字学习进度' : '常用500字学习进度'}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              <div className="grid grid-cols-4 gap-4 text-center">
-                <div>
-                  <div className="text-2xl font-bold text-primary">{learningStats.mastered}</div>
-                  <div className="text-xs text-muted-foreground">已掌握</div>
+        {(mode === 'progressive' || mode === 'progressive500') && (
+          <section className="pb-8 sm:pb-12 bg-muted/30">
+            <div className="container-page max-w-3xl mx-auto">
+              <div className="card-stats">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-lg">
+                      {mode === 'progressive' ? '全部汉字学习进度' : '常用500字学习进度'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">基于艾宾浩斯遗忘曲线的科学复习</p>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-amber-600">{learningStats.active}</div>
-                  <div className="text-xs text-muted-foreground">学习中</div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-6">
+                  <div className="text-center">
+                    <div className="stat-number text-primary">{learningStats.mastered}</div>
+                    <div className="stat-label">已掌握</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-warning">{learningStats.active}</div>
+                    <div className="stat-label">学习中</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-muted-foreground">{learningStats.pending}</div>
+                    <div className="stat-label">待学习</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-success">{learningStats.progress}%</div>
+                    <div className="stat-label">完成度</div>
+                  </div>
                 </div>
-                <div>
-                  <div className="text-2xl font-bold text-muted-foreground">{learningStats.pending}</div>
-                  <div className="text-xs text-muted-foreground">待学习</div>
-                </div>
-                <div>
-                  <div className="text-2xl font-bold text-emerald-600">{learningStats.progress}%</div>
-                  <div className="text-xs text-muted-foreground">完成度</div>
+
+                <div className="progress-base">
+                  <div className="progress-bar-animated" style={{ width: `${learningStats.progress}%` }} />
                 </div>
               </div>
-              <Progress value={learningStats.progress} className="h-2" />
             </div>
-          </CardContent>
-        </Card>
+          </section>
+        )}
 
         {/* 历史记录 */}
         {currentData.totalStats.totalAttempts > 0 && (
-          <Card className="mb-6 border-border bg-card/80">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg text-foreground">历史学习记录</CardTitle>
-                <Button variant="ghost" size="sm" onClick={clearData} className="gap-1 text-red-400 hover:text-red-600">
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span className="hidden sm:inline">清除记录</span>
-                </Button>
+          <section className="pb-12">
+            <div className="container-page max-w-3xl mx-auto">
+              <div className="card-base">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="h-5 w-5 text-accent" />
+                    <h2 className="font-bold text-lg">历史学习记录</h2>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={clearData} 
+                    className="gap-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    清除记录
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{currentData.totalStats.totalAttempts}</div>
+                    <div className="stat-label">累计练习</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{totalAccuracy}%</div>
+                    <div className="stat-label">历史正确率</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number text-warning">{currentData.totalStats.maxStreak}</div>
+                    <div className="stat-label">最高连击</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{weakItems.length}</div>
+                    <div className="stat-label">待强化</div>
+                  </div>
+                </div>
               </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{currentData.totalStats.totalAttempts}</div>
-                  <div className="text-xs text-muted-foreground">累计练习</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{totalAccuracy}%</div>
-                  <div className="text-xs text-muted-foreground">历史正确率</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-amber-500">{currentData.totalStats.maxStreak}</div>
-                  <div className="text-xs text-muted-foreground">历史最高连击</div>
-                </div>
-                <div>
-                  <div className="text-xl sm:text-2xl font-bold text-foreground">{weakItems.length}</div>
-                  <div className="text-xs text-muted-foreground">待强化汉字</div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
 
-        {/* 开始/继续按钮 */}
-        <div className="text-center flex justify-center gap-4">
-          {currentData.isPlaying && currentData.stats.totalAttempts > 0 && (
-            <Button size="lg" variant="outline" onClick={continuePractice} className="gap-2 px-8">
-              <Play className="h-5 w-5" />
-              继续练习
-            </Button>
-          )}
-          <Button size="lg" onClick={startPractice} className="gap-2 bg-primary px-10 text-primary-foreground">
-            <Play className="h-5 w-5" />
-            {currentData.isPlaying ? '重新开始' : '开始练习'}
-          </Button>
-        </div>
+        {/* CTA按钮组 */}
+        <section className="pb-20">
+          <div className="container-page text-center">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              {currentData.isPlaying && currentData.stats.totalAttempts > 0 && (
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  onClick={continuePractice} 
+                  className="btn-secondary text-base gap-2 px-8 py-3"
+                >
+                  <Play className="h-5 w-5" />
+                  继续练习
+                </Button>
+              )}
+              
+              <Button 
+                size="lg" 
+                onClick={startPractice} 
+                className="btn-primary text-base px-10 py-3"
+              >
+                <Play className="h-5 w-5" />
+                {currentData.isPlaying ? '重新开始' : '开始练习'}
+              </Button>
+            </div>
+          </div>
+        </section>
       </div>
     );
   }

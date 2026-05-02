@@ -1,6 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -10,7 +9,7 @@ import type { PracticeMode, PracticeStats } from '@/types';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import RootCharDisplay from '@/components/RootCharDisplay';
-import { Play, RotateCcw, Zap, BookOpen, Trophy, CheckCircle2, XCircle, Trash2, GraduationCap } from 'lucide-react';
+import { Play, RotateCcw, Zap, BookOpen, Trophy, CheckCircle2, XCircle, Trash2, GraduationCap, Target, AlertTriangle, Lightbulb, Eye, BarChart3 } from 'lucide-react';
 
 const modeConfig: Record<PracticeMode, { label: string; icon: typeof Zap; description: string }> = {
   progressive: { label: '渐进学习', icon: GraduationCap, description: '科学记忆，逐步掌握全部字根' },
@@ -197,124 +196,505 @@ export default function PracticePage() {
   // 未开始时显示模式选择
   if (!isPlaying) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-8 sm:py-12">
-        <div className="mb-8 text-center">
-          <h1 className="text-2xl sm:text-3xl font-bold text-foreground">v1.31版字根练习</h1>
-          <p className="mt-2 text-muted-foreground">选择练习模式，开始训练</p>
-        </div>
-        <div className="grid gap-4 grid-cols-1 sm:grid-cols-3">
-          {MODES.map((modeKey) => {
-            const config = modeConfig[modeKey];
-            const Icon = config.icon;
-            const isActive = mode === modeKey;
-            return (
-              <Card key={modeKey} className={cn('cursor-pointer border-2 transition-all hover:shadow-lg', isActive ? 'border-primary bg-primary/5 shadow-lg' : 'border-border bg-card hover:border-primary/30')} onClick={() => setMode(modeKey)}>
-                <CardHeader className="text-center p-4">
-                  <Icon className={cn('mx-auto mb-2 h-8 w-8', isActive ? 'text-primary' : 'text-muted-foreground')} />
-                  <CardTitle className={cn('text-lg', isActive ? 'text-foreground' : 'text-muted-foreground')}>{config.label}</CardTitle>
-                  <p className="text-sm text-muted-foreground">{config.description}</p>
-                </CardHeader>
-              </Card>
-            );
-          })}
-        </div>
-        {mode === 'weak' && weakRoots.length === 0 && <div className="mt-4 text-center text-sm text-amber-600">错题列表为空，请先进行练习以收集错题数据</div>}
+      <div className="min-h-screen bg-background">
+        {/* Hero区 - 简洁标题 */}
+        <section className="py-16 sm:py-20">
+          <div className="container-page text-center">
+            <div className="max-w-2xl mx-auto">
+              <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
+                v1.31版 · 字根练习系统
+              </Badge>
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
+                选择你的
+                <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 练习模式</span>
+              </h1>
+              <p className="text-lg text-muted-foreground mb-12 animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+                科学记忆，循序渐进，快速掌握全部字根
+              </p>
+            </div>
+
+            {/* 模式选择卡片 */}
+            <div className="grid gap-6 grid-cols-1 md:grid-cols-3 max-w-4xl mx-auto">
+              {MODES.map((modeKey, idx) => {
+                const config = modeConfig[modeKey];
+                const Icon = config.icon;
+                const isActive = mode === modeKey;
+                return (
+                  <button
+                    key={modeKey}
+                    onClick={() => setMode(modeKey)}
+                    className={cn(
+                      'card-feature text-left stagger-item',
+                      isActive && 'border-primary ring-2 ring-primary/20'
+                    )}
+                    style={{ animationDelay: `${idx * 100}ms` }}
+                  >
+                    <div className={cn(
+                      'w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-colors',
+                      isActive ? 'bg-primary/15' : 'bg-muted/80'
+                    )}>
+                      <Icon className={cn(
+                        'h-7 w-7 transition-colors',
+                        isActive ? 'text-primary' : 'text-muted-foreground'
+                      )} />
+                    </div>
+                    
+                    <h3 className={cn(
+                      'text-xl font-bold mb-2 transition-colors',
+                      isActive ? 'text-foreground' : 'text-muted-foreground'
+                    )}>
+                      {config.label}
+                    </h3>
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {config.description}
+                    </p>
+
+                    {isActive && (
+                      <div className="mt-4 pt-4 border-t border-border/60">
+                        <span className="inline-flex items-center gap-1.5 text-sm font-medium text-primary">
+                          <CheckCircle2 className="h-4 w-4" />
+                          已选择
+                        </span>
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        {/* 学习进度区域 */}
         {(mode === 'progressive' || mode === 'common') && (
-          <Card className="mt-6 border-border bg-card/80">
-            <CardHeader><CardTitle className="text-lg text-foreground flex items-center gap-2"><GraduationCap className="h-5 w-5 text-primary" />{mode === 'progressive' ? '全部字根学习进度' : '简体字根学习进度'}</CardTitle></CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="grid grid-cols-4 gap-4 text-center">
-                  <div><div className="text-2xl font-bold text-primary">{learningStats.mastered}</div><div className="text-xs text-muted-foreground">已掌握</div></div>
-                  <div><div className="text-2xl font-bold text-amber-600">{learningStats.active}</div><div className="text-xs text-muted-foreground">学习中</div></div>
-                  <div><div className="text-2xl font-bold text-muted-foreground">{learningStats.pending}</div><div className="text-xs text-muted-foreground">待学习</div></div>
-                  <div><div className="text-2xl font-bold text-emerald-600">{learningStats.progress}%</div><div className="text-xs text-muted-foreground">完成度</div></div>
+          <section className="pb-16 bg-muted/30">
+            <div className="container-page max-w-3xl mx-auto">
+              <div className="card-stats">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-lg">{mode === 'progressive' ? '全部字根学习进度' : '简体字根学习进度'}</h2>
+                    <p className="text-sm text-muted-foreground">基于艾宾浩斯遗忘曲线的科学复习</p>
+                  </div>
                 </div>
-                <Progress value={learningStats.progress} className="h-2" />
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6 mb-6">
+                  <div className="text-center">
+                    <div className="stat-number text-primary">{learningStats.mastered}</div>
+                    <div className="stat-label">已掌握</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-warning">{learningStats.active}</div>
+                    <div className="stat-label">学习中</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-muted-foreground">{learningStats.pending}</div>
+                    <div className="stat-label">待学习</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="stat-number text-success">{learningStats.progress}%</div>
+                    <div className="stat-label">完成度</div>
+                  </div>
+                </div>
+
+                <div className="progress-base">
+                  <div className="progress-bar-animated" style={{ width: `${learningStats.progress}%` }} />
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
+
+        {/* 错题列表 */}
         {mode === 'weak' && weakRoots.length > 0 && (
-          <Card className="mt-6 border-border bg-card/80">
-            <CardHeader><CardTitle className="text-lg text-foreground flex items-center gap-2"><Zap className="h-5 w-5 text-amber-500" />错题列表</CardTitle></CardHeader>
-            <CardContent>
-              <div className="flex flex-wrap gap-2">
-                {weakRoots.slice(0, 30).map((char) => (<Badge key={char} variant="secondary" className="text-base">{char}<span className="ml-1 text-xs text-muted-foreground">({currentData.wrongCountMap[char]}次)</span></Badge>))}
-                {weakRoots.length > 30 && <Badge variant="outline">+{weakRoots.length - 30} 更多</Badge>}
+          <section className="pb-16">
+            <div className="container-page max-w-3xl mx-auto">
+              <div className="card-base">
+                <div className="flex items-center gap-3 mb-6">
+                  <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
+                    <Zap className="h-5 w-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <h2 className="font-bold text-lg">错题列表</h2>
+                    <p className="text-sm text-muted-foreground">重点突破，查漏补缺</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2.5">
+                  {weakRoots.slice(0, 40).map((char) => (
+                    <Badge 
+                      key={char} 
+                      variant="secondary"
+                      className="text-base px-3 py-1.5 hover:bg-destructive/10 cursor-pointer transition-colors"
+                    >
+                      <span className="root-char mr-1">{char}</span>
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({currentData.wrongCountMap[char]}次)
+                      </span>
+                    </Badge>
+                  ))}
+                  {weakRoots.length > 40 && (
+                    <Badge variant="outline" className="px-3 py-1.5">
+                      +{weakRoots.length - 40} 更多
+                    </Badge>
+                  )}
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
+
+        {mode === 'weak' && weakRoots.length === 0 && (
+          <div className="container-page text-center py-8">
+            <div className="alert-base alert-info max-w-md mx-auto">
+              <Zap className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-medium">错题列表为空</p>
+                <p className="text-sm mt-1 opacity-90">请先进行练习以收集错题数据</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 历史记录 */}
         {currentData.totalStats.totalAttempts > 0 && (
-          <Card className="mt-6 border-border bg-card/80">
-            <CardHeader><div className="flex items-center justify-between"><CardTitle className="text-lg text-foreground">历史学习记录</CardTitle><Button variant="ghost" size="sm" onClick={clearModeData} className="gap-1 text-red-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /><span className="hidden sm:inline">清除记录</span></Button></div></CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-center">
-                <div><div className="text-xl sm:text-2xl font-bold text-foreground">{currentData.totalStats.totalAttempts}</div><div className="text-xs text-muted-foreground">累计练习</div></div>
-                <div><div className="text-xl sm:text-2xl font-bold text-foreground">{totalAccuracy}%</div><div className="text-xs text-muted-foreground">历史正确率</div></div>
-                <div><div className="text-xl sm:text-2xl font-bold text-amber-500">{currentData.totalStats.maxStreak}</div><div className="text-xs text-muted-foreground">历史最高连击</div></div>
-                <div><div className="text-xl sm:text-2xl font-bold text-foreground">{weakRoots.length}</div><div className="text-xs text-muted-foreground">待强化字根</div></div>
+          <section className="pb-16 bg-muted/30">
+            <div className="container-page max-w-3xl mx-auto">
+              <div className="card-base">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <Trophy className="h-5 w-5 text-accent" />
+                    <h2 className="font-bold text-lg">历史学习记录</h2>
+                  </div>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={clearModeData} 
+                    className="gap-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    清除记录
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-6">
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{currentData.totalStats.totalAttempts}</div>
+                    <div className="stat-label">累计练习</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{totalAccuracy}%</div>
+                    <div className="stat-label">历史正确率</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number text-warning">{currentData.totalStats.maxStreak}</div>
+                    <div className="stat-label">最高连击</div>
+                  </div>
+                  <div className="text-center p-4 rounded-xl bg-background border border-border/60">
+                    <div className="stat-number">{weakRoots.length}</div>
+                    <div className="stat-label">待强化</div>
+                  </div>
+                </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </section>
         )}
-        <div className="mt-8 text-center flex justify-center gap-4">
-          {currentData.isPlaying && currentData.stats.totalAttempts > 0 && (<Button size="lg" variant="outline" onClick={continuePractice} className="gap-2 px-8"><Play className="h-5 w-5" />继续练习</Button>)}
-          <Button size="lg" onClick={startPractice} className="gap-2 bg-primary px-10 text-primary-foreground"><Play className="h-5 w-5" />{currentData.isPlaying ? '重新开始' : '开始练习'}</Button>
-        </div>
+
+        {/* CTA按钮组 */}
+        <section className="pb-20">
+          <div className="container-page text-center">
+            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+              {currentData.isPlaying && currentData.stats.totalAttempts > 0 && (
+                <Button 
+                  size="lg" 
+                  variant="outline" 
+                  onClick={continuePractice} 
+                  className="btn-secondary text-base gap-2 px-8 py-3"
+                >
+                  <Play className="h-5 w-5" />
+                  继续练习
+                </Button>
+              )}
+              
+              <Button 
+                size="lg" 
+                onClick={startPractice} 
+                className="btn-primary text-base px-10 py-3"
+              >
+                <Play className="h-5 w-5" />
+                {currentData.isPlaying ? '重新开始' : '开始练习'}
+              </Button>
+            </div>
+          </div>
+          </section>
       </div>
     );
   }
 
-  // 练习中
+  // 练习中 - 专业级UI
   return (
-    <div className="mx-auto max-w-4xl px-3 sm:px-4 py-4 sm:py-8">
-      <div className="mb-4 sm:mb-6 flex items-center justify-between">
-        <div className="flex items-center gap-2 sm:gap-4">
-          <Badge variant="outline" className="text-muted-foreground text-xs sm:text-sm">{modeConfig[mode].label}</Badge>
-          <Button variant="ghost" size="sm" onClick={stopPractice} className="gap-1 text-muted-foreground"><RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" /><span className="hidden sm:inline">退出</span></Button>
-        </div>
-        <div className="flex items-center gap-3 sm:gap-6 text-xs sm:text-sm">
-          <div className="flex items-center gap-1 text-muted-foreground"><Trophy className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-amber-500" /><span className="font-semibold text-foreground">{stats.score}</span></div>
-          <div className="flex items-center gap-1 text-muted-foreground"><Zap className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-orange-500" /><span className="font-semibold text-foreground">{stats.streak}x</span></div>
-          <div className="text-muted-foreground"><span className="hidden sm:inline">正确率 </span><span className="font-semibold text-foreground">{accuracy}%</span></div>
-        </div>
-      </div>
-      <div className="mb-6 sm:mb-8"><Progress value={accuracy} className="h-1.5 sm:h-2" /></div>
-      <div className="mb-6 sm:mb-8 flex flex-col items-center">
-        <div className={cn('flex items-center justify-center rounded-3xl border-4 transition-all duration-300 h-28 w-28 sm:h-40 sm:w-40', feedbackType === 'correct' ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 scale-110' : feedbackType === 'wrong' ? 'border-red-400 bg-red-50 dark:bg-red-950/30 scale-95' : 'border-border bg-card')}>
-          <RootCharDisplay root={currentRoot} size="xl" showDesc={true} className={cn('border-0 bg-transparent', feedbackType === 'correct' ? 'text-emerald-600 dark:text-emerald-400' : feedbackType === 'wrong' ? 'text-red-600 dark:text-red-400' : 'text-foreground')} />
-        </div>
-        <div className="mt-4 relative">
-          <input ref={inputRef} type="text" readOnly placeholder="输入键位" className="w-40 sm:w-48 h-12 sm:h-14 text-center text-xl sm:text-2xl font-mono bg-muted border-2 border-primary/30 rounded-xl focus:outline-none focus:border-primary caret-primary" value={keyFeedback?.toUpperCase() || ''} />
-          {!keyFeedback && <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none animate-pulse text-lg">▎</span>}
-        </div>
-        {feedbackType && (
-          <div className={cn('mt-3 sm:mt-4 flex items-center gap-2 text-base sm:text-lg font-semibold', feedbackType === 'correct' ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-            {feedbackType === 'correct' ? <><CheckCircle2 className="h-5 w-5" />正确！</> : <><XCircle className="h-5 w-5" />错误，正确键位：<span className="inline-flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg bg-red-100 dark:bg-red-900/50 font-mono text-base sm:text-lg font-bold text-red-700 dark:text-red-300">{currentRoot.key.toUpperCase()}</span></>}
+    <div className="min-h-screen bg-background">
+      {/* 顶部状态栏 */}
+      <div className="sticky top-16 z-30 border-b border-border bg-background/95 backdrop-blur-md">
+        <div className="container-page max-w-4xl py-3">
+          <div className="flex items-center justify-between">
+            {/* 左侧：模式 + 退出按钮 */}
+            <div className="flex items-center gap-3">
+              <Badge variant="secondary" className="bg-primary/10 text-primary font-medium px-3 py-1.5">
+                {modeConfig[mode].label}
+              </Badge>
+              
+              <button
+                onClick={stopPractice}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span className="hidden sm:inline">退出练习</span>
+              </button>
+            </div>
+
+            {/* 右侧：统计数据 */}
+            <div className="flex items-center gap-4 sm:gap-6">
+              {/* 分数 */}
+              <div className="flex items-center gap-1.5">
+                <Trophy className="h-4 w-4 text-amber-500" />
+                <span className="text-sm font-bold text-foreground">{stats.score}</span>
+              </div>
+
+              {/* 连击 */}
+              <div className="flex items-center gap-1.5">
+                <Zap className={`h-4 w-4 ${stats.streak >= 10 ? 'text-orange-500' : 'text-muted-foreground'}`} />
+                <span className={`text-sm font-bold ${stats.streak >= 10 ? 'text-orange-500' : 'text-foreground'}`}>
+                  {stats.streak}x
+                  {stats.streak >= 10 && (
+                    <span className="ml-0.5 text-xs">🔥</span>
+                  )}
+                </span>
+              </div>
+
+              {/* 正确率 */}
+              <div className="hidden sm:flex items-center gap-1.5">
+                <span className="text-sm text-muted-foreground">正确率</span>
+                <span className="text-sm font-bold text-foreground">{accuracy}%</span>
+              </div>
+
+              {/* 进度条（移动端显示） */}
+              <div className="sm:hidden flex-1 max-w-[100px]">
+                <Progress value={accuracy} className="h-1.5" />
+              </div>
+            </div>
           </div>
-        )}
-      </div>
-      <div className="flex flex-col items-center gap-1.5 sm:gap-2">
-        {keyboardRows.map((row, rowIndex) => (
-          <div key={rowIndex} className="flex gap-1 sm:gap-1.5" style={{ paddingLeft: `${rowIndex * 12}px` }}>
-            {row.map((key) => {
-              const isFeedback = keyFeedback === key;
-              const isCorrectKey = key === currentRoot.key;
-              let colorClass = KEY_COLORS.default;
-              if (isFeedback && feedbackType === 'correct') colorClass = KEY_COLORS.correct;
-              else if (isFeedback && feedbackType === 'wrong') colorClass = KEY_COLORS.wrong;
-              else if (showAnswer && isCorrectKey && feedbackType === 'wrong') colorClass = KEY_COLORS.highlight;
-              return (<button key={key} className={cn('flex h-9 w-9 sm:h-12 sm:w-12 items-center justify-center rounded-lg sm:rounded-xl border-2 text-xs sm:text-base font-semibold transition-all duration-150 cursor-pointer select-none', colorClass)} onClick={() => handleKeyPress(key)}>{key.toUpperCase()}</button>);
-            })}
+
+          {/* 桌面端进度条 */}
+          <div className="mt-3 hidden sm:block">
+            <Progress value={accuracy} className="h-1.5 progress-bar-animated" />
           </div>
-        ))}
+        </div>
       </div>
-      <div className="mt-6 sm:mt-8 grid grid-cols-4 gap-2 sm:gap-4">
-        {[{ label: '本轮题数', value: stats.totalAttempts }, { label: '本轮正确', value: stats.correctAttempts }, { label: '本轮连击', value: stats.streak }, { label: '弱项字根', value: weakRoots.length }].map((item) => (
-          <Card key={item.label} className="border-border bg-card/80"><CardContent className="p-2 sm:p-4 text-center"><div className="text-lg sm:text-2xl font-bold text-foreground">{item.value}</div><div className="text-[10px] sm:text-xs text-muted-foreground">{item.label}</div></CardContent></Card>
-        ))}
+
+      {/* 主练习区 */}
+      <div className="container-page max-w-4xl py-8 sm:py-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* 左侧：字根展示 + 输入区 */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* 字根展示卡片 */}
+            <div className={cn(
+              "card-base p-8 sm:p-12 transition-all duration-300",
+              feedbackType === 'correct' && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 scale-[1.02]",
+              feedbackType === 'wrong' && "border-red-400 bg-red-50/50 dark:bg-red-950/20"
+            )}>
+              <div className="flex flex-col items-center">
+                {/* 当前字根 */}
+                <div className={cn(
+                  "relative flex items-center justify-center h-32 w-32 sm:h-40 sm:w-40 rounded-3xl border-4 transition-all duration-300 mb-6",
+                  feedbackType === 'correct' 
+                    ? "border-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 scale-110 shadow-lg shadow-emerald-200" 
+                    : feedbackType === 'wrong'
+                    ? "border-red-400 bg-red-50 dark:bg-red-950/30 scale-95"
+                    : "border-border bg-card"
+                )}>
+                  <RootCharDisplay 
+                    root={currentRoot} 
+                    size="xl" 
+                    showDesc={true} 
+                    className={cn(
+                      "border-0 bg-transparent",
+                      feedbackType === 'correct' && "text-emerald-600 dark:text-emerald-400",
+                      feedbackType === 'wrong' && "text-red-600 dark:text-red-400"
+                    )} 
+                  />
+
+                  {/* 反馈动画图标 */}
+                  {feedbackType === 'correct' && (
+                    <div className="absolute -top-2 -right-2 animate-bounce-in">
+                      <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+                    </div>
+                  )}
+                  
+                  {feedbackType === 'wrong' && (
+                    <div className="absolute -top-2 -right-2 animate-shake">
+                      <XCircle className="h-8 w-8 text-red-500" />
+                    </div>
+                  )}
+                </div>
+
+                {/* 输入框 */}
+                <div className="relative w-full max-w-xs">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    readOnly
+                    placeholder="输入键位"
+                    className={cn(
+                      "w-full h-14 sm:h-16 text-center text-2xl sm:text-3xl font-mono font-bold",
+                      "bg-muted border-2 rounded-xl focus:outline-none caret-primary transition-all duration-200",
+                      keyFeedback
+                        ? (feedbackType === 'correct' 
+                          ? "border-emerald-400 bg-emerald-50 text-emerald-600 dark:text-emerald-400" 
+                          : "border-red-400 bg-red-50 text-red-600 dark:text-red-400")
+                        : "border-primary/30"
+                    )}
+                    value={keyFeedback?.toUpperCase() || ''}
+                  />
+                  
+                  {!keyFeedback && (
+                    <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none animate-pulse text-lg">
+                      ▎
+                    </span>
+                  )}
+
+                  {/* 反馈文字 */}
+                  {feedbackType && (
+                    <div className={cn(
+                      "mt-4 flex items-center justify-center gap-2 text-lg font-semibold",
+                      feedbackType === 'correct' 
+                        ? "text-emerald-600 dark:text-emerald-400" 
+                        : "text-red-600 dark:text-red-400"
+                    )}>
+                      {feedbackType === 'correct' ? (
+                        <>
+                          <CheckCircle2 className="h-5 w-5" />
+                          <span>正确！太棒了 🎉</span>
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="h-5 w-5" />
+                          <span>错误，正确键位：</span>
+                          <span className="inline-flex items-center justify-center h-8 w-8 rounded-lg bg-red-100 dark:bg-red-900/50 font-mono text-base font-bold text-red-700 dark:text-red-300">
+                            {currentRoot.key.toUpperCase()}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* 虚拟键盘 */}
+            <div className="card-base p-6">
+              <div className="flex flex-col items-center gap-2">
+                {keyboardRows.map((row, rowIndex) => (
+                  <div 
+                    key={rowIndex} 
+                    className="flex gap-1.5 sm:gap-2"
+                    style={{ paddingLeft: `${rowIndex * 16}px` }}
+                  >
+                    {row.map((key) => {
+                      const isFeedback = keyFeedback === key;
+                      const isCorrectKey = key === currentRoot.key;
+                      
+                      let colorClass = KEY_COLORS.default;
+                      if (isFeedback && feedbackType === 'correct') colorClass = KEY_COLORS.correct;
+                      else if (isFeedback && feedbackType === 'wrong') colorClass = KEY_COLORS.wrong;
+                      else if (showAnswer && isCorrectKey && feedbackType === 'wrong') colorClass = KEY_COLORS.highlight;
+
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => handleKeyPress(key)}
+                          className={cn(
+                            "flex h-11 w-11 sm:h-12 sm:w-12 items-center justify-center rounded-xl border-2",
+                            "text-sm sm:text-base font-semibold transition-all duration-150 cursor-pointer select-none",
+                            "hover:shadow-md active:scale-95",
+                            colorClass
+                          )}
+                        >
+                          {key.toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 右侧：统计面板 */}
+          <div className="space-y-4">
+            {/* 本轮统计 */}
+            <div className="card-stats p-5">
+              <h3 className="font-bold text-foreground mb-4 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />
+                本轮统计
+              </h3>
+              
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: '题数', value: stats.totalAttempts, icon: Target },
+                  { label: '正确', value: stats.correctAttempts, icon: CheckCircle2 },
+                  { label: '连击', value: stats.streak, icon: Zap },
+                  { label: '弱项', value: weakRoots.length, icon: AlertTriangle },
+                ].map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div key={item.label} className="text-center p-3 rounded-xl bg-background/60 border border-border/40">
+                      <Icon className="h-4 w-4 mx-auto mb-1.5 text-muted-foreground" />
+                      <div className="stat-number text-base">{item.value}</div>
+                      <div className="stat-label text-[10px]">{item.label}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 快捷提示 */}
+            <div className="card-base p-4">
+              <h4 className="font-semibold text-sm text-foreground mb-3 flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-amber-500" />
+                练习提示
+              </h4>
+              <ul className="space-y-2 text-xs text-muted-foreground">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>使用键盘直接输入，无需点击屏幕</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>连击10次以上会触发🔥特效</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary mt-0.5">•</span>
+                  <span>按ESC可快速退出练习</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* 下一个字根提示 */}
+            <div className="card-base p-4">
+              <h4 className="font-semibold text-sm text-foreground mb-3 flex items-center gap-2">
+                <Eye className="h-4 w-4 text-blue-500" />
+                学习提示
+              </h4>
+              <div className="text-xs text-muted-foreground space-y-1.5">
+                <p>• 系统会根据记忆曲线智能安排复习</p>
+                <p>• 重点关注错误次数多的字根</p>
+                <p>• 坚持练习，逐步掌握所有字根</p>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
