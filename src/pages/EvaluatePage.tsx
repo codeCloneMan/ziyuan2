@@ -8,12 +8,42 @@ import { cn } from '@/lib/utils';
 import {
   Upload, FileText, BarChart3, Keyboard, CheckCircle2, XCircle,
   Loader2, Trash2, ClipboardCopy, Download, AlertTriangle, Activity,
-  Award, Zap, Info, TrendingUp, Target, Gauge, Flame,
+  Award, Zap, Info, TrendingUp, Target, Gauge, Flame, BookOpen,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import html2canvas from 'html2canvas';
 import { charCodeData } from '@/data/charCodeData';
 import { calculateCoverage } from '@/data/builtinCharSets';
+import { twoCharPhrases, threeCharPhrases, fourCharPhrases } from '@/data/builtinPhrases';
+import { charFrequency } from '@/data/charFrequency';
+import { calcWeightedSpeedEquivalent } from '@/data/speedEquivalent';
+import { GB2312_CHARS, GBK_CHARS } from '@/data/standardCharsets';
+
+// ========================================
+// 安全计算工具函数
+// ========================================
+
+// 安全除法，避免除以零
+const safeDivide = (numerator: number, denominator: number, defaultValue = 0): number => {
+  return denominator > 0 ? numerator / denominator : defaultValue;
+};
+
+// 限制百分比在 0-100 之间
+const clampPercentage = (value: number): number => {
+  return Math.min(100, Math.max(0, value));
+};
+
+// 四舍五入到指定小数位
+const roundTo = (value: number, decimals = 2): number => {
+  return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
+};
+
+// 权重归一化
+const normalizeWeights = (weights: number[]): number[] => {
+  if (weights.length === 0) return [];
+  const total = weights.reduce((sum, w) => sum + w, 0);
+  return total > 0 ? weights.map(w => w / total) : weights.map(() => 1 / weights.length);
+};
 
 // ========================================
 // 常量定义
@@ -40,12 +70,7 @@ const FINGER_MAP: Record<string, string> = {
   'o': '右小指', 'l': '右小指', 'p': '右小指',
 };
 
-// 字频权重（简化版，基于通用字频表）
-const CHAR_FREQ: Record<string, number> = {};
-const FREQ_CHARS = '的一是不了在人有我这为大来上个中到说出就以地和子产于多对然那最她着他本用时没学会可你自之后着过心加行所意想如美其前而因长又年已很被情却无何要此实还点让从现动方见主呢么应些把向事里给再经才二相去机同种面当没样关思次外话更或由打与比名明知身化物等合手回开问两间内什特因日边将果度信许部原安表接且使各立正真便教产四解条气十性目头色代入先重光白王电高公金之场分将法海门西家路东位得非选器请已活决反指九变张八认极七论确保交五若布求治转术平做六清任利受南权制据程即达式造具师界写亚象数较存德画测该证视专述台离复必管则万总断义周报际建集温计导读劳倒强党费广社配响完展求品般策质众往海技类精消称欲坚层属快判素参组据距织压讲群密态异府编获短远站移境略标致源';
-for (let i = 0; i < FREQ_CHARS.length; i++) {
-  CHAR_FREQ[FREQ_CHARS[i]] = Math.max(0.1, 100 - i * 0.15);
-}
+// 字频数据已迁移到 charFrequency.ts（基于 Zipf 定律的真实字频模型）
 
 // 字频分段
 const FREQ_TIERS = [
@@ -86,13 +111,15 @@ interface EvaluateResult {
   uniqueCodes: number;
   duplicateCount: number;
 
-  // 核心指标（新）
-  weightedAvgCodeLen: number;    // 字频加权平均码长
-  fullDupRate: number;           // 全码重码率
-  simplifiedDupRate: number;     // 出简重码率
-  selectionRate: number;         // 选重率（键选率）
-  equivalent: number;            // 当量
-  compositeScore: number;        // 综合评分
+  // 核心指标
+  weightedAvgCodeLen: number;
+  fullDupRate: number;
+  staticDupCount: number;
+  simplifiedDupRate: number;
+  dynamicSelectionRate: number;
+  equivalent: number;
+  speedEquivalent: number;
+  compositeScore: number;
 
   // 原有指标
   avgCodeLength: number;
@@ -108,9 +135,20 @@ interface EvaluateResult {
   handAlternationRate: number;
   gb2312Coverage: number;
   gbkCoverage: number;
+  tongguiCoverage: number;
   efficiencyScore: number;
   ergonomicsScore: number;
   balanceScore: number;
+
+  // 候选项指标
+  maxCandidatesPerCode: number;
+  codesNeedingPage: number;
+  gb2312MaxCandidates: number;
+  gbkMaxCandidates: number;
+  gb2312StaticDup: number;
+  gbkStaticDup: number;
+  weightedSameFingerRate: number;
+  weightedHandAltRate: number;
 
   // 详细数据
   topDupes: Array<{ code: string; chars: string[]; count: number }>;
@@ -123,6 +161,24 @@ interface EvaluateResult {
   }>;
   codeLenChartData: Array<{ name: string; count: number; percent: number }>;
   fingerChartData: Array<{ name: string; value: number; percent: number }>;
+
+  // 词组测评指标
+  phraseEval: {
+    twoChar: PhraseTierResult;
+    threeChar: PhraseTierResult;
+    fourChar: PhraseTierResult;
+    overall: PhraseTierResult;
+  };
+}
+
+/** 词组分段测评结果 */
+interface PhraseTierResult {
+  totalPhrases: number;       // 词组总数
+  coveredPhrases: number;     // 码表能编码的词组数
+  coverageRate: number;       // 覆盖率(%)
+  avgCodeLen: number;         // 平均编码长度（码元数）
+  dupRate: number;            // 重码率(%)
+  selectionRate: number;      // 选重率(‱)
 }
 
 // ========================================
@@ -130,12 +186,7 @@ interface EvaluateResult {
 // ========================================
 
 function getCharFrequencyWeight(char: string): number {
-  if (CHAR_FREQ[char]) return CHAR_FREQ[char];
-  const cp = char.codePointAt(0) ?? 0;
-  if (cp < 0x4E00 || cp > 0x9FFF) return 0.1;
-  if (cp <= 0x61A5) return 1.0;
-  if (cp <= 0x7FFF) return 0.6;
-  return 0.3;
+  return charFrequency[char] ?? 0.00001;
 }
 
 // ========================================
@@ -252,11 +303,11 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     }
   }
 
-  const avgCodeLength = entries.length > 0 ? totalLen / entries.length : 0;
+  const avgCodeLength = safeDivide(totalLen, entries.length);
   const codeLengthStdDev = (() => {
     if (lengthValues.length === 0) return 0;
-    const mean = lengthValues.reduce((a, b) => a + b, 0) / lengthValues.length;
-    return Math.sqrt(lengthValues.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / lengthValues.length);
+    const mean = safeDivide(lengthValues.reduce((a, b) => a + b, 0), lengthValues.length);
+    return Math.sqrt(safeDivide(lengthValues.reduce((s, v) => s + Math.pow(v - mean, 2), 0), lengthValues.length));
   })();
 
   // ★ 字频加权平均码长
@@ -266,84 +317,96 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     weightedLenSum += freq * entry.code.length;
     freqSum += freq;
   }
-  const weightedAvgCodeLen = freqSum > 0 ? weightedLenSum / freqSum : avgCodeLength;
+  const weightedAvgCodeLen = safeDivide(weightedLenSum, freqSum, avgCodeLength);
 
   // ★ 全码重码率
-  const fullDupRate = entries.length > 0 ? (dupCount / entries.length) * 100 : 0;
+  const fullDupRate = clampPercentage(safeDivide(dupCount, entries.length) * 100);
 
-  // ★ 出简重码率（考虑简码后仍有重码的字数/总字数）
-  // 简码：1-3码的编码视为简码，出简后这些字不再占用全码
-  const simplifiedCodes = new Set<string>();
+  // ★ 出简重码率（出简不出全：有简码的字用简码输入，全码位让给其他字）
+  // 简码定义：1-3码的编码
+  // 对每个重码组，如果首选字有更短的简码，则首选字不占全码位
+  const charShortCodes = new Map<string, number>();
   for (const [code, chars] of codeToChars) {
     if (code.length <= 3 && chars.length >= 1) {
-      simplifiedCodes.add(code);
+      const firstChar = [...chars].sort((a, b) => getCharFrequencyWeight(b) - getCharFrequencyWeight(a))[0];
+      const existing = charShortCodes.get(firstChar);
+      if (existing === undefined || code.length < existing) {
+        charShortCodes.set(firstChar, code.length);
+      }
     }
   }
+
   let simplifiedDupCount = 0;
   for (const [code, chars] of codeToChars) {
-    if (chars.length > 1) {
-      // 如果该编码的前缀是简码，则首字已通过简码输入，剩余字仍需选重
-      const hasSimplifiedPrefix = code.length > 3 && (
-        simplifiedCodes.has(code.slice(0, 1)) ||
-        simplifiedCodes.has(code.slice(0, 2)) ||
-        simplifiedCodes.has(code.slice(0, 3))
-      );
-      if (hasSimplifiedPrefix) {
-        // 简码已出，全码重码中首字不再算重码
-        simplifiedDupCount += chars.length - 1;
+    if (chars.length > 1 && code.length >= 2) {
+      const sorted = [...chars].sort((a, b) => getCharFrequencyWeight(b) - getCharFrequencyWeight(a));
+      const firstChar = sorted[0];
+      const shortCodeLen = charShortCodes.get(firstChar);
+      if (shortCodeLen !== undefined && shortCodeLen < code.length) {
+        simplifiedDupCount += Math.max(0, chars.length - 2);
       } else {
         simplifiedDupCount += chars.length - 1;
       }
     }
   }
-  const simplifiedDupRate = entries.length > 0 ? (simplifiedDupCount / entries.length) * 100 : 0;
+  const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, entries.length) * 100);
 
-  // ★ 选重率（键选率）= Σ(重码组中非首字的字频) / Σ(所有字频)
-  let selectionFreqSum = 0;
-  for (const [, chars] of codeToChars) {
-    if (chars.length > 1) {
-      // 非首字（需要选键的字）的字频之和
-      for (let i = 1; i < chars.length; i++) {
-        selectionFreqSum += getCharFrequencyWeight(chars[i]);
+  // ★ 动态选重率（字频加权，宇浩公式：Nd = Σ p(zij), j≠1）
+  // 对每个重码组，按字频降序排列，首选字不需选重，其余字的字频之和 / 总字频
+  const dynamicSelectionRate = (() => {
+    let sum = 0;
+    for (const [, chars] of codeToChars) {
+      if (chars.length > 1) {
+        const sorted = [...chars].sort((a, b) => getCharFrequencyWeight(b) - getCharFrequencyWeight(a));
+        for (let i = 1; i < sorted.length; i++) {
+          sum += getCharFrequencyWeight(sorted[i]);
+        }
       }
     }
-  }
-  const selectionRate = freqSum > 0 ? (selectionFreqSum / freqSum) * 100 : 0;
+    return safeDivide(sum, freqSum) * 10000;
+  })();
 
-  // ★ 当量 = 平均码长 × (1 + 选重率/100)
-  const equivalent = weightedAvgCodeLen * (1 + selectionRate / 100);
+  // ★ 速度当量（字频加权）
+  const speedEquiv = calcWeightedSpeedEquivalent(entries, charFrequency);
+
+  // ★ 当量 = 字频加权码长 + 动态选重率（小数形式）
+  const equivalent = weightedAvgCodeLen + safeDivide(dynamicSelectionRate, 10000);
 
   // ★ 综合评分（参考国标GB/T18031加权公式）
   // 各项得分 = max(0, 100 - (实际值 - 优秀值) / (较差值 - 优秀值) × 100)
   const calcScore = (val: number, excellent: number, poor: number, lowerBetter: boolean) => {
+    // 除零保护：如果优秀值和较差值相同，无法计算渐变
+    if (Math.abs(poor - excellent) < 0.0001) {
+      return lowerBetter ? (val <= excellent ? 100 : 0) : (val >= excellent ? 100 : 0);
+    }
     if (lowerBetter) {
       if (val <= excellent) return 100;
       if (val >= poor) return 0;
-      return Math.max(0, 100 - ((val - excellent) / (poor - excellent)) * 100);
+      return Math.max(0, Math.min(100, 100 - safeDivide(val - excellent, poor - excellent) * 100));
     } else {
       if (val >= excellent) return 100;
       if (val <= poor) return 0;
-      return Math.max(0, ((val - poor) / (excellent - poor)) * 100);
+      return Math.max(0, Math.min(100, safeDivide(val - poor, excellent - poor) * 100));
     }
   };
 
   const codeLenScore = calcScore(weightedAvgCodeLen, 2.5, 4.5, true);
   const dupScore = calcScore(fullDupRate, 3, 15, true);
-  const selScore = calcScore(selectionRate, 2, 20, true);
-  const equivScore = calcScore(equivalent, 2.5, 5.5, true);
+  const dynamicSelScore = calcScore(dynamicSelectionRate, 5, 50, true);
+  const speedEquivScore = calcScore(speedEquiv, 1.0, 1.5, true);
 
-  const compositeScore = Math.min(100, Math.max(0,
-    40 * codeLenScore / 100 +
-    30 * dupScore / 100 +
-    20 * selScore / 100 +
-    10 * equivScore / 100
+  const compositeScore = Math.max(0, Math.min(100,
+    roundTo(30 * codeLenScore / 100 +
+    25 * dupScore / 100 +
+    25 * dynamicSelScore / 100 +
+    20 * speedEquivScore / 100, 2)
   ));
 
   // 按键使用率
   const totalKeyPresses = Object.values(keyFreq).reduce((s, f) => s + f, 0);
   const keyUsageRate: Record<string, number> = {};
   for (const [key, freq] of Object.entries(keyFreq)) {
-    keyUsageRate[key] = totalKeyPresses > 0 ? (freq / totalKeyPresses) * 100 : 0;
+    keyUsageRate[key] = clampPercentage(safeDivide(freq, totalKeyPresses) * 100);
   }
 
   // 左右手和手指
@@ -355,8 +418,8 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     const finger = FINGER_MAP[key];
     if (finger) fingerLoad[finger] = (fingerLoad[finger] || 0) + freq;
   }
-  const leftHandRate = totalKeyPresses > 0 ? (leftHandPresses / totalKeyPresses) * 100 : 50;
-  const rightHandRate = totalKeyPresses > 0 ? (rightHandPresses / totalKeyPresses) * 100 : 50;
+  const leftHandRate = clampPercentage(safeDivide(leftHandPresses, totalKeyPresses) * 100);
+  const rightHandRate = clampPercentage(safeDivide(rightHandPresses, totalKeyPresses) * 100);
 
   // 同指连续和左右交替
   let sameFingerCount = 0, handAltCount = 0, totalBigrams = 0;
@@ -370,32 +433,78 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
       if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) handAltCount++;
     }
   }
-  const sameFingerRate = totalBigrams > 0 ? (sameFingerCount / totalBigrams) * 100 : 0;
-  const handAlternationRate = totalBigrams > 0 ? (handAltCount / totalBigrams) * 100 : 0;
+  const sameFingerRate = clampPercentage(safeDivide(sameFingerCount, totalBigrams) * 100);
+  const handAlternationRate = clampPercentage(safeDivide(handAltCount, totalBigrams) * 100);
 
-  // 覆盖率
+  // 覆盖率 - 使用国标字集计算
   const charSet = entries.map(e => e.char);
-  const gb2312Chars = charSet.filter(ch => { const cp = ch.codePointAt(0) ?? 0; return cp >= 0x4E00 && cp <= 0x9FA5; }).length;
-  const gbkChars = charSet.filter(ch => { const cp = ch.codePointAt(0) ?? 0; return (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF); }).length;
-  const gb2312Coverage = (gb2312Chars / 6763) * 100;
-  const gbkCoverage = (gbkChars / 21003) * 100;
+  const gb2312Result = calculateCoverage(charSet, 'gb2312');
+  const gbkResult = calculateCoverage(charSet, 'gbk');
+  const tongguiResult = calculateCoverage(charSet, 'tonggui');
+  const gb2312Coverage = gb2312Result.percentage;
+  const gbkCoverage = gbkResult.percentage;
+  const tongguiCoverage = tongguiResult.percentage;
+
+  // 候选项指标
+  let maxCandidatesPerCode = 0;
+  let codesNeedingPage = 0;
+  for (const [, chars] of codeToChars) {
+    if (chars.length > maxCandidatesPerCode) maxCandidatesPerCode = chars.length;
+    if (chars.length > 9) codesNeedingPage++;
+  }
+
+  const gb2312Set = new Set([...GB2312_CHARS]);
+  const gbkSet = new Set([...GBK_CHARS]);
+  let gb2312MaxCandidates = 0, gbkMaxCandidates = 0;
+  let gb2312StaticDup = 0, gbkStaticDup = 0;
+  for (const [, chars] of codeToChars) {
+    const gb2312Chars = chars.filter(c => gb2312Set.has(c));
+    if (gb2312Chars.length > gb2312MaxCandidates) gb2312MaxCandidates = gb2312Chars.length;
+    if (gb2312Chars.length > 1) gb2312StaticDup += gb2312Chars.length - 1;
+    const gbkChars = chars.filter(c => gbkSet.has(c));
+    if (gbkChars.length > gbkMaxCandidates) gbkMaxCandidates = gbkChars.length;
+    if (gbkChars.length > 1) gbkStaticDup += gbkChars.length - 1;
+  }
 
   // 效率和工学评分
-  const balanceScore = Math.max(0, 100 - Math.abs(leftHandRate - 50) * 2);
+  const balanceScore = Math.max(0, Math.min(100, 100 - Math.abs(leftHandRate - 50) * 2));
+
+  let weightedSameFinger = 0, weightedHandAlt = 0, weightedBigramFreq = 0;
+  for (const entry of entries) {
+    const freq = getCharFrequencyWeight(entry.char);
+    const code = entry.code.toLowerCase();
+    for (let i = 0; i < code.length - 1; i++) {
+      const ck = code[i], nk = code[i + 1];
+      if (!/[a-z]/.test(ck) || !/[a-z]/.test(nk)) continue;
+      weightedBigramFreq += freq;
+      if (FINGER_MAP[ck] && FINGER_MAP[ck] === FINGER_MAP[nk]) weightedSameFinger += freq;
+      if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) weightedHandAlt += freq;
+    }
+  }
+  const weightedSameFingerRate = safeDivide(weightedSameFinger, weightedBigramFreq) * 100;
+  const weightedHandAltRate = safeDivide(weightedHandAlt, weightedBigramFreq) * 100;
+
   const efficiencyScore = Math.max(0, Math.min(100,
-    0.42 * (1 - fullDupRate / 100) * 100 +
-    0.35 * (1 - avgCodeLength / 4) * 100 +
-    0.15 * balanceScore +
-    0.08 * (100 - sameFingerRate)
+    0.35 * calcScore(fullDupRate, 3, 15, true) +
+    0.30 * calcScore(weightedAvgCodeLen, 2.5, 4.5, true) +
+    0.20 * calcScore(dynamicSelectionRate, 5, 50, true) +
+    0.15 * balanceScore
   ));
   const ergonomicsScore = Math.max(0, Math.min(100,
-    100 - sameFingerRate * 1.5 + handAlternationRate * 0.3 -
-    Math.abs(leftHandRate - 50) * 0.8
+    0.35 * calcScore(weightedSameFingerRate, 10, 30, true) +
+    0.30 * calcScore(weightedHandAltRate, 50, 30, false) +
+    0.20 * calcScore(speedEquiv, 1.0, 1.5, true) +
+    0.15 * balanceScore
   ));
 
-  // 字频分段统计
+  // 字频分段统计（按字频权重降序取前N个）
+  const sortedByFreq = [...entries].sort((a, b) => {
+    const fwA = getCharFrequencyWeight(a.char);
+    const fwB = getCharFrequencyWeight(b.char);
+    return fwB - fwA;
+  });
   const freqTierStats = FREQ_TIERS.map(tier => {
-    const tierEntries = tier.max === Infinity ? entries : entries.slice(0, tier.max);
+    const tierEntries = tier.max === Infinity ? sortedByFreq : sortedByFreq.slice(0, tier.max);
     const tierCodeMap = new Map<string, string[]>();
     for (const e of tierEntries) {
       const existing = tierCodeMap.get(e.code);
@@ -404,7 +513,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     }
     let tierDup = 0;
     for (const [, chars] of tierCodeMap) { if (chars.length > 1) tierDup += chars.length - 1; }
-    const tierDupRate = tierEntries.length > 0 ? (tierDup / tierEntries.length) * 100 : 0;
+    const tierDupRate = clampPercentage(safeDivide(tierDup, tierEntries.length) * 100);
     let tierLenSum = 0, tierFreqSum = 0, tierWeightedLen = 0;
     for (const e of tierEntries) {
       tierLenSum += e.code.length;
@@ -416,8 +525,8 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
       tier: tier.label,
       charCount: tierEntries.length,
       dupRate: tierDupRate,
-      avgCodeLen: tierEntries.length > 0 ? tierLenSum / tierEntries.length : 0,
-      weightedCodeLen: tierFreqSum > 0 ? tierWeightedLen / tierFreqSum : 0,
+      avgCodeLen: safeDivide(tierLenSum, tierEntries.length),
+      weightedCodeLen: safeDivide(tierWeightedLen, tierFreqSum),
     };
   });
 
@@ -427,7 +536,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     .map(([len, count]) => ({
       name: `${len}码`,
       count,
-      percent: entries.length > 0 ? (count / entries.length) * 100 : 0,
+      percent: clampPercentage(safeDivide(count, entries.length) * 100),
     }));
 
   // 手指分布图表数据
@@ -436,9 +545,101 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     .map(([name, value]) => ({
       name,
       value,
-      percent: totalFingerLoad > 0 ? (value / totalFingerLoad) * 100 : 0,
+      percent: clampPercentage(safeDivide(value, totalFingerLoad) * 100),
     }))
     .sort((a, b) => b.value - a.value);
+
+  // ★ 词组测评
+  // 构建字→编码映射（用于词组编码）
+  const charToCodes = new Map<string, string[]>();
+  for (const entry of entries) {
+    const existing = charToCodes.get(entry.char);
+    if (existing) {
+      if (!existing.includes(entry.code)) existing.push(entry.code);
+    } else {
+      charToCodes.set(entry.char, [entry.code]);
+    }
+  }
+
+  /** 计算词组编码：每个字取首选（最短）编码 */
+  function getPhraseCode(phrase: string): string | null {
+    const codes: string[] = [];
+    for (const ch of phrase) {
+      const charCodes = charToCodes.get(ch);
+      if (!charCodes || charCodes.length === 0) return null; // 无法编码
+      // 取最短编码作为首选
+      codes.push(charCodes.reduce((a, b) => a.length <= b.length ? a : b));
+    }
+    return codes.join(' ');
+  }
+
+  /** 计算单类词组测评指标 */
+  function evalPhraseTier(phrases: string[]): PhraseTierResult {
+    const totalPhrases = phrases.length;
+    if (totalPhrases === 0) {
+      return { totalPhrases: 0, coveredPhrases: 0, coverageRate: 0, avgCodeLen: 0, dupRate: 0, selectionRate: 0 };
+    }
+
+    // 计算编码和覆盖
+    const phraseCodeMap = new Map<string, string[]>(); // 编码→词组列表
+    let coveredPhrases = 0;
+    let totalCodeLen = 0;
+
+    for (const phrase of phrases) {
+      const code = getPhraseCode(phrase);
+      if (code === null) continue; // 无法编码的词组
+      coveredPhrases++;
+      totalCodeLen += code.replace(/ /g, '').length; // 去空格计算实际码长
+
+      const existing = phraseCodeMap.get(code);
+      if (existing) {
+        if (!existing.includes(phrase)) existing.push(phrase);
+      } else {
+        phraseCodeMap.set(code, [phrase]);
+      }
+    }
+
+    const coverageRate = clampPercentage(safeDivide(coveredPhrases, totalPhrases) * 100);
+    const avgCodeLen = roundTo(safeDivide(totalCodeLen, coveredPhrases), 3);
+
+    // 重码率：重码词组数/已覆盖词组数
+    let dupCount = 0;
+    for (const [, plist] of phraseCodeMap) {
+      if (plist.length > 1) dupCount += plist.length - 1;
+    }
+    const dupRate = clampPercentage(safeDivide(dupCount, coveredPhrases) * 100);
+
+    // 注意：词频近似为词组中所有字的字频之和，非真实词频数据
+    // 宇浩测评网使用《现代汉语语料库分词类词频表》的真实词频
+    let phraseSelectionFreq = 0, phraseTotalFreq = 0;
+    for (const [, plist] of phraseCodeMap) {
+      if (plist.length > 1) {
+        const sorted = [...plist].sort((a, b) => {
+          const fa = [...a].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+          const fb = [...b].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+          return fb - fa;
+        });
+        for (let i = 1; i < sorted.length; i++) {
+          const f = [...sorted[i]].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+          phraseSelectionFreq += f;
+        }
+      }
+    }
+    for (const phrase of phrases) {
+      phraseTotalFreq += [...phrase].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+    }
+    const selectionRate = safeDivide(phraseSelectionFreq, phraseTotalFreq) * 10000;
+
+    return { totalPhrases, coveredPhrases, coverageRate, avgCodeLen, dupRate, selectionRate };
+  }
+
+  const allPhrases = [...twoCharPhrases, ...threeCharPhrases, ...fourCharPhrases];
+  const phraseEval = {
+    twoChar: evalPhraseTier(twoCharPhrases),
+    threeChar: evalPhraseTier(threeCharPhrases),
+    fourChar: evalPhraseTier(fourCharPhrases),
+    overall: evalPhraseTier(allPhrases),
+  };
 
   return {
     totalChars: entries.length,
@@ -447,9 +648,11 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     duplicateCount: dupCount,
     weightedAvgCodeLen,
     fullDupRate,
+    staticDupCount: dupCount,
     simplifiedDupRate,
-    selectionRate,
+    dynamicSelectionRate,
     equivalent,
+    speedEquivalent: speedEquiv,
     compositeScore,
     avgCodeLength,
     maxCodeLength: maxLen,
@@ -464,13 +667,23 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     handAlternationRate,
     gb2312Coverage,
     gbkCoverage,
+    tongguiCoverage,
     efficiencyScore,
     ergonomicsScore,
     balanceScore,
+    maxCandidatesPerCode,
+    codesNeedingPage,
+    gb2312MaxCandidates,
+    gbkMaxCandidates,
+    gb2312StaticDup,
+    gbkStaticDup,
+    weightedSameFingerRate,
+    weightedHandAltRate,
     topDupes: dupeList.slice(0, 30),
     freqTierStats,
     codeLenChartData,
     fingerChartData,
+    phraseEval,
   };
 }
 
@@ -489,6 +702,7 @@ export default function EvaluatePage() {
   const [charCoverage, setCharCoverage] = useState<{
     gb2312: { covered: number; total: number; percentage: number; missing: string[] } | null;
     gbk: { covered: number; total: number; percentage: number; missing: string[] } | null;
+    tonggui: { covered: number; total: number; percentage: number; missing: string[] } | null;
   } | null>(null);
   const [useBuiltin, setUseBuiltin] = useState(false);
   const resultRef = useRef<HTMLDivElement>(null);
@@ -518,6 +732,7 @@ export default function EvaluatePage() {
           setCharCoverage({
             gb2312: calculateCoverage(singleChars, 'gb2312'),
             gbk: calculateCoverage(singleChars, 'gbk'),
+            tonggui: calculateCoverage(singleChars, 'tonggui'),
           });
         } catch {}
       }, 50);
@@ -559,6 +774,7 @@ export default function EvaluatePage() {
             setCharCoverage({
               gb2312: calculateCoverage(singleChars, 'gb2312'),
               gbk: calculateCoverage(singleChars, 'gbk'),
+              tonggui: calculateCoverage(singleChars, 'tonggui'),
             });
           } catch {}
         }, 50);
@@ -604,11 +820,20 @@ export default function EvaluatePage() {
       `字频加权码长: ${result.weightedAvgCodeLen.toFixed(3)}`,
       `全码重码率: ${result.fullDupRate.toFixed(2)}%`,
       `出简重码率: ${result.simplifiedDupRate.toFixed(2)}%`,
-      `选重率: ${result.selectionRate.toFixed(2)}%`,
+      `动态选重率: ${result.dynamicSelectionRate.toFixed(1)}‱`,
       `当量: ${result.equivalent.toFixed(3)}`,
+      `速度当量: ${result.speedEquivalent.toFixed(3)}`,
       `综合评分: ${result.compositeScore.toFixed(1)}/100`,
       `GB2312覆盖率: ${result.gb2312Coverage.toFixed(1)}%`,
+      `通规一二级覆盖率: ${result.tongguiCoverage.toFixed(1)}%`,
       `GBK覆盖率: ${result.gbkCoverage.toFixed(1)}%`,
+      `最大候选项数: ${result.maxCandidatesPerCode}`,
+      `需翻页编码数: ${result.codesNeedingPage}`,
+      ``,
+      `词组测评:`,
+      `  二字词: 覆盖${result.phraseEval.twoChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.twoChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.twoChar.dupRate.toFixed(2)}%`,
+      `  三字词: 覆盖${result.phraseEval.threeChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.threeChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.threeChar.dupRate.toFixed(2)}%`,
+      `  四字词: 覆盖${result.phraseEval.fourChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.fourChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.fourChar.dupRate.toFixed(2)}%`,
     ];
     navigator.clipboard.writeText(lines.join('\n'));
   };
@@ -619,7 +844,7 @@ export default function EvaluatePage() {
   }, [result]);
 
   const getHeatColor = useCallback((freq: number) => {
-    const ratio = freq / maxKeyFreq;
+    const ratio = safeDivide(freq, maxKeyFreq);
     if (ratio === 0) return 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500';
     if (ratio < 0.1) return 'bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300';
     if (ratio < 0.2) return 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-200';
@@ -762,8 +987,8 @@ export default function EvaluatePage() {
             {useBuiltin && <Badge className="bg-primary/10 text-primary">内置方案</Badge>}
           </div>
 
-          {/* 6个核心评分卡片 */}
-          <div className="grid gap-4 grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {/* 8个核心评分卡片 */}
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
             {/* 平均码长 */}
             <ScoreCard
               icon={<Target className="h-5 w-5" />}
@@ -816,16 +1041,16 @@ export default function EvaluatePage() {
             {/* 选重率 */}
             <ScoreCard
               icon={<Gauge className="h-5 w-5" />}
-              title="选重率"
-              value={result.selectionRate.toFixed(2)}
-              unit="%"
-              reference="< 2% 优秀"
-              progress={Math.max(0, Math.min(100, (1 - result.selectionRate / 20) * 100))}
+              title="动态选重率"
+              value={result.dynamicSelectionRate.toFixed(1)}
+              unit="‱"
+              reference="< 5‱ 优秀"
+              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 50) * 100))}
               score={(() => {
-                if (result.selectionRate < 2) return 100;
-                if (result.selectionRate < 5) return 80;
-                if (result.selectionRate < 10) return 55;
-                return 30;
+                if (result.dynamicSelectionRate < 5) return 100;
+                if (result.dynamicSelectionRate < 20) return 85;
+                if (result.dynamicSelectionRate < 50) return 65;
+                return 35;
               })()}
               colorScheme="amber"
             />
@@ -844,6 +1069,38 @@ export default function EvaluatePage() {
                 return 30;
               })()}
               colorScheme="violet"
+            />
+            {/* 动态选重率 */}
+            <ScoreCard
+              icon={<Gauge className="h-5 w-5" />}
+              title="动态选重率"
+              value={result.dynamicSelectionRate.toFixed(1)}
+              unit="‱"
+              reference="< 5‱ 优秀"
+              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 50) * 100))}
+              score={(() => {
+                if (result.dynamicSelectionRate < 5) return 100;
+                if (result.dynamicSelectionRate < 20) return 85;
+                if (result.dynamicSelectionRate < 50) return 65;
+                return 35;
+              })()}
+              colorScheme="cyan"
+            />
+            {/* 速度当量 */}
+            <ScoreCard
+              icon={<Zap className="h-5 w-5" />}
+              title="速度当量"
+              value={result.speedEquivalent.toFixed(3)}
+              unit=""
+              reference="< 1.2 优秀"
+              progress={Math.max(0, Math.min(100, (1 - (result.speedEquivalent - 0.8) / 1.2) * 100))}
+              score={(() => {
+                if (result.speedEquivalent < 1.1) return 100;
+                if (result.speedEquivalent < 1.2) return 85;
+                if (result.speedEquivalent < 1.4) return 65;
+                return 35;
+              })()}
+              colorScheme="indigo"
             />
             {/* 综合评分 */}
             <ScoreCard
@@ -879,8 +1136,9 @@ export default function EvaluatePage() {
                 </div>
               </div>
               <CardContent className="p-4">
-                <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:grid-cols-3">
                   <CoverageBar label="GB2312" total={charCoverage.gb2312.total} covered={charCoverage.gb2312.covered} percentage={charCoverage.gb2312.percentage} missing={charCoverage.gb2312.missing} />
+                  <CoverageBar label="通规一二级" total={charCoverage.tonggui?.total ?? 6500} covered={charCoverage.tonggui?.covered ?? 0} percentage={charCoverage.tonggui?.percentage ?? 0} missing={charCoverage.tonggui?.missing ?? []} />
                   <CoverageBar label="GBK" total={charCoverage.gbk.total} covered={charCoverage.gbk.covered} percentage={charCoverage.gbk.percentage} missing={charCoverage.gbk.missing} />
                 </div>
               </CardContent>
@@ -896,6 +1154,7 @@ export default function EvaluatePage() {
                   <TabsTrigger value="codelen" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" />码长分布</TabsTrigger>
                   <TabsTrigger value="keyboard" className="gap-1.5"><Keyboard className="h-3.5 w-3.5" />按键分析</TabsTrigger>
                   <TabsTrigger value="freq" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" />字频分析</TabsTrigger>
+                  <TabsTrigger value="phrase" className="gap-1.5"><BookOpen className="h-3.5 w-3.5" />词组测评</TabsTrigger>
                 </TabsList>
 
                 {/* Tab1: 重码分析 */}
@@ -1096,7 +1355,7 @@ export default function EvaluatePage() {
                       </thead>
                       <tbody>
                         {result.freqTierStats.map((stat) => {
-                          const efficiency = stat.weightedCodeLen > 0 ? Math.min(100, (2 / stat.weightedCodeLen) * 100) : 0;
+                          const efficiency = stat.weightedCodeLen > 0 ? Math.min(100, safeDivide(2, stat.weightedCodeLen) * 100) : 0;
                           return (
                             <tr key={stat.tier} className="border-b border-border hover:bg-accent/5">
                               <td className="px-3 py-2 font-medium text-foreground">{stat.tier}</td>
@@ -1119,6 +1378,106 @@ export default function EvaluatePage() {
                         })}
                       </tbody>
                     </table>
+                  </div>
+                </TabsContent>
+
+                {/* Tab5: 词组测评 */}
+                <TabsContent value="phrase" className="mt-4 space-y-4">
+                  <h4 className="text-sm font-semibold text-foreground">词组编码测评</h4>
+                  <p className="text-xs text-muted-foreground">
+                    基于内置高频词组列表，测试码表对词组的编码覆盖能力、平均码长和重码情况。词组编码规则：每个字取首选（最短）编码拼接。
+                  </p>
+                  <div className="overflow-x-auto rounded-lg border border-border">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="bg-muted/50 border-b border-border">
+                          <th className="px-3 py-2.5 text-left font-semibold">词组类型</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">总数</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">可编码</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">覆盖率</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">平均码长</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">重码率</th>
+                          <th className="px-3 py-2.5 text-center font-semibold">选重率</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { label: '二字词', data: result.phraseEval.twoChar },
+                          { label: '三字词', data: result.phraseEval.threeChar },
+                          { label: '四字词+', data: result.phraseEval.fourChar },
+                          { label: '全部词组', data: result.phraseEval.overall },
+                        ].map(({ label, data }) => (
+                          <tr key={label} className={cn('border-b border-border hover:bg-accent/5', label === '全部词组' && 'bg-muted/20 font-semibold')}>
+                            <td className="px-3 py-2 text-foreground">{label}</td>
+                            <td className="px-3 py-2 text-center tabular-nums">{data.totalPhrases}</td>
+                            <td className="px-3 py-2 text-center tabular-nums">{data.coveredPhrases}</td>
+                            <td className={cn(
+                              'px-3 py-2 text-center tabular-nums font-semibold',
+                              data.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
+                              data.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
+                              'text-red-600 dark:text-red-400'
+                            )}>
+                              {data.coverageRate.toFixed(1)}%
+                            </td>
+                            <td className="px-3 py-2 text-center tabular-nums">{data.avgCodeLen.toFixed(2)}</td>
+                            <td className={cn(
+                              'px-3 py-2 text-center tabular-nums font-semibold',
+                              data.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
+                              data.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
+                              'text-red-600 dark:text-red-400'
+                            )}>
+                              {data.dupRate.toFixed(2)}%
+                            </td>
+                            <td className={cn(
+                              'px-3 py-2 text-center tabular-nums font-semibold',
+                              data.selectionRate < 200 ? 'text-emerald-600 dark:text-emerald-400' :
+                              data.selectionRate < 500 ? 'text-amber-600 dark:text-amber-400' :
+                              'text-red-600 dark:text-red-400'
+                            )}>
+                              {data.selectionRate.toFixed(1)}‱
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* 词组覆盖率说明 */}
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    {[
+                      { label: '二字词覆盖', data: result.phraseEval.twoChar, desc: '高频二字词组编码能力' },
+                      { label: '三字词覆盖', data: result.phraseEval.threeChar, desc: '高频三字词组编码能力' },
+                      { label: '四字词覆盖', data: result.phraseEval.fourChar, desc: '成语和四字词编码能力' },
+                    ].map(({ label, data, desc }) => (
+                      <div key={label} className="p-3 rounded-lg border border-border bg-muted/20">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-foreground">{label}</span>
+                          <span className={cn(
+                            'text-lg font-bold tabular-nums',
+                            data.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
+                            data.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
+                            'text-red-600 dark:text-red-400'
+                          )}>
+                            {data.coverageRate.toFixed(1)}%
+                          </span>
+                        </div>
+                        <div className="w-full h-2 rounded-full bg-secondary overflow-hidden mb-1">
+                          <div
+                            className={cn(
+                              'h-full rounded-full transition-all',
+                              data.coverageRate >= 90 ? 'bg-emerald-500' :
+                              data.coverageRate >= 70 ? 'bg-amber-500' :
+                              'bg-red-500'
+                            )}
+                            style={{ width: `${Math.min(data.coverageRate, 100)}%` }}
+                          />
+                        </div>
+                        <div className="flex justify-between text-xs text-muted-foreground">
+                          <span>{desc}</span>
+                          <span>{data.coveredPhrases}/{data.totalPhrases}</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1152,24 +1511,44 @@ export default function EvaluatePage() {
                       ]},
                       { category: '核心指标', items: [
                         { name: '字频加权码长', value: result.weightedAvgCodeLen.toFixed(3), score: result.weightedAvgCodeLen < 3.5 ? 90 : result.weightedAvgCodeLen < 4.5 ? 65 : 40 },
-                        { name: '全码重码率', value: `${result.fullDupRate.toFixed(2)}%`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
+                        { name: '全码重码率', value: `${result.fullDupRate.toFixed(2)}%（${result.staticDupCount}字）`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
                         { name: '出简重码率', value: `${result.simplifiedDupRate.toFixed(2)}%`, score: result.simplifiedDupRate < 5 ? 90 : result.simplifiedDupRate < 10 ? 65 : 35 },
-                        { name: '选重率', value: `${result.selectionRate.toFixed(2)}%`, score: result.selectionRate < 2 ? 95 : result.selectionRate < 5 ? 75 : 40 },
+                        { name: '动态选重率', value: `${result.dynamicSelectionRate.toFixed(1)}‱`, score: result.dynamicSelectionRate < 5 ? 95 : result.dynamicSelectionRate < 20 ? 75 : 40 },
                         { name: '当量', value: result.equivalent.toFixed(3), score: result.equivalent < 1.5 ? 95 : result.equivalent < 2.5 ? 70 : 40 },
+                        { name: '速度当量', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.1 ? 95 : result.speedEquivalent < 1.3 ? 75 : 40 },
                         { name: '综合评分', value: `${result.compositeScore.toFixed(1)}/100`, score: result.compositeScore },
                       ]},
                       { category: '覆盖率', items: [
                         { name: 'GB2312覆盖率', value: `${result.gb2312Coverage.toFixed(1)}%`, score: result.gb2312Coverage >= 90 ? 90 : result.gb2312Coverage >= 70 ? 65 : 35 },
+                        { name: '通规一二级覆盖率', value: `${result.tongguiCoverage.toFixed(1)}%`, score: result.tongguiCoverage >= 90 ? 90 : result.tongguiCoverage >= 70 ? 65 : 35 },
                         { name: 'GBK覆盖率', value: `${result.gbkCoverage.toFixed(1)}%`, score: result.gbkCoverage >= 70 ? 90 : result.gbkCoverage >= 50 ? 65 : 35 },
+                      ]},
+                      { category: '检字效率', items: [
+                        { name: '最大候选项数', value: result.maxCandidatesPerCode.toString(), score: result.maxCandidatesPerCode <= 9 ? 95 : result.maxCandidatesPerCode <= 18 ? 70 : 35 },
+                        { name: '需翻页编码数', value: result.codesNeedingPage.toString(), score: result.codesNeedingPage === 0 ? 95 : result.codesNeedingPage < 10 ? 70 : 35 },
+                        { name: 'GB2312最大候选项', value: result.gb2312MaxCandidates.toString(), score: result.gb2312MaxCandidates <= 9 ? 95 : result.gb2312MaxCandidates <= 18 ? 70 : 35 },
+                        { name: 'GBK最大候选项', value: result.gbkMaxCandidates.toString(), score: result.gbkMaxCandidates <= 9 ? 95 : result.gbkMaxCandidates <= 18 ? 70 : 35 },
+                        { name: 'GB2312静态重码数', value: result.gb2312StaticDup.toString(), score: result.gb2312StaticDup < 300 ? 95 : result.gb2312StaticDup < 600 ? 70 : 35 },
+                        { name: 'GBK静态重码数', value: result.gbkStaticDup.toString(), score: result.gbkStaticDup < 3000 ? 95 : result.gbkStaticDup < 6000 ? 70 : 35 },
                       ]},
                       { category: '人体工学', items: [
                         { name: '同指连续率', value: `${result.sameFingerRate.toFixed(1)}%`, score: result.sameFingerRate < 15 ? 90 : result.sameFingerRate < 25 ? 65 : 35 },
                         { name: '左右手交替率', value: `${result.handAlternationRate.toFixed(1)}%`, score: result.handAlternationRate >= 40 ? 90 : result.handAlternationRate >= 30 ? 65 : 35 },
+                        { name: '字频加权同指率', value: `${result.weightedSameFingerRate.toFixed(1)}%`, score: result.weightedSameFingerRate < 10 ? 90 : result.weightedSameFingerRate < 20 ? 65 : 35 },
+                        { name: '字频加权交替率', value: `${result.weightedHandAltRate.toFixed(1)}%`, score: result.weightedHandAltRate >= 50 ? 90 : result.weightedHandAltRate >= 35 ? 65 : 35 },
                         { name: '左手使用率', value: `${result.leftHandRate.toFixed(1)}%`, score: Math.abs(result.leftHandRate - 50) <= 5 ? 95 : Math.abs(result.leftHandRate - 50) <= 10 ? 75 : 50 },
                         { name: '右手使用率', value: `${result.rightHandRate.toFixed(1)}%`, score: -1 },
                         { name: '效率评分', value: result.efficiencyScore.toFixed(1), score: result.efficiencyScore },
                         { name: '工学评分', value: result.ergonomicsScore.toFixed(1), score: result.ergonomicsScore },
                         { name: '平衡评分', value: result.balanceScore.toFixed(1), score: result.balanceScore },
+                      ]},
+                      { category: '词组测评', items: [
+                        { name: '二字词覆盖率', value: `${result.phraseEval.twoChar.coverageRate.toFixed(1)}%`, score: result.phraseEval.twoChar.coverageRate >= 90 ? 90 : result.phraseEval.twoChar.coverageRate >= 70 ? 65 : 35 },
+                        { name: '二字词重码率', value: `${result.phraseEval.twoChar.dupRate.toFixed(2)}%`, score: result.phraseEval.twoChar.dupRate < 5 ? 90 : result.phraseEval.twoChar.dupRate < 10 ? 65 : 35 },
+                        { name: '三字词覆盖率', value: `${result.phraseEval.threeChar.coverageRate.toFixed(1)}%`, score: result.phraseEval.threeChar.coverageRate >= 90 ? 90 : result.phraseEval.threeChar.coverageRate >= 70 ? 65 : 35 },
+                        { name: '四字词覆盖率', value: `${result.phraseEval.fourChar.coverageRate.toFixed(1)}%`, score: result.phraseEval.fourChar.coverageRate >= 90 ? 90 : result.phraseEval.fourChar.coverageRate >= 70 ? 65 : 35 },
+                        { name: '词组平均码长', value: result.phraseEval.overall.avgCodeLen.toFixed(2), score: result.phraseEval.overall.avgCodeLen < 6 ? 90 : result.phraseEval.overall.avgCodeLen < 10 ? 65 : 35 },
+                        { name: '词组重码率', value: `${result.phraseEval.overall.dupRate.toFixed(2)}%`, score: result.phraseEval.overall.dupRate < 5 ? 90 : result.phraseEval.overall.dupRate < 10 ? 65 : 35 },
                       ]},
                     ].map((group) => (
                       group.items.map((item, idx) => (
@@ -1216,6 +1595,8 @@ function ScoreCard({ icon, title, value, unit, reference, progress, score, color
     amber:   { border: 'border-amber-200 dark:border-amber-800', bg: 'bg-amber-50/50 dark:bg-amber-950/20', iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', bar: 'bg-amber-500', barBg: 'bg-amber-100 dark:bg-amber-900/40' },
     violet:  { border: 'border-violet-200 dark:border-violet-800', bg: 'bg-violet-50/50 dark:bg-violet-950/20', iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', bar: 'bg-violet-500', barBg: 'bg-violet-100 dark:bg-violet-900/40' },
     emerald: { border: 'border-emerald-200 dark:border-emerald-800', bg: 'bg-emerald-50/50 dark:bg-emerald-950/20', iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500', barBg: 'bg-emerald-100 dark:bg-emerald-900/40' },
+    cyan:    { border: 'border-cyan-200 dark:border-cyan-800', bg: 'bg-cyan-50/50 dark:bg-cyan-950/20', iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400', bar: 'bg-cyan-500', barBg: 'bg-cyan-100 dark:bg-cyan-900/40' },
+    indigo:  { border: 'border-indigo-200 dark:border-indigo-800', bg: 'bg-indigo-50/50 dark:bg-indigo-950/20', iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400', bar: 'bg-indigo-500', barBg: 'bg-indigo-100 dark:bg-indigo-900/40' },
   };
   const c = colorMap[colorScheme] || colorMap.blue;
 

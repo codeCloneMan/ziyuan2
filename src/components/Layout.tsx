@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import {
   BookOpen, Keyboard, Home, Image,
   Sun, Moon, Menu, X, Search,
   ExternalLink, MessageCircle, HardDrive,
-  HelpCircle, PenTool, BarChart3,
+  HelpCircle, PenTool, BarChart3, TextQuote,
 } from 'lucide-react';
 import { rootMappings } from '@/data/roots';
 import { charCodeData } from '@/data/charCodeData';
@@ -16,6 +17,7 @@ const navItems = [
   { path: '/', label: '首页', icon: Home },
   { path: '/practice', label: '字根练习', icon: Keyboard },
   { path: '/whole-char', label: '整字练习', icon: PenTool },
+  { path: '/phrase', label: '词组练习', icon: TextQuote },
   { path: '/table', label: '字根表', icon: BookOpen },
   { path: '/chart', label: '字根图', icon: Image },
   { path: '/evaluate', label: '码表测评', icon: BarChart3 },
@@ -499,10 +501,15 @@ export default function Layout() {
             <div>
               <h3 className="font-semibold text-foreground mb-4">快速链接</h3>
               <ul className="space-y-2.5">
-                {['首页', '字根练习', '整字练习', '字根表'].map(item => (
-                  <li key={item}>
-                    <Link to={item === '首页' ? '/' : `/${item}`} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-                      {item}
+                {[
+                  { label: '首页', path: '/' },
+                  { label: '字根练习', path: '/practice' },
+                  { label: '整字练习', path: '/whole-char' },
+                  { label: '字根表', path: '/table' },
+                ].map(item => (
+                  <li key={item.label}>
+                    <Link to={item.path} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                      {item.label}
                     </Link>
                   </li>
                 ))}

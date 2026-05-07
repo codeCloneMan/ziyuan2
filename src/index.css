@@ -189,7 +189,7 @@
   -moz-osx-font-smoothing: grayscale;
   
   /* 字根字符特殊处理 */
-  font-variant-east-as: traditional;
+  font-variant-east-asian: traditional;
 }
 
 /* ========================================

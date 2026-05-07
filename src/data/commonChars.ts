@@ -1,94 +1,125 @@
 /**
  * 常用汉字数据
- * 
- * 来源：现代汉语常用字表（前500字）
- * 这些汉字覆盖了约80%的日常使用频率
+ *
+ * 来源：CJK统一汉字基本区（0x4E00-0x9FA5）
+ * - 前500字覆盖约80%日常使用
+ * - 前1000字覆盖约92%日常使用
+ * - 前1500字覆盖约96%日常使用
+ * - 前3000字覆盖约99%日常使用
+ *
+ * 数据与 builtinCharSets.ts 共享，确保一致性
  */
 
-// 前500常用字（按使用频率排序，已去重）
-export const top500Chars: string[] = [
-  // 前100最常用
-  '的', '一', '是', '了', '我', '不', '人', '在', '他', '有',
-  '这', '个', '上', '们', '来', '到', '时', '大', '地', '为',
-  '子', '中', '你', '说', '生', '国', '年', '着', '就', '那',
-  '和', '要', '她', '出', '也', '得', '里', '后', '自', '以',
-  '会', '家', '可', '下', '而', '过', '事', '对', '能', '多',
-  '都', '好', '去', '心', '学', '么', '所', '于', '作', '道',
-  '想', '然', '些', '成', '员', '问', '其', '理', '体', '政',
-  '物', '意', '识', '次', '通', '常', '情', '话', '认', '面',
-  '分', '前', '知', '行', '本', '见', '日', '两', '力', '当',
-  '种', '长', '化', '全', '三', '又', '高', '等', '如', '但',
+// 从 builtinCharSets 导入基础字集，避免数据重复
+import {
+  top500Chars as baseTop500,
+  top1000Chars as baseTop1000,
+  top3000Chars as baseTop3000,
+} from './builtinCharSets';
 
-  // 101-200
-  '性', '结', '动', '已', '开', '方', '此', '公', '新', '比',
-  '或', '先', '件', '再', '处', '工', '教', '亲', '度', '名',
-  '表', '只', '四', '合', '目', '期', '明', '电', '正', '美',
-  '手', '给', '业', '外', '文', '管', '基', '代', '内', '信',
-  '象', '即', '每', '条', '活', '系', '很', '点', '回', '头',
-  '应', '别', '被', '现', '起', '从', '门', '进', '打', '重',
-  '样', '定', '第', '法', '小', '机', '书', '十', '主', '实',
-  '变', '量', '少', '共', '特', '放', '立', '必', '达', '关',
-  '接', '由', '才', '解', '水', '身', '资', '向', '半', '品',
-  '办', '听', '记', '叫', '至', '克', '许', '任', '府', '且',
+// ========================================
+// 字集校验工具（本地使用）
+// ========================================
 
-  // 201-300
-  '北', '价', '元', '数', '万', '式', '百', '各', '完', '社',
-  '建', '风', '场', '设', '务', '车', '计', '安', '它', '声',
-  '拉', '育', '几', '西', '走', '报', '类', '据', '老', '把',
-  '例', '转', '组', '海', '色', '无', '何', '清', '深', '五',
-  '运', '思', '片', '亚', '速', '题', '花', '技', '局', '音',
-  '直', '非', '怎', '白', '革', '干', '用', '传', '志', '展',
-  '光', '究', '历', '越', '影', '空', '消', '格', '界', '层',
-  '院', '商', '眼', '领', '七', '候', '流', '该', '交', '感',
-  '便', '张', '众', '容', '红', '强', '土', '权', '周', '哪',
-  '规', '东', '素', '因', '气', '笑', '际', '群', '位', '参',
+/** 检查字符是否为汉字 */
+function isHanChar(char: string): boolean {
+  const code = char.charCodeAt(0);
+  if (code >= 0x4E00 && code <= 0x9FFF) return true;
+  if (code >= 0x3400 && code <= 0x4DBF) return true;
+  const cp = char.codePointAt(0) ?? 0;
+  if (cp >= 0x20000 && cp <= 0x2A6DF) return true;
+  return false;
+}
 
-  // 301-400
-  '金', '球', '够', '争', '集', '石', '算', '入', '省', '满',
-  '划', '图', '今', '选', '夫', '落', '令', '求', '确', '青',
-  '济', '故', '检', '早', '离', '火', '术', '带', '专', '导',
-  '断', '研', '严', '苦', '极', '铁', '支', '型', '月', '园',
-  '易', '程', '热', '师', '决', '须', '市', '医', '举', '族',
-  '似', '维', '劳', '刀', '刻', '真', '皮', '史', '统', '山',
-  '哥', '响', '属', '买', '秀', '笔', '供', '另', '帮', '呢',
-  '误', '装', '希', '英', '节', '待', '议', '之', '备', '鱼',
-  '甲', '欧', '击', '迹', '屋', '考', '错', '根', '简', '概',
-  '包', '曾', '读', '端', '留', '食', '材', '细', '操', '古',
+/** 清理字集：去重 + 过滤非汉字 */
+function cleanCharSet(chars: string[], name: string): string[] {
+  const hanChars = chars.filter(isHanChar);
+  const nonHanCount = chars.length - hanChars.length;
+  if (nonHanCount > 0) {
+    console.warn(`[commonChars] 字集[${name}]过滤了 ${nonHanCount} 个非汉字字符`);
+  }
 
-  // 401-500
-  '绝', '示', '座', '般', '叶', '标', '港', '赛', '称', '散',
-  '败', '困', '功', '阳', '巨', '状', '精', '团', '庭', '景',
-  '亦', '耳', '艺', '段', '述', '奇', '量', '复', '按', '质',
-  '气', '取', '首', '答', '写', '原', '望', '单', '曲', '言',
-  '款', '视', '则', '创', '层', '试', '组', '兵', '反', '更',
-  '注', '江', '切', '轻', '例', '务', '持', '客', '热', '任',
-  '林', '修', '收', '推', '必', '效', '广', '局', '压', '战',
-  '意', '价', '脱', '析', '端', '板', '紧', '底', '坐', '朝',
-  '病', '防', '似', '统', '尽', '背', '善', '除', '足', '响',
-  '毒', '判', '余', '职', '预', '仍', '投', '暗', '征', '收',
-];
-
-// 获取前500常用字的编码
-export function getCommonCharCodeItems(charCodeData: Array<{ char: string; code: string }>) {
-  const result: Array<{ char: string; code: string }> = [];
   const seen = new Set<string>();
-  
-  for (const char of top500Chars) {
-    if (seen.has(char)) continue;
-    
-    // 找到该汉字的第一个编码
-    const item = charCodeData.find(d => d.char === char);
-    if (item) {
-      result.push(item);
-      seen.add(char);
+  const uniqueChars: string[] = [];
+  for (const ch of hanChars) {
+    if (!seen.has(ch)) {
+      seen.add(ch);
+      uniqueChars.push(ch);
     }
   }
-  
+  if (uniqueChars.length !== hanChars.length) {
+    console.warn(`[commonChars] 字集[${name}]去除了 ${hanChars.length - uniqueChars.length} 个重复字符`);
+  }
+
+  return uniqueChars;
+}
+
+// ========================================
+// 导出字集
+// ========================================
+
+// 直接使用 builtinCharSets 的数据，确保一致性
+export const top500Chars = baseTop500;
+export const top1000Chars = baseTop1000;
+
+// 前1500字：取前1000 + 再从top3000中取500个补充
+const RAW_TOP1001_1500 = baseTop3000.slice(1000, 1500);
+export const top1500Chars = cleanCharSet([...baseTop1000, ...RAW_TOP1001_1500], 'top1500');
+
+// 导出前3000字（完整覆盖）
+export const top3000Chars = baseTop3000;
+
+// ========================================
+// 码表数据相关接口
+// ========================================
+
+export interface CharCodeItem {
+  char: string;
+  code: string;
+}
+
+/** 获取前500常用字的编码 */
+export function getCommonCharCodeItems(charCodeData: CharCodeItem[]): CharCodeItem[] {
+  const result: CharCodeItem[] = [];
+  const seen = new Set<string>();
+  for (const ch of top500Chars) {
+    if (seen.has(ch)) continue;
+    const item = charCodeData.find(d => d.char === ch);
+    if (item) {
+      result.push(item);
+      seen.add(ch);
+    }
+  }
   return result;
 }
 
 // 统计信息
 export const commonCharStats = {
-  totalChars: top500Chars.length,
-  coverage: '约80%日常使用',
+  top500: { total: top500Chars.length, coverage: '约80%日常使用' },
+  top1000: { total: top1000Chars.length, coverage: '约92%日常使用' },
+  top1500: { total: top1500Chars.length, coverage: '约96%日常使用' },
+  top3000: { total: top3000Chars.length, coverage: '约99%日常使用' },
 };
+
+// 运行时校验
+if (typeof window !== 'undefined') {
+  console.log('[commonChars] 字集加载完成:', {
+    top500: top500Chars.length,
+    top1000: top1000Chars.length,
+    top1500: top1500Chars.length,
+    top3000: top3000Chars.length,
+  });
+
+  // 自动验证
+  const checks = [
+    { name: '前500字', set: top500Chars, expected: 500 },
+    { name: '前1000字', set: top1000Chars, expected: 1000 },
+    { name: '前1500字', set: top1500Chars, expected: 1500 },
+    { name: '前3000字', set: top3000Chars, expected: 3000 },
+  ];
+  checks.forEach(({ name, set, expected }) => {
+    if (set.length !== expected) {
+      console.warn(`[commonChars] ${name} 数量不符: 实际 ${set.length}, 期望 ${expected}`);
+    }
+  });
+}

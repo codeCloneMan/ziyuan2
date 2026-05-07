@@ -2,6 +2,7 @@ import { createHashRouter } from 'react-router-dom';
 import HomePage from '@/pages/HomePage';
 import PracticePage from '@/pages/PracticePage';
 import WholeCharPracticePage from '@/pages/WholeCharPracticePage';
+import PhrasePracticePage from '@/pages/PhrasePracticePage';
 import TablePage from '@/pages/TablePage';
 import ChartPage from '@/pages/ChartPage';
 import FAQPage from '@/pages/FAQPage';
@@ -17,6 +18,7 @@ const router = createHashRouter([
       { index: true, element: <HomePage /> },
       { path: 'practice', element: <PracticePage /> },
       { path: 'whole-char', element: <WholeCharPracticePage /> },
+      { path: 'phrase', element: <PhrasePracticePage /> },
       { path: 'table', element: <TablePage /> },
       { path: 'chart', element: <ChartPage /> },
       { path: 'faq', element: <FAQPage /> },
