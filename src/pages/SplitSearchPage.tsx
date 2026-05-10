@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { charCodeData } from '@/data/charCodeData';
 import { rootMappings } from '@/data/roots';
 import { getCharSplit, getPhraseSplits } from '@/data/splitData';
-import { twoCharPhrases, threeCharPhrases, fourCharPhrases, twoCharFreqs, threeCharFreqs, fourCharFreqs } from '@/data/builtinPhrases';
+import { twoCharPhrases, threeCharPhrases, fourCharPhrases, longCharPhrases, twoCharFreqs, threeCharFreqs, fourCharFreqs, longCharFreqs } from '@/data/builtinPhrases';
 import {
   Search, SplitSquareHorizontal, X, Keyboard, BookOpen, Hash,
   Layers, Type,
@@ -24,24 +24,26 @@ type SearchMode = 'char' | 'phrase';
 interface PhraseEntry {
   phrase: string;
   freq: number;
-  type: '2' | '3' | '4';
+  type: '2' | '3' | '4' | '5';
 }
 
-/** 高频词组（按频率排序，取前5万） */
+/** 高频词组（按频率排序，全部词组） */
 const TOP_PHRASES: PhraseEntry[] = (() => {
   const items: PhraseEntry[] = [];
-  const TOP = 50000;
-  let i2 = 0, i3 = 0, i4 = 0;
-  while (items.length < TOP && (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length)) {
+  let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
+  while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
     const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
     const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
     const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
-    if (f2 >= f3 && f2 >= f4 && i2 < twoCharPhrases.length) {
+    const f5 = i5 < longCharFreqs.length ? longCharFreqs[i5] : -1;
+    if (f2 >= f3 && f2 >= f4 && f2 >= f5 && i2 < twoCharPhrases.length) {
       items.push({ phrase: twoCharPhrases[i2], freq: f2, type: '2' }); i2++;
-    } else if (f3 >= f4 && i3 < threeCharPhrases.length) {
+    } else if (f3 >= f4 && f3 >= f5 && i3 < threeCharPhrases.length) {
       items.push({ phrase: threeCharPhrases[i3], freq: f3, type: '3' }); i3++;
-    } else if (i4 < fourCharPhrases.length) {
+    } else if (f4 >= f5 && i4 < fourCharPhrases.length) {
       items.push({ phrase: fourCharPhrases[i4], freq: f4, type: '4' }); i4++;
+    } else if (i5 < longCharPhrases.length) {
+      items.push({ phrase: longCharPhrases[i5], freq: f5, type: '5' }); i5++;
     } else break;
   }
   return items;

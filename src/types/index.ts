@@ -1,19 +1,3 @@
-import type { RootMapping } from '@/data/roots';
-
-export interface RootMapping {
-  /** 字根字符 */
-  char: string;
-  /** 对应的键盘按键 */
-  key: string;
-}
-
-export interface KeyGroup {
-  /** 键盘按键 */
-  key: string;
-  /** 该按键对应的所有字根 */
-  roots: string[];
-}
-
 export interface PracticeStats {
   /** 总练习次数 */
   totalAttempts: number;
@@ -32,5 +16,3 @@ export type PracticeMode = 'progressive' | 'weak' | 'common';
 
 /** 整字练习模式：全部汉字（科学记忆渐进）、前500常用汉字（科学记忆渐进） */
 export type WholeCharMode = 'progressive' | 'progressive500';
-
-export type PageRoute = 'home' | 'practice' | 'table' | 'chart';

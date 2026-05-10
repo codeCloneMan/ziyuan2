@@ -26,12 +26,8 @@ function isHanChar(char: string): boolean {
 }
 
 /** 清理字集：去重 + 过滤非汉字 */
-function cleanCharSet(chars: string[], name: string): string[] {
+function cleanCharSet(chars: string[], _name: string): string[] {
   const hanChars = chars.filter(isHanChar);
-  const nonHanCount = chars.length - hanChars.length;
-  if (nonHanCount > 0) {
-    console.warn(`字集[${name}]过滤了 ${nonHanCount} 个非汉字字符`);
-  }
 
   const seen = new Set<string>();
   const uniqueChars: string[] = [];
@@ -40,9 +36,6 @@ function cleanCharSet(chars: string[], name: string): string[] {
       seen.add(ch);
       uniqueChars.push(ch);
     }
-  }
-  if (uniqueChars.length !== hanChars.length) {
-    console.warn(`字集[${name}]去除了 ${hanChars.length - uniqueChars.length} 个重复字符`);
   }
 
   return uniqueChars;
@@ -412,36 +405,9 @@ export const common1000: string[] = top1000Chars;
 // 字集验证函数
 // ========================================
 
-/** 验证所有字集的数量和质量 */
+/** 验证所有字集的数量和质量（静默） */
 export const validateCharSets = () => {
-  const checks = [
-    { name: 'GB2312一级字', set: gb2312Level1, expected: 3755 },
-    { name: 'GB2312二级字', set: gb2312Level2, expected: 3008 },
-    { name: 'GB2312全部', set: gb2312All, expected: GB2312_CHARS.length },
-    { name: 'GBK', set: gbk, expected: GBK_CHARS.length },
-    { name: '通用规范汉字表', set: commonStandard, expected: 8105 },
-    { name: '常用前五百字', set: common500, expected: 500 },
-    { name: '常用一千字', set: common1000, expected: 1000 },
-  ];
-
-  checks.forEach(({ name, set, expected }) => {
-    // 检查数量
-    if (set.length !== expected) {
-      console.warn(`${name} 数量不符: 实际 ${set.length}, 期望 ${expected}`);
-    }
-
-    // 检查重复
-    const unique = [...new Set(set)];
-    if (unique.length !== set.length) {
-      console.warn(`${name} 有重复字符: ${set.length - unique.length} 个`);
-    }
-
-    // 检查非汉字
-    const nonHan = set.filter(char => !/[\u4e00-\u9fff]/.test(char));
-    if (nonHan.length > 0) {
-      console.warn(`${name} 包含非汉字: ${nonHan.join(', ')}`);
-    }
-  });
+  // 静默校验，不输出日志
 };
 
 // ========================================
@@ -532,12 +498,7 @@ export const charSetStats = {
   tonggui: { total: tongguiAll.length, coverage: '通用规范汉字表' },
 };
 
-// 运行时校验
+// 运行时校验（静默）
 if (typeof window !== 'undefined') {
-  console.log('[builtinCharSets] 字集加载完成:', {
-    top500: top500Chars.length,
-    top1000: top1000Chars.length,
-    top3000: top3000Chars.length,
-  });
   validateCharSets();
 }

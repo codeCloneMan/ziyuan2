@@ -1,20 +1,20 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo, useTransition } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import {
-  Upload, FileText, BarChart3, Keyboard, CheckCircle2, XCircle,
+  Upload, FileText, BarChart3, Keyboard, CheckCircle2, XCircle, X,
   Loader2, Trash2, ClipboardCopy, Download, AlertTriangle, Activity,
-  Award, Zap, Info, Target, Gauge, Flame, BookOpen, Maximize2,
+  Award, Zap, Info, Target, Gauge, Flame, BookOpen, Maximize2, Search,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import html2canvas from 'html2canvas';
 import { calculateCoverage } from '@/data/builtinCharSets';
 import {
-  twoCharPhrases, threeCharPhrases, fourCharPhrases,
-  twoCharFreqs, threeCharFreqs, fourCharFreqs,
+  twoCharPhrases, threeCharPhrases, fourCharPhrases, longCharPhrases,
+  twoCharFreqs, threeCharFreqs, fourCharFreqs, longCharFreqs,
   PHRASE_FREQ_TOTAL,
 } from '@/data/builtinPhrases';
 import { charFrequency } from '@/data/charFrequency';
@@ -91,7 +91,7 @@ const PHRASE_FREQ_TIERS = [
   { key: '5001-10000',   label: '5001~10000',   start: 5000,  end: 10000 },
   { key: '10001-20000',  label: '10001~20000',  start: 10000, end: 20000 },
   { key: '20001-40000',  label: '20001~40000',  start: 20000, end: 40000 },
-  { key: '40001+',       label: '40001+',       start: 40000, end: Infinity },
+  { key: '40001-60000',  label: '40001~60000',  start: 40000, end: 60000 },
 ];
 
 // 评级标准
@@ -121,18 +121,28 @@ const CHARSET_OPTIONS: Array<{ value: CharsetFilter; label: string; description:
   { value: 'tonggui',  label: '通规',   description: '通用规范汉字表 (8105字)' },
 ];
 
-/** 根据字集过滤码表条目 */
+/** 字符集 Set 缓存：避免每次过滤都对 GB2312/GBK 长字符串做 split + new Set() */
+const _charsetSetCache = new Map<CharsetFilter, Set<string>>();
+function getCharsetSet(charset: CharsetFilter): Set<string> | null {
+  if (charset === 'all') return null;
+  let cached = _charsetSetCache.get(charset);
+  if (!cached) {
+    const raw = charset === 'gb2312' ? GB2312_CHARS
+      : charset === 'gbk' ? GBK_CHARS
+      : charset === 'tonggui' ? tongguiAll
+      : '';
+    const charArr: string[] = typeof raw === 'string' ? raw.split('') : raw;
+    cached = new Set(charArr);
+    _charsetSetCache.set(charset, cached);
+  }
+  return cached;
+}
+
+/** 根据字集过滤码表条目（使用缓存 Set） */
 function filterEntriesByCharset(entries: CodeEntry[], charset: CharsetFilter): CodeEntry[] {
   if (charset === 'all') return entries;
-
-  // GB2312_CHARS / GBK_CHARS 是长字符串，需要 split 为字符数组；tongguiAll 已经是 string[]
-  const raw = charset === 'gb2312' ? GB2312_CHARS
-    : charset === 'gbk' ? GBK_CHARS
-    : charset === 'tonggui' ? tongguiAll
-    : '';
-  const charArr: string[] = typeof raw === 'string' ? raw.split('') : raw;
-
-  const set = new Set(charArr);
+  const set = getCharsetSet(charset);
+  if (!set) return entries;
   return entries.filter(e => set.has(e.char));
 }
 
@@ -225,8 +235,11 @@ interface EvaluateResult {
     fourChar: PhraseTierResult;
     overall: PhraseTierResult;
   };
+  phraseDupGroups: Array<{ code: string; phrases: Array<{ phrase: string; freq: number }> }>; // 词组重码组（用于弹窗展示）
   phraseFreqTierStats: PhraseTierStat[];  // 词组分频段统计
   topPhraseCount: number;                 // 实际评测的高频词组数
+  missingCodeCharCount: number;           // 缺少全码的单字数（影响词组编码）
+  missingCodeChars: string[];             // 缺少全码的单字列表（前 20 个）
 }
 
 /** 词组分段测评结果 */
@@ -340,10 +353,29 @@ function parseCodeTable(content: string): CodeEntry[] {
 }
 
 // ========================================
+// 模块级常量：全部词组四路归并（只算一次，所有组件共享）
+// ========================================
+const ALL_PHRASES_MERGED: Array<{ phrase: string; freq: number }> = (() => {
+  const items: Array<{ phrase: string; freq: number }> = [];
+  let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
+  while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
+    const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
+    const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
+    const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
+    const f5 = i5 < longCharFreqs.length ? longCharFreqs[i5] : -1;
+    if (f2 >= f3 && f2 >= f4 && f2 >= f5) { items.push({ phrase: twoCharPhrases[i2], freq: f2 }); i2++; }
+    else if (f3 >= f4 && f3 >= f5) { items.push({ phrase: threeCharPhrases[i3], freq: f3 }); i3++; }
+    else if (f4 >= f5) { items.push({ phrase: fourCharPhrases[i4], freq: f4 }); i4++; }
+    else { items.push({ phrase: longCharPhrases[i5], freq: f5 }); i5++; }
+  }
+  return items;
+})();
+
+// ========================================
 // 核心评码算法
 // ========================================
 
-function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all'): EvaluateResult {
+function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResult?: EvaluateResult | null): EvaluateResult {
   // ★ 字集过滤：在计算前先筛选符合目标字符集的条目
   const filteredEntries = filterEntriesByCharset(entries, charset);
 
@@ -940,110 +972,156 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all'): Evaluat
     };
   }
 
-  // 三路归并：各分类数据已按词频降序排列，归并取前 50000 个高频词（O(50K) vs 排序 O(80K log 80K)）
-  type PhraseSource = { phrase: string; freq: number; type: '2' | '3' | '4' };
-  const TOP_50K = 50000;
-  const topItems: PhraseSource[] = [];
-  {
-    let i2 = 0, i3 = 0, i4 = 0;
-    while (topItems.length < TOP_50K && (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length)) {
-      const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
-      const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
-      const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
-      if (f2 >= f3 && f2 >= f4) { topItems.push({ phrase: twoCharPhrases[i2], freq: f2, type: '2' }); i2++; }
-      else if (f3 >= f4) { topItems.push({ phrase: threeCharPhrases[i3], freq: f3, type: '3' }); i3++; }
-      else { topItems.push({ phrase: fourCharPhrases[i4], freq: f4, type: '4' }); i4++; }
-    }
-  }
+  // ★ 词组评测（不依赖字集过滤器，可复用上次结果）
+  let phraseEval: EvaluateResult['phraseEval'];
+  let phraseFreqTierStats: PhraseTierStat[];
+  let topPhraseCount: number;
+  let phraseDupGroups: EvaluateResult['phraseDupGroups'];
 
-  // 拆回各自分类（用于按类型评测）
-  const top2: string[] = [], top2f: number[] = [];
-  const top3: string[] = [], top3f: number[] = [];
-  const top4: string[] = [], top4f: number[] = [];
-  for (const item of topItems) {
-    if (item.type === '2') { top2.push(item.phrase); top2f.push(item.freq); }
-    else if (item.type === '3') { top3.push(item.phrase); top3f.push(item.freq); }
-    else { top4.push(item.phrase); top4f.push(item.freq); }
-  }
-
-  // topAll：按频率降序排列的全部 50K 词组（用于分频段统计）
-  const topAll: string[] = topItems.map(item => item.phrase);
-  const topAllF: number[] = topItems.map(item => item.freq);
-
-  const phraseEval = {
-    twoChar: evalPhraseTier(top2, top2f),
-    threeChar: evalPhraseTier(top3, top3f),
-    fourChar: evalPhraseTier(top4, top4f),
-    overall: evalPhraseTier(topAll, topAllF),
-  };
-
-  // ★ 词组分频段统计
-  // 只对 top 词组进行分频段统计以提升性能
-  const coveredPhraseList: Array<{ phrase: string; code: string; weight: number; idx: number }> = [];
-  const phraseCodeMapOverall = new Map<string, string[]>();
-  for (let pi = 0; pi < topAll.length; pi++) {
-    const phrase = topAll[pi];
-    const code = getCachedPhraseCode(phrase);
-    if (code === null) continue;
-    const weight = topAllF[pi] / PHRASE_FREQ_TOTAL;
-    coveredPhraseList.push({ phrase, code, weight, idx: pi });
-    const existing = phraseCodeMapOverall.get(code);
-    if (existing) { if (!existing.includes(phrase)) existing.push(phrase); }
-    else phraseCodeMapOverall.set(code, [phrase]);
-  }
-  coveredPhraseList.sort((a, b) => b.weight - a.weight);
-
-  const phraseIndexMapOverall = new Map<string, number>();
-  for (let i = 0; i < topAll.length; i++) phraseIndexMapOverall.set(topAll[i], i);
-
-  const phraseFreqTierStats: PhraseTierStat[] = PHRASE_FREQ_TIERS.map(tier => {
-    // 按原始 topAll 排行序号分频段（idx 存储了原始位置）
-    const tierItems = coveredPhraseList.filter(item => item.idx >= tier.start && item.idx < tier.end);
-    let selCount = 0, wce = 0;
-    let tierWeightSum = 0;
-    const tierErgo = { handAlt: 0, sfb: 0, sfs: 0, skt: 0, skq: 0, sft: 0, sfq: 0, pk: 0 };
-
-    for (const item of tierItems) {
-      tierWeightSum += item.weight;
-      const code = item.code.replace(/ /g, '').toLowerCase();
-      const pureLen = code.length;
-      const codeChrs = phraseCodeMapOverall.get(item.code) || [];
-      const dupPenalty = codeChrs.length > 1 ? (codeChrs.length - 1) * 0.1 : 0;
-      wce += item.weight * (pureLen + dupPenalty);
-
-      computeErgonomics(code, tierErgo);
-
-      // 统计选重
-      if (codeChrs.length > 1) {
-        const sorted = [...codeChrs].sort((a, b) => {
-          const ai2 = phraseIndexMapOverall.get(a) ?? -1;
-          const bi2 = phraseIndexMapOverall.get(b) ?? -1;
-          return (bi2 >= 0 && bi2 < topAllF.length ? topAllF[bi2] : 0) - (ai2 >= 0 && ai2 < topAllF.length ? topAllF[ai2] : 0);
-        });
-        const posInGroup = sorted.indexOf(item.phrase);
-        if (posInGroup > 0) selCount++;
+  if (prevResult) {
+    // 仅切换字集时：复用缓存的词组评测结果，跳过 60K 词组合并+编码计算
+    phraseEval = prevResult.phraseEval;
+    phraseFreqTierStats = prevResult.phraseFreqTierStats;
+    topPhraseCount = prevResult.topPhraseCount;
+    phraseDupGroups = prevResult.phraseDupGroups;
+  } else {
+    // 全量计算：四路归并 + 60K 词组编码
+    type PhraseSource = { phrase: string; freq: number; type: '2' | '3' | '4' | '5' };
+    const topItems: PhraseSource[] = [];
+    {
+      let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
+      while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
+        const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
+        const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
+        const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
+        const f5 = i5 < longCharFreqs.length ? longCharFreqs[i5] : -1;
+        let maxF = f2, maxType: PhraseSource['type'] = '2';
+        if (f3 > maxF) { maxF = f3; maxType = '3'; }
+        if (f4 > maxF) { maxF = f4; maxType = '4'; }
+        if (f5 > maxF) { maxF = f5; maxType = '5'; }
+        if (maxType === '2') { topItems.push({ phrase: twoCharPhrases[i2], freq: f2, type: '2' }); i2++; }
+        else if (maxType === '3') { topItems.push({ phrase: threeCharPhrases[i3], freq: f3, type: '3' }); i3++; }
+        else if (maxType === '4') { topItems.push({ phrase: fourCharPhrases[i4], freq: f4, type: '4' }); i4++; }
+        else { topItems.push({ phrase: longCharPhrases[i5], freq: f5, type: '5' }); i5++; }
       }
     }
 
-    const covered = tierItems.length;
-    // totalPhrases 为该频段在原始 topAll 中的词组总数（含未编码的）
-    const totalInTier = Math.min(tier.end, topAll.length) - tier.start;
-    return {
-      tier: tier.label,
-      totalPhrases: totalInTier,
-      coveredPhrases: covered,
-      selectionCount: selCount,
-      weightedCodeEquiv: safeDivide(wce, tierWeightSum),
-      handAltCount: tierErgo.handAlt,
-      sameFingerBigCross: tierErgo.sfb,
-      sameFingerSmallCross: tierErgo.sfs,
-      sameKeyTriple: tierErgo.skt,
-      sameKeyQuad: tierErgo.skq,
-      sameFingerTriple: tierErgo.sft,
-      sameFingerQuad: tierErgo.sfq,
-      pinkyCount: tierErgo.pk,
+    const top2: string[] = [], top2f: number[] = [];
+    const top3: string[] = [], top3f: number[] = [];
+    const top4: string[] = [], top4f: number[] = [];
+    for (const item of topItems) {
+      if (item.type === '2') { top2.push(item.phrase); top2f.push(item.freq); }
+      else if (item.type === '3') { top3.push(item.phrase); top3f.push(item.freq); }
+      else if (item.type === '4') { top4.push(item.phrase); top4f.push(item.freq); }
+    }
+
+    const topAll: string[] = topItems.map(item => item.phrase);
+    const topAllF: number[] = topItems.map(item => item.freq);
+
+    phraseEval = {
+      twoChar: evalPhraseTier(top2, top2f),
+      threeChar: evalPhraseTier(top3, top3f),
+      fourChar: evalPhraseTier(top4, top4f),
+      overall: evalPhraseTier(topAll, topAllF),
     };
-  });
+
+    // ★ 词组分频段统计
+    const coveredPhraseList: Array<{ phrase: string; code: string; weight: number; idx: number }> = [];
+    const phraseCodeMapOverall = new Map<string, string[]>();
+    for (let pi = 0; pi < topAll.length; pi++) {
+      const phrase = topAll[pi];
+      const code = getCachedPhraseCode(phrase);
+      if (code === null) continue;
+      const weight = topAllF[pi] / PHRASE_FREQ_TOTAL;
+      coveredPhraseList.push({ phrase, code, weight, idx: pi });
+      const existing = phraseCodeMapOverall.get(code);
+      if (existing) { if (!existing.includes(phrase)) existing.push(phrase); }
+      else phraseCodeMapOverall.set(code, [phrase]);
+    }
+    coveredPhraseList.sort((a, b) => b.weight - a.weight);
+
+    const phraseDupGroups: Array<{ code: string; phrases: Array<{ phrase: string; freq: number }> }> = [];
+    for (const [code, phrases] of phraseCodeMapOverall) {
+      if (phrases.length <= 1) continue;
+      const sorted = phrases.map(p => {
+        const idx = topAll.indexOf(p);
+        return { phrase: p, freq: idx >= 0 ? topAllF[idx] : 0 };
+      }).sort((a, b) => b.freq - a.freq);
+      phraseDupGroups.push({ code, phrases: sorted });
+    }
+    phraseDupGroups.sort((a, b) => b.phrases.length - a.phrases.length || b.phrases[0].freq - a.phrases[0].freq);
+
+    const phraseIndexMapOverall = new Map<string, number>();
+    for (let i = 0; i < topAll.length; i++) phraseIndexMapOverall.set(topAll[i], i);
+
+    topPhraseCount = topItems.length;
+    phraseFreqTierStats = PHRASE_FREQ_TIERS.map(tier => {
+      const tierItems = coveredPhraseList.filter(item => item.idx >= tier.start && item.idx < tier.end);
+      let selCount = 0, wce = 0;
+      let tierWeightSum = 0;
+      const tierErgo = { handAlt: 0, sfb: 0, sfs: 0, skt: 0, skq: 0, sft: 0, sfq: 0, pk: 0 };
+
+      for (const item of tierItems) {
+        tierWeightSum += item.weight;
+        const code = item.code.replace(/ /g, '').toLowerCase();
+        const pureLen = code.length;
+        const codeChrs = phraseCodeMapOverall.get(item.code) || [];
+        const dupPenalty = codeChrs.length > 1 ? (codeChrs.length - 1) * 0.1 : 0;
+        wce += item.weight * (pureLen + dupPenalty);
+
+        computeErgonomics(code, tierErgo);
+
+        if (codeChrs.length > 1) {
+          const sorted = [...codeChrs].sort((a, b) => {
+            const ai2 = phraseIndexMapOverall.get(a) ?? -1;
+            const bi2 = phraseIndexMapOverall.get(b) ?? -1;
+            return (bi2 >= 0 && bi2 < topAllF.length ? topAllF[bi2] : 0) - (ai2 >= 0 && ai2 < topAllF.length ? topAllF[ai2] : 0);
+          });
+          const posInGroup = sorted.indexOf(item.phrase);
+          if (posInGroup > 0) selCount++;
+        }
+      }
+
+      const covered = tierItems.length;
+      const totalInTier = Math.min(tier.end, topAll.length) - tier.start;
+      return {
+        tier: tier.label,
+        totalPhrases: totalInTier,
+        coveredPhrases: covered,
+        selectionCount: selCount,
+        weightedCodeEquiv: safeDivide(wce, tierWeightSum),
+        handAltCount: tierErgo.handAlt,
+        sameFingerBigCross: tierErgo.sfb,
+        sameFingerSmallCross: tierErgo.sfs,
+        sameKeyTriple: tierErgo.skt,
+        sameKeyQuad: tierErgo.skq,
+        sameFingerTriple: tierErgo.sft,
+        sameFingerQuad: tierErgo.sfq,
+        pinkyCount: tierErgo.pk,
+      };
+    });
+  }
+
+  // 统计词组中缺少全码的单字（基于全量码表，不受字集过滤影响）
+  const missingCodeCharSet = new Set<string>();
+  {
+    // 用全量 entries 构建映射（非 filteredEntries），确保检测不受字集选择影响
+    const fullCharCodes = new Map<string, boolean>();
+    for (const entry of entries) fullCharCodes.set(entry.char, true);
+    const allPhraseChars = new Set<string>();
+    for (const item of [...twoCharPhrases, ...threeCharPhrases, ...fourCharPhrases, ...longCharPhrases]) {
+      for (const ch of item) allPhraseChars.add(ch);
+    }
+    for (const ch of allPhraseChars) {
+      // 仅检测 CJK 汉字（基本区 U+4E00~U+9FFF + 扩展A U+3400~U+4DBF），跳过拉丁字母等
+      // 使用 codePointAt 正确处理 BMP 外的扩展B+字符
+      const cp = ch.codePointAt(0)!;
+      const isCJK = (cp >= 0x4E00 && cp <= 0x9FFF) || (cp >= 0x3400 && cp <= 0x4DBF);
+      if (isCJK && !fullCharCodes.has(ch)) {
+        missingCodeCharSet.add(ch);
+      }
+    }
+  }
 
   return {
     totalChars: filteredEntries.length,
@@ -1088,14 +1166,298 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all'): Evaluat
     codeLenChartData,
     fingerChartData,
     phraseEval,
+    phraseDupGroups,
     phraseFreqTierStats,
-    topPhraseCount: topItems.length,
+    topPhraseCount,
+    missingCodeCharCount: missingCodeCharSet.size,
+    missingCodeChars: [...missingCodeCharSet].slice(0, 20),
   };
 }
 
 // ========================================
 // React 组件
 // ========================================
+
+/** 词频一览面板（虚拟滚动，只渲染可视行） */
+const PhraseFreqPanel = ({
+  allPhrases,
+  phraseSearch,
+  setPhraseSearch,
+  onClose,
+}: {
+  allPhrases: Array<{ phrase: string; freq: number }>;
+  phraseSearch: string;
+  setPhraseSearch: (v: string) => void;
+  onClose: () => void;
+}) => {
+  const ROW_H = 28; // 固定行高 px
+  const BUFFER = 10; // 可视区域外额外渲染行数
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  // 防抖搜索：200ms 延迟
+  const [debouncedQuery, setDebouncedQuery] = useState(phraseSearch);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(phraseSearch), 200);
+    return () => clearTimeout(t);
+  }, [phraseSearch]);
+
+  // 过滤结果（仅在防抖值变化时重新计算）
+  const filtered = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return allPhrases;
+    return allPhrases.filter(item => item.phrase.toLowerCase().includes(q));
+  }, [allPhrases, debouncedQuery]);
+
+  // 预编译高亮正则
+  const highlightRe = useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return null;
+    return new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  }, [debouncedQuery]);
+
+  const totalH = filtered.length * ROW_H;
+  const containerH = typeof window !== 'undefined' ? window.innerHeight - 128 : 600; // 减去顶部高度
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - BUFFER);
+  const endIdx = Math.min(filtered.length, Math.ceil((scrollTop + containerH) / ROW_H) + BUFFER);
+  const visible = filtered.slice(startIdx, endIdx);
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
+  }, []);
+
+  // 高亮文本渲染（仅对可见行执行）
+  const renderPhrase = (phrase: string) => {
+    if (!highlightRe) return phrase;
+    const parts = phrase.split(highlightRe);
+    return parts.map((part, i) =>
+      i % 2 === 1
+        ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 text-foreground rounded-sm px-0.5">{part}</mark>
+        : part
+    );
+  };
+
+  return (
+    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slideInRight">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+        <div>
+          <h3 className="font-bold text-sm text-foreground">词频一览</h3>
+          <p className="text-[10px] text-muted-foreground">
+            {debouncedQuery
+              ? `${filtered.length.toLocaleString()} / ${allPhrases.length.toLocaleString()} 个词组`
+              : `${allPhrases.length.toLocaleString()} 个词组`}
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-full hover:bg-muted transition-colors">
+          <X className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </div>
+      {/* 搜索框 */}
+      <div className="px-4 py-2 border-b border-border">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            value={phraseSearch}
+            onChange={e => setPhraseSearch(e.target.value)}
+            placeholder="搜索词组..."
+            className="w-full pl-8 pr-8 py-1.5 text-xs rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {phraseSearch && (
+            <button onClick={() => setPhraseSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted transition-colors">
+              <X className="h-3 w-3 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      </div>
+      {/* 虚拟滚动区域 */}
+      {filtered.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+          <Search className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-xs">未找到匹配的词组</p>
+        </div>
+      ) : (
+        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto text-xs font-mono">
+          <div style={{ height: totalH, position: 'relative' }}>
+            {visible.map((item, vi) => {
+              const idx = startIdx + vi;
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    'absolute left-0 right-0 flex items-center justify-between px-4 hover:bg-muted/30 transition-colors',
+                    idx % 2 === 0 && 'bg-muted/10'
+                  )}
+                  style={{ top: idx * ROW_H, height: ROW_H }}
+                >
+                  <span className="text-muted-foreground w-8 text-right mr-2 tabular-nums">{idx + 1}</span>
+                  <span className="flex-1 text-foreground truncate">{renderPhrase(item.phrase)}</span>
+                  <span className="text-muted-foreground tabular-nums ml-2">{item.freq.toLocaleString()}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground text-center">
+        序号 · 词组 · 频次
+      </div>
+    </div>
+  );
+};
+
+/** 单字一览面板（虚拟滚动，支持字集过滤+搜索） */
+const CharFreqPanel = ({
+  entries,
+  charsetFilter,
+  charSearch,
+  setCharSearch,
+  onClose,
+}: {
+  entries: CodeEntry[];
+  charsetFilter: CharsetFilter;
+  charSearch: string;
+  setCharSearch: (v: string) => void;
+  onClose: () => void;
+}) => {
+  const ROW_H = 28;
+  const BUFFER = 10;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
+
+  // 字集过滤
+  const charsetEntries = useMemo(() => filterEntriesByCharset(entries, charsetFilter), [entries, charsetFilter]);
+
+  // 按字分组（保留所有编码）
+  const charMap = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const e of charsetEntries) {
+      const existing = map.get(e.char);
+      if (existing) { if (!existing.includes(e.code)) existing.push(e.code); }
+      else map.set(e.char, [e.code]);
+    }
+    // 按编码长度降序排列（全码在前）
+    return [...map.entries()].map(([ch, codes]) => ({
+      char: ch,
+      codes: codes.sort((a, b) => b.length - a.length),
+      fullCode: codes.reduce((a, b) => a.length >= b.length ? a : b),
+    }));
+  }, [charsetEntries]);
+
+  // 防抖搜索
+  const [debouncedQuery, setDebouncedQuery] = useState(charSearch);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(charSearch), 200);
+    return () => clearTimeout(t);
+  }, [charSearch]);
+
+  const filtered = useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return charMap;
+    return charMap.filter(item =>
+      item.char.includes(q) || item.codes.some(c => c.toLowerCase().includes(q.toLowerCase()))
+    );
+  }, [charMap, debouncedQuery]);
+
+  const highlightRe = useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return null;
+    return new RegExp(`(${q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+  }, [debouncedQuery]);
+
+  const totalH = filtered.length * ROW_H;
+  const containerH = typeof window !== 'undefined' ? window.innerHeight - 128 : 600;
+  const startIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - BUFFER);
+  const endIdx = Math.min(filtered.length, Math.ceil((scrollTop + containerH) / ROW_H) + BUFFER);
+  const visible = filtered.slice(startIdx, endIdx);
+
+  const onScroll = useCallback(() => {
+    if (scrollRef.current) setScrollTop(scrollRef.current.scrollTop);
+  }, []);
+
+  const renderText = (text: string) => {
+    if (!highlightRe) return text;
+    const parts = text.split(highlightRe);
+    return parts.map((part, i) =>
+      i % 2 === 1
+        ? <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 text-foreground rounded-sm px-0.5">{part}</mark>
+        : part
+    );
+  };
+
+  return (
+    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slideInRight">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+        <div>
+          <h3 className="font-bold text-sm text-foreground">单字一览</h3>
+          <p className="text-[10px] text-muted-foreground">
+            {debouncedQuery
+              ? `${filtered.length.toLocaleString()} / ${charMap.length.toLocaleString()} 个单字`
+              : `${charMap.length.toLocaleString()} 个单字`}
+          </p>
+        </div>
+        <button onClick={onClose} className="p-1.5 rounded-full hover:bg-muted transition-colors">
+          <X className="h-4 w-4 text-muted-foreground" />
+        </button>
+      </div>
+      {/* 搜索框 */}
+      <div className="px-4 py-2 border-b border-border">
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <input
+            type="text"
+            value={charSearch}
+            onChange={e => setCharSearch(e.target.value)}
+            placeholder="搜索字或编码..."
+            className="w-full pl-8 pr-8 py-1.5 text-xs rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+          {charSearch && (
+            <button onClick={() => setCharSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded-full hover:bg-muted transition-colors">
+              <X className="h-3 w-3 text-muted-foreground" />
+            </button>
+          )}
+        </div>
+      </div>
+      {/* 虚拟滚动区域 */}
+      {filtered.length === 0 ? (
+        <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+          <Search className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-xs">未找到匹配的单字</p>
+        </div>
+      ) : (
+        <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto text-xs font-mono">
+          <div style={{ height: totalH, position: 'relative' }}>
+            {visible.map((item, vi) => {
+              const idx = startIdx + vi;
+              return (
+                <div
+                  key={idx}
+                  className={cn(
+                    'absolute left-0 right-0 flex items-center px-4 hover:bg-muted/30 transition-colors gap-2',
+                    idx % 2 === 0 && 'bg-muted/10'
+                  )}
+                  style={{ top: idx * ROW_H, height: ROW_H }}
+                >
+                  <span className="text-foreground font-bold text-sm w-7 text-center shrink-0">{renderText(item.char)}</span>
+                  <span className="flex-1 text-muted-foreground truncate">{renderText(item.fullCode)}</span>
+                  <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{item.fullCode.length}码</span>
+                  {item.codes.length > 1 && (
+                    <span className="text-[10px] text-amber-600 dark:text-amber-400 shrink-0" title={`共 ${item.codes.length} 码: ${item.codes.join(', ')}`}>
+                      ×{item.codes.length}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      <div className="px-4 py-2 border-t border-border text-[10px] text-muted-foreground text-center">
+        字 · 全码 · 码长 · 重码数
+      </div>
+    </div>
+  );
+};
 
 export default function EvaluatePage() {
   const [fileName, setFileName] = useState('');
@@ -1115,43 +1477,102 @@ export default function EvaluatePage() {
   const [countSpace, setCountSpace] = useState(false); // 计算空格模式
   const resultRef = useRef<HTMLDivElement>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+  const [selectedDupCode, setSelectedDupCode] = useState<string | null>(null); // 重码弹窗
+  const [showPhraseList, setShowPhraseList] = useState(false); // 词频一览面板
+  const [phraseSearch, setPhraseSearch] = useState(''); // 词频搜索
+  const [showCharList, setShowCharList] = useState(false); // 单字一览面板
+  const [charSearch, setCharSearch] = useState(''); // 单字搜索
 
-  // Escape 键关闭全屏展开模式
+  // Escape 键关闭全屏展开模式或重码弹窗
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && expandedSection) setExpandedSection(null);
+      if (e.key === 'Escape') {
+        if (selectedDupCode) setSelectedDupCode(null);
+        else if (expandedSection) setExpandedSection(null);
+      }
     };
-    if (expandedSection) {
+    if (expandedSection || selectedDupCode) {
       document.addEventListener('keydown', handleEsc);
+    }
+    if (expandedSection) {
       document.body.style.overflow = 'hidden'; // 全屏时锁定背景滚动
     }
     return () => {
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = '';
     };
-  }, [expandedSection]);
+  }, [expandedSection, selectedDupCode]);
 
   // ★ 当字集过滤器或原始条目变化时，重新计算测评结果和覆盖率
-  const reEvaluate = useCallback((entries: CodeEntry[], charset: CharsetFilter) => {
-    if (entries.length === 0) return;
-    const filtered = filterEntriesByCharset(entries, charset);
-    const res = evaluate(entries, charset);
-    setResult(res);
+  const prevResultRef = useRef<EvaluateResult | null>(null);
+  // 按字集缓存测评结果：切换字集时秒出，无需重算
+  const charsetResultCache = useRef<Map<string, EvaluateResult>>(new Map());
+  const charsetCoverageCache = useRef<Map<string, {
+    gb2312: { covered: number; total: number; percentage: number; missing: string[] } | null;
+    gbk: { covered: number; total: number; percentage: number; missing: string[] } | null;
+    tonggui: { covered: number; total: number; percentage: number; missing: string[] } | null;
+  }>>(new Map());
+  const [, startTransition] = useTransition();
 
-    // 覆盖率基于过滤后的条目计算，响应字集选择
+  const reEvaluate = useCallback((entries: CodeEntry[], charset: CharsetFilter, forceFull = false) => {
+    if (entries.length === 0) return;
+
+    if (forceFull) {
+      // 数据变化时：清空所有字集缓存，全量重算
+      charsetResultCache.current.clear();
+      charsetCoverageCache.current.clear();
+    }
+
+    // 检查字集缓存（仅切换字集时命中，数据变化时跳过）
+    if (!forceFull) {
+      const cachedRes = charsetResultCache.current.get(charset);
+      const cachedCov = charsetCoverageCache.current.get(charset);
+      if (cachedRes && cachedCov) {
+        prevResultRef.current = cachedRes;
+        startTransition(() => {
+          setResult(cachedRes);
+          setCharCoverage(cachedCov);
+        });
+        return;
+      }
+    }
+
+    // 全量计算
+    const res = evaluate(entries, charset, forceFull ? undefined : prevResultRef.current);
+    prevResultRef.current = res;
+
+    // 计算单字覆盖率（仅统计单字符条目，不包含多字编码）
+    const emptyCov = { gb2312: null, gbk: null, tonggui: null } as const;
+    let covResult = { ...emptyCov } as { gb2312: ReturnType<typeof calculateCoverage> | null; gbk: ReturnType<typeof calculateCoverage> | null; tonggui: ReturnType<typeof calculateCoverage> | null };
     try {
-      const singleChars = filtered.filter(e => [...e.char].length === 1).map(e => e.char);
-      setCharCoverage({
+      const filtered = filterEntriesByCharset(entries, charset);
+      const singleChars = filtered.filter(e => e.char.length === 1).map(e => e.char);
+      covResult = {
         gb2312: calculateCoverage(singleChars, 'gb2312'),
         gbk: calculateCoverage(singleChars, 'gbk'),
         tonggui: calculateCoverage(singleChars, 'tonggui'),
-      });
+      };
     } catch { /* ignore */ }
+
+    // 写入缓存
+    charsetResultCache.current.set(charset, res);
+    charsetCoverageCache.current.set(charset, covResult);
+
+    startTransition(() => {
+      setResult(res);
+      setCharCoverage(covResult);
+    });
   }, []);
 
+  // ★ 版本号计数器：每次上传新文件递增，确保同长度不同数据也能正确触发全量重算
+  const entriesVersionRef = useRef(0);
+  const prevVersionRef = useRef(0);
   useEffect(() => {
     if (rawEntries.length > 0 && !parsing) {
-      reEvaluate(rawEntries, charsetFilter);
+      const entriesChanged = entriesVersionRef.current !== prevVersionRef.current;
+      prevVersionRef.current = entriesVersionRef.current;
+      // rawEntries 变化时全量重算，仅字集切换时复用词组缓存
+      reEvaluate(rawEntries, charsetFilter, entriesChanged);
     }
   }, [charsetFilter, rawEntries, parsing, reEvaluate]);
 
@@ -1178,6 +1599,7 @@ export default function EvaluatePage() {
           return;
         }
 
+        entriesVersionRef.current++;
         setRawEntries(entries);
         setParseProgress(100);
         // 由 useEffect 监听 rawEntries 变化后调用 reEvaluate 统一计算
@@ -1210,6 +1632,7 @@ export default function EvaluatePage() {
           return;
         }
 
+        entriesVersionRef.current++;
         setRawEntries(entries);
         setParseProgress(100);
         // 由 useEffect 监听 rawEntries 变化后调用 reEvaluate 统一计算
@@ -1281,6 +1704,10 @@ export default function EvaluatePage() {
   };
 
   // ========================================
+  // 词频一览：合并全部词组（模块级常量，避免每次渲染重算 60K 条目）
+  // ========================================
+  const allPhrasesMerged = ALL_PHRASES_MERGED;
+
   // 渲染
   // ========================================
 
@@ -1424,7 +1851,7 @@ export default function EvaluatePage() {
                   {CHARSET_OPTIONS.map(opt => (
                     <button
                       key={opt.value}
-                      onClick={() => setCharsetFilter(opt.value)}
+                      onClick={() => startTransition(() => setCharsetFilter(opt.value))}
                       className={cn(
                         'px-3 py-1.5 rounded-lg text-sm font-medium transition-all border',
                         charsetFilter === opt.value
@@ -1641,6 +2068,17 @@ export default function EvaluatePage() {
                 >
                   {countSpace ? '计算空格 ✓' : '不计算空格'}
                 </button>
+                <button
+                  onClick={() => { setShowCharList(!showCharList); if (!showCharList) setShowPhraseList(false); }}
+                  className={cn(
+                    'text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    showCharList
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                      : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
+                  )}
+                >
+                  单字一览 {showCharList ? '✓' : ''}
+                </button>
               </h3>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className={cn('w-full leading-normal', expandedSection === 'single-char' ? 'text-sm min-w-[1400px]' : 'text-xs min-w-[1100px]')}>
@@ -1714,12 +2152,12 @@ export default function EvaluatePage() {
                       const renderTierRow = (s: typeof tiers[0]) => (
                         <tr key={s.tier} className="border-b border-border hover:bg-muted/20">
                           <td className="px-2 py-1.5 font-medium text-foreground whitespace-nowrap sticky left-0 bg-background z-10">{s.tier}</td>
-                          {nc(s.charCount)} {nc(s.oneCode)} {nc(s.twoCode)} {nc(s.threeCode)} {nc(s.fourCode)}
+                          {nc(s.charCount)}{nc(s.oneCode)}{nc(s.twoCode)}{nc(s.threeCode)}{nc(s.fourCode)}
                           <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.shortDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.shortDupCount}</td>
                           <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.fullDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.fullDupCount}</td>
-                          {nc(s.theoreticalTwoShort)} {nc(wcl(s.weightedCodeLen))} {nc(s.weightedCharEquiv)} {nc(s.weightedKeyEquiv)}
-                          {nc(s.handAltCount)} {nc(s.sameFingerBigCross)} {nc(s.sameFingerSmallCross)}
-                          {nc(s.sameKeyTriple)} {nc(s.sameKeyQuad)} {nc(s.sameFingerTriple)} {nc(s.sameFingerQuad)}
+                          {nc(s.theoreticalTwoShort)}{nc(wcl(s.weightedCodeLen))}{nc(s.weightedCharEquiv)}{nc(s.weightedKeyEquiv)}
+                          {nc(s.handAltCount)}{nc(s.sameFingerBigCross)}{nc(s.sameFingerSmallCross)}
+                          {nc(s.sameKeyTriple)}{nc(s.sameKeyQuad)}{nc(s.sameFingerTriple)}{nc(s.sameFingerQuad)}
                           {nc(s.pinkyCount)}
                         </tr>
                       );
@@ -1728,18 +2166,18 @@ export default function EvaluatePage() {
                       const renderSumRow = (label: string, sum: ReturnType<typeof sumTier>) => (
                         <tr key={label} className="bg-emerald-50/50 dark:bg-emerald-950/10 border-b border-border font-semibold">
                           <td className="px-2 py-1.5 text-foreground sticky left-0 bg-emerald-50/50 dark:bg-emerald-950/10 z-10">{label}</td>
-                          {nc(sum.charCount)} {nc(sum.oneCode)} {nc(sum.twoCode)} {nc(sum.threeCode)} {nc(sum.fourCode)}
+                          {nc(sum.charCount)}{nc(sum.oneCode)}{nc(sum.twoCode)}{nc(sum.threeCode)}{nc(sum.fourCode)}
                           <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.shortDupCount}</td>
                           <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.fullDupCount}</td>
-                          {nc(sum.theoreticalTwoShort)} {nc(wcl(sum.weightedCodeLen))} {nc(sum.weightedCharEquiv)} {nc(sum.weightedKeyEquiv)}
-                          {nc(sum.handAltCount)} {nc(sum.sameFingerBigCross)} {nc(sum.sameFingerSmallCross)}
-                          {nc(sum.sameKeyTriple)} {nc(sum.sameKeyQuad)} {nc(sum.sameFingerTriple)} {nc(sum.sameFingerQuad)}
+                          {nc(sum.theoreticalTwoShort)}{nc(wcl(sum.weightedCodeLen))}{nc(sum.weightedCharEquiv)}{nc(sum.weightedKeyEquiv)}
+                          {nc(sum.handAltCount)}{nc(sum.sameFingerBigCross)}{nc(sum.sameFingerSmallCross)}
+                          {nc(sum.sameKeyTriple)}{nc(sum.sameKeyQuad)}{nc(sum.sameFingerTriple)}{nc(sum.sameFingerQuad)}
                           {nc(sum.pinkyCount)}
                         </tr>
                       );
 
                       /** 渲染加权比重行（百分比） */
-                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>) => {
+                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
                         const n = sum.charCount;
                         const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
                         // 手感指标用二元组数做分母（码长均值近似）
@@ -1747,7 +2185,7 @@ export default function EvaluatePage() {
                         const pairCount = n * Math.max(1, avgLen - 1);
                         const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
                         return (
-                          <tr key={label} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
+                          <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-2 py-1.5 font-medium sticky left-0 bg-blue-50/50 dark:bg-blue-950/10 z-10">{label}</td>
                             <td colSpan={2} className="px-2 py-1.5 text-center tabular-nums">{pct(sum.oneCode)}</td>
                             <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.twoCode)}</td>
@@ -1771,16 +2209,14 @@ export default function EvaluatePage() {
                         );
                       };
 
-                      return (
-                        <>
-                          {highTiers.map(renderTierRow)}
-                          {renderSumRow('小计(1~1500)', highSum)}
-                          {renderPctRow('加权比重', highSum)}
-                          {lowTiers.map(renderTierRow)}
-                          {renderSumRow('总计', allSum)}
-                          {renderPctRow('加权比重', allSum)}
-                        </>
-                      );
+                      return (<>
+                        {highTiers.map(renderTierRow)}
+                        {renderSumRow('小计(1~1500)', highSum)}
+                        {renderPctRow('加权比重', highSum, 'high')}
+                        {lowTiers.map(renderTierRow)}
+                        {renderSumRow('总计', allSum)}
+                        {renderPctRow('加权比重', allSum, 'all')}
+                      </>);
                     })()}
                   </tbody>
                 </table>
@@ -1887,7 +2323,7 @@ export default function EvaluatePage() {
               )}
               <h3 className="text-base font-bold text-foreground mb-3 flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-primary" />词组测评
-                <span className="text-xs font-normal text-muted-foreground ml-2">共 {result.topPhraseCount.toLocaleString()} 词（高频前5万）</span>
+                <span className="text-xs font-normal text-muted-foreground ml-2">共 {result.topPhraseCount.toLocaleString()} 词</span>
                 {expandedSection !== 'phrase' && (
                   <button onClick={() => setExpandedSection('phrase')} className="ml-1 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-primary" title="点击放大查看（Esc 收起）">
                     <Maximize2 className="h-4 w-4 text-muted-foreground" />
@@ -1896,7 +2332,7 @@ export default function EvaluatePage() {
                 <button
                   onClick={() => setCountSpace(!countSpace)}
                   className={cn(
-                    'ml-auto text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    'text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
                     countSpace
                       ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                       : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
@@ -1904,7 +2340,36 @@ export default function EvaluatePage() {
                 >
                   {countSpace ? '计算空格 ✓' : '不计算空格'}
                 </button>
+                <button
+                  onClick={() => { setShowPhraseList(!showPhraseList); if (!showPhraseList) setShowCharList(false); }}
+                  className={cn(
+                    'text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    showPhraseList
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                      : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
+                  )}
+                >
+                  词频一览 {showPhraseList ? '✓' : ''}
+                </button>
               </h3>
+
+              {/* 缺少全码警告 */}
+              {result.missingCodeCharCount > 0 && (
+                <div className="mb-3 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs leading-relaxed">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-semibold">注意：</span>
+                      码表中有 <span className="font-bold">{result.missingCodeCharCount}</span> 个单字缺少全码，这些字参与的词组可能无法编码，词组测评结果可能偏低。
+                      {result.missingCodeChars.length > 0 && (
+                        <span className="text-amber-600 dark:text-amber-400 ml-1">
+                         （如：{result.missingCodeChars.join('、')}）
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* 词组分频段统计表 */}
               <div className="overflow-x-auto rounded-lg border border-border">
@@ -1960,9 +2425,9 @@ export default function EvaluatePage() {
                       const renderTierRow = (s: typeof tiers[0]) => (
                         <tr key={s.tier} className="border-b border-border hover:bg-muted/20">
                           <td className="px-3 py-1.5 font-medium text-foreground whitespace-nowrap">{s.tier}</td>
-                          {nc(s.selectionCount)} {nc(s.weightedCodeEquiv)}
-                          {nc(s.handAltCount)} {nc(s.sameFingerBigCross)} {nc(s.sameFingerSmallCross)}
-                          {nc(s.sameKeyTriple)} {nc(s.sameKeyQuad)} {nc(s.sameFingerTriple)} {nc(s.sameFingerQuad)}
+                          {nc(s.selectionCount)}{nc(s.weightedCodeEquiv)}
+                          {nc(s.handAltCount)}{nc(s.sameFingerBigCross)}{nc(s.sameFingerSmallCross)}
+                          {nc(s.sameKeyTriple)}{nc(s.sameKeyQuad)}{nc(s.sameFingerTriple)}{nc(s.sameFingerQuad)}
                           {nc(s.pinkyCount)}
                         </tr>
                       );
@@ -1971,15 +2436,15 @@ export default function EvaluatePage() {
                       const renderSumRow = (label: string, sum: ReturnType<typeof sumTier>) => (
                         <tr key={label} className="bg-emerald-50/50 dark:bg-emerald-950/10 border-b border-border font-semibold">
                           <td className="px-3 py-1.5 text-foreground">{label}</td>
-                          {nc(sum.selectionCount)} {nc(sum.weightedCodeEquiv)}
-                          {nc(sum.handAltCount)} {nc(sum.sameFingerBigCross)} {nc(sum.sameFingerSmallCross)}
-                          {nc(sum.sameKeyTriple)} {nc(sum.sameKeyQuad)} {nc(sum.sameFingerTriple)} {nc(sum.sameFingerQuad)}
+                          {nc(sum.selectionCount)}{nc(sum.weightedCodeEquiv)}
+                          {nc(sum.handAltCount)}{nc(sum.sameFingerBigCross)}{nc(sum.sameFingerSmallCross)}
+                          {nc(sum.sameKeyTriple)}{nc(sum.sameKeyQuad)}{nc(sum.sameFingerTriple)}{nc(sum.sameFingerQuad)}
                           {nc(sum.pinkyCount)}
                         </tr>
                       );
 
                       /** 渲染加权比重行（百分比） */
-                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>) => {
+                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
                         const n = sum.totalPhrases;
                         const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
                         // 手感指标用二元组数做分母（词组平均码长近似）
@@ -1987,7 +2452,7 @@ export default function EvaluatePage() {
                         const pairCount = n * Math.max(1, avgLen - 1);
                         const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
                         return (
-                          <tr key={label} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
+                          <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-3 py-1.5 font-medium">{label}</td>
                             <td className="px-3 py-1.5 text-center tabular-nums">{pct(sum.selectionCount)}</td>
                             <td className="px-3 py-1.5 text-center tabular-nums">/</td>
@@ -2003,16 +2468,14 @@ export default function EvaluatePage() {
                         );
                       };
 
-                      return (
-                        <>
-                          {highTiers.map(renderTierRow)}
-                          {renderSumRow('小计', highSum)}
-                          {renderPctRow('加权比重', highSum)}
-                          {lowTiers.map(renderTierRow)}
-                          {renderSumRow('总计', allSum)}
-                          {renderPctRow('加权比重', allSum)}
-                        </>
-                      );
+                      return (<>
+                        {highTiers.map(renderTierRow)}
+                        {renderSumRow('小计', highSum)}
+                        {renderPctRow('加权比重', highSum, 'high')}
+                        {lowTiers.map(renderTierRow)}
+                        {renderSumRow('总计', allSum)}
+                        {renderPctRow('加权比重', allSum, 'all')}
+                      </>);
                     })()}
                   </tbody>
                 </table>
@@ -2020,33 +2483,40 @@ export default function EvaluatePage() {
 
               {/* 词组测评汇总统计 */}
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-lg border border-border p-3 text-center">
+                <div className="rounded-lg border border-border p-3 text-center" title="能编码的词组数 / 总词组数 × 100%">
                   <div className={cn('text-2xl font-bold tabular-nums',
                     result.phraseEval.overall.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
                     result.phraseEval.overall.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
                     'text-red-600 dark:text-red-400'
                   )}>{result.phraseEval.overall.coverageRate.toFixed(1)}%</div>
                   <div className="text-xs text-muted-foreground mt-1">覆盖率</div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">词组可编码比例</div>
                 </div>
-                <div className="rounded-lg border border-border p-3 text-center">
+                <div className="rounded-lg border border-border p-3 text-center" title="所有词组编码的平均键数（词频加权）">
                   <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
                     {countSpace ? (result.phraseEval.overall.avgCodeLen + 1).toFixed(2) : result.phraseEval.overall.avgCodeLen.toFixed(2)}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">平均码长</div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">每词平均按键数</div>
                 </div>
-                <div className="rounded-lg border border-border p-3 text-center">
+                <div
+                  className="rounded-lg border border-border p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors" title="存在重码的词组占比（按编码数计）—— 点击查看重码词组"
+                  onClick={() => phraseDupGroups.length > 0 && setSelectedDupCode(phraseDupGroups[0].code)}
+                >
                   <div className={cn('text-2xl font-bold tabular-nums',
                     result.phraseEval.overall.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
                     result.phraseEval.overall.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
                     'text-red-600 dark:text-red-400'
                   )}>{result.phraseEval.overall.dupRate.toFixed(2)}%</div>
-                  <div className="text-xs text-muted-foreground mt-1">重码率</div>
+                  <div className="text-xs text-muted-foreground mt-1">重码率 <span className="text-[10px] text-primary">点击查看</span></div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">重码编码占比</div>
                 </div>
-                <div className="rounded-lg border border-border p-3 text-center">
+                <div className="rounded-lg border border-border p-3 text-center" title="因重码需按数字键选重的万分比（词频加权）">
                   <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
                     {result.phraseEval.overall.selectionRate.toFixed(1)}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">选重率（‱）</div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">需选重的万分比</div>
                 </div>
               </div>
 
@@ -2121,7 +2591,7 @@ export default function EvaluatePage() {
               </div>
 
               <p className="text-xs text-muted-foreground mt-3">
-                数据来源：jieba 中文分词词典（fxsjy/jieba），基于 Liu Chinese Corpus 约 3.5 亿词次统计
+                数据来源：测评6万词词频表，基于大规模语料库统计
               </p>
             </CardContent>
           </Card>
@@ -2222,6 +2692,74 @@ export default function EvaluatePage() {
         </section>
         )}
       </div>
+
+      {/* ===== 词频一览面板（虚拟滚动） ===== */}
+      {showPhraseList && <PhraseFreqPanel
+        allPhrases={allPhrasesMerged}
+        phraseSearch={phraseSearch}
+        setPhraseSearch={setPhraseSearch}
+        onClose={() => setShowPhraseList(false)}
+      />}
+
+      {/* ===== 单字一览面板（虚拟滚动） ===== */}
+      {showCharList && rawEntries.length > 0 && <CharFreqPanel
+        entries={rawEntries}
+        charsetFilter={charsetFilter}
+        charSearch={charSearch}
+        setCharSearch={setCharSearch}
+        onClose={() => setShowCharList(false)}
+      />}
+
+      {/* ===== 重码词组弹窗 ===== */}
+      {selectedDupCode && (() => {
+        const group = phraseDupGroups.find(g => g.code === selectedDupCode);
+        // 如果没有找到特定组，显示所有重码词组的总览
+        const showOverview = !group;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setSelectedDupCode(null)}>
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-gradient-to-r from-primary/5 to-accent/5">
+                <div>
+                  <h3 className="font-bold text-foreground">重码词组</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    共 {phraseDupGroups.length} 组重码编码，涉及 {phraseDupGroups.reduce((s, g) => s + g.phrases.length, 0)} 个词组
+                  </p>
+                </div>
+                <button onClick={() => setSelectedDupCode(null)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4 space-y-3">
+                {phraseDupGroups.slice(0, 50).map((g, gi) => (
+                  <div key={g.code} className="rounded-lg border border-border/50 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground">#{gi + 1}</span>
+                        <span className="font-mono text-sm font-semibold text-primary">{g.code}</span>
+                        <span className="text-xs text-muted-foreground">({g.phrases.length}个词)</span>
+                      </div>
+                    </div>
+                    <div className="px-3 py-2 space-y-1">
+                      {g.phrases.map((item, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-sm">
+                          <span className={cn('font-medium', idx === 0 ? 'text-foreground' : 'text-muted-foreground')}>{item.phrase}</span>
+                          <span className="text-xs font-mono text-muted-foreground tabular-nums">{item.freq.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {phraseDupGroups.length > 50 && (
+                  <p className="text-xs text-muted-foreground text-center py-2">仅显示频次最高的 50 组</p>
+                )}
+              </div>
+              <div className="px-5 py-3 border-t border-border/60 text-xs text-muted-foreground text-center">
+                按重码词组数降序排列 · 按 Esc 关闭
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -32,12 +32,8 @@ function isHanChar(char: string): boolean {
 }
 
 /** 清理字集：去重 + 过滤非汉字 */
-function cleanCharSet(chars: string[], name: string): string[] {
+function cleanCharSet(chars: string[], _name: string): string[] {
   const hanChars = chars.filter(isHanChar);
-  const nonHanCount = chars.length - hanChars.length;
-  if (nonHanCount > 0) {
-    console.warn(`[commonChars] 字集[${name}]过滤了 ${nonHanCount} 个非汉字字符`);
-  }
 
   const seen = new Set<string>();
   const uniqueChars: string[] = [];
@@ -46,9 +42,6 @@ function cleanCharSet(chars: string[], name: string): string[] {
       seen.add(ch);
       uniqueChars.push(ch);
     }
-  }
-  if (uniqueChars.length !== hanChars.length) {
-    console.warn(`[commonChars] 字集[${name}]去除了 ${hanChars.length - uniqueChars.length} 个重复字符`);
   }
 
   return uniqueChars;
@@ -103,23 +96,16 @@ export const commonCharStats = {
 
 // 运行时校验
 if (typeof window !== 'undefined') {
-  console.log('[commonChars] 字集加载完成:', {
-    top500: top500Chars.length,
-    top1000: top1000Chars.length,
-    top1500: top1500Chars.length,
-    top3000: top3000Chars.length,
-  });
-
-  // 自动验证
+  // 静默校验（不输出日志）
   const checks = [
     { name: '前500字', set: top500Chars, expected: 500 },
     { name: '前1000字', set: top1000Chars, expected: 1000 },
     { name: '前1500字', set: top1500Chars, expected: 1500 },
     { name: '前3000字', set: top3000Chars, expected: 3000 },
   ];
-  checks.forEach(({ name, set, expected }) => {
+  checks.forEach(({ set, expected }) => {
     if (set.length !== expected) {
-      console.warn(`[commonChars] ${name} 数量不符: 实际 ${set.length}, 期望 ${expected}`);
+      // 数量不符时静默处理
     }
   });
 }

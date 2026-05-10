@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { charCodeData, type CharCodeItem } from '@/data/charCodeData';
 import { top500Chars, top1000Chars, top1500Chars } from '@/data/commonChars';
@@ -9,7 +8,7 @@ import { practiceRootMappings, keyboardRows } from '@/data/roots';
 import type { WholeCharMode } from '@/types';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
-import { Play, RotateCcw, Info, Trash2, GraduationCap, Star, Trophy, CheckCircle2, XCircle, Zap, Lightbulb, BarChart3, Target, AlertTriangle, ChevronDown, ChevronUp, Timer, Eye, EyeOff, SplitSquareHorizontal, Flame, BookOpen, Sparkles } from 'lucide-react';
+import { Play, RotateCcw, Info, Trash2, GraduationCap, Star, Trophy, CheckCircle2, XCircle, Lightbulb, BarChart3, Target, AlertTriangle, ChevronDown, ChevronUp, Eye, EyeOff, SplitSquareHorizontal, Flame } from 'lucide-react';
 
 // ====== 模式配置 ======
 const modeConfig: Record<WholeCharMode, { label: string; icon: typeof Star; description: string }> = {

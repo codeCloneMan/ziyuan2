@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      "@": path.resolve(import.meta.dirname, "./src"),
     },
   },
   build: {
@@ -20,10 +20,8 @@ export default defineConfig({
           // UI组件库
           'ui-vendor': [
             '@radix-ui/react-accordion',
-            '@radix-ui/react-dialog',
-            '@radix-ui/react-dropdown-menu',
-            '@radix-ui/react-select',
-            '@radix-ui/react-tabs',
+            '@radix-ui/react-progress',
+            '@radix-ui/react-slot',
           ],
           // 图标库
           'icons': ['lucide-react'],
