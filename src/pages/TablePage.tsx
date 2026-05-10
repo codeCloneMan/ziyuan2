@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { renderableKeyGroups, keyboardRows } from '@/data/roots';
 import { getExamplesByRoot } from '@/data/rootExamples';
@@ -68,6 +67,16 @@ export default function TablePage() {
     return map;
   }, []);
 
+  // 弹窗数据：避免重复调用昂贵函数
+  const exampleChars = useMemo(
+    () => selectedRoot ? getExamplesByRoot(selectedRoot.char).slice(0, 8) : [],
+    [selectedRoot]
+  );
+  const matchingChars = useMemo(
+    () => selectedRoot ? findCharsContainingRoot(selectedRoot.char) : [],
+    [selectedRoot]
+  );
+
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
@@ -75,7 +84,7 @@ export default function TablePage() {
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <BookOpen className="h-4 w-4 mr-1.5" />
-            v1.31版完整字根表
+            v1.32版完整字根表
           </Badge>
           
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
@@ -250,7 +259,7 @@ export default function TablePage() {
                     <RootCharDisplay
                       key={`${root.char}-${root.key}-${rootIdx}`}
                       root={root}
-                      size={displayMode === 'compact' ? 'sm' : 'sm'}
+                      size={displayMode === 'compact' ? 'sm' : 'md'}
                       showDesc={displayMode === 'detailed'}
                       className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
                       onClick={() => setSelectedRoot(root)}
@@ -336,8 +345,8 @@ export default function TablePage() {
                   常见例字
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {getExamplesByRoot(selectedRoot.char).length > 0 ? (
-                    getExamplesByRoot(selectedRoot.char).slice(0, 8).map((char, idx) => (
+                  {exampleChars.length > 0 ? (
+                    exampleChars.map((char, idx) => (
                       <div
                         key={idx}
                         className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border border-border bg-card text-lg sm:text-xl font-medium text-foreground hover:border-primary/50 hover:bg-accent/10 transition-colors cursor-default"
@@ -352,14 +361,14 @@ export default function TablePage() {
               </div>
 
               {/* 包含该字根的汉字（从码表提取） */}
-              {findCharsContainingRoot(selectedRoot.char).length > 0 && (
+              {matchingChars.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <Hash className="h-4 w-4" />
                     码表中的汉字
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {findCharsContainingRoot(selectedRoot.char).map((item, idx) => (
+                    {matchingChars.map((item, idx) => (
                       <div
                         key={idx}
                         className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border bg-card text-sm hover:border-primary/50 hover:bg-accent/10 transition-colors cursor-default"

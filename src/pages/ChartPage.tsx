@@ -1,14 +1,30 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Download, X, ZoomIn, Image as ImageIcon } from 'lucide-react';
 
 export default function ChartPage() {
   const [fullscreen, setFullscreen] = useState(false);
+  const [imgError, setImgError] = useState(false);
 
   const toggleFullscreen = useCallback(() => {
     setFullscreen(prev => !prev);
   }, []);
+
+  // ESC 键退出全屏 + 锁定背景滚动
+  useEffect(() => {
+    if (!fullscreen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreen(false);
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+    };
+  }, [fullscreen]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -17,7 +33,7 @@ export default function ChartPage() {
         <div className="container-page text-center max-w-4xl">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <ImageIcon className="h-4 w-4 mr-1.5" />
-            v1.31版完整字根图
+            v1.32版完整字根图
           </Badge>
           
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
@@ -26,25 +42,25 @@ export default function ChartPage() {
           </h1>
           
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
-            字源形码 v1.31 字根键位分布图
+            字源形码 v1.32 字根键位分布图
           </p>
 
-          {/* 快速操作 */}
-          <div className="mt-8 flex items-center justify-center gap-4 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
-            <a href="./1.31zigentu.png" download="字源1.31字根图.png">
-              <button className="btn-primary gap-2">
+          {/* 快速操作 - 与 icon 放一行 */}
+          <div className="mt-8 flex items-center justify-center gap-3 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+            <a href="./字源字根图.png" download="字源1.32字根图.png">
+              <Button className="gap-2">
                 <Download className="h-4 w-4" />
                 下载高清图片
-              </button>
+              </Button>
             </a>
-            
-            <button 
+            <Button
+              variant="outline"
               onClick={toggleFullscreen}
-              className="btn-secondary gap-2"
+              className="gap-2"
             >
               <ZoomIn className="h-4 w-4" />
               全屏查看
-            </button>
+            </Button>
           </div>
         </div>
       </section>
@@ -71,12 +87,20 @@ export default function ChartPage() {
             {/* 图片内容 */}
             <div className="overflow-auto p-6 sm:p-8">
               <div className="flex justify-center">
-                <img
-                  src="./1.31zigentu.png"
-                  alt="字源形码 v1.31 字根图"
-                  className="w-full max-w-5xl transition-transform duration-300 group-hover:scale-[1.02]"
-                  draggable={false}
-                />
+                {imgError ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                    <ImageIcon className="h-12 w-12 mb-3 opacity-50" />
+                    <p className="text-sm">字根图加载失败</p>
+                  </div>
+                ) : (
+                  <img
+                    src="./字源字根图.png"
+                    alt="字源形码 v1.32 字根图"
+                    className="w-full max-w-5xl transition-transform duration-300 group-hover:scale-[1.02]"
+                    draggable={false}
+                    onError={() => setImgError(true)}
+                  />
+                )}
               </div>
             </div>
           </div>
@@ -192,13 +216,13 @@ export default function ChartPage() {
           {/* 提示文字 */}
           <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-white/60 text-sm flex items-center gap-2 pointer-events-none">
             <ZoomIn className="h-4 w-4" />
-            点击任意处退出全屏
+            按 Esc 键或点击黑色区域退出全屏
           </div>
 
           {/* 全屏图片 */}
           <img
-            src="./1.31zigentu.png"
-            alt="字源形码 v1.31 字根图"
+            src="./字源字根图.png"
+            alt="字源形码 v1.32 字根图"
             className="max-h-[92vh] max-w-[92vw] object-contain rounded-lg shadow-2xl animate-slideInUp"
             draggable={false}
             onClick={(e) => e.stopPropagation()}

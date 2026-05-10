@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -8,17 +8,69 @@ import { twoCharPhrases, threeCharPhrases, fourCharPhrases } from '@/data/builti
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import {
   Play, RotateCcw, Trophy, CheckCircle2, XCircle,
-  Zap, Target, Eye, EyeOff, Keyboard, BookOpen,
+  Zap, Keyboard, BookOpen, ArrowLeft,
 } from 'lucide-react';
 
-// 词组类型
-interface PhraseItem {
-  phrase: string;
-  codes: string[];      // 每个字的编码
-  fullCode: string;     // 完整编码（拼接）
+// ============================================
+// 模块级缓存（只构建一次）
+// ============================================
+
+const charToFullCodes = new Map<string, string[]>();
+{
+  for (const item of charCodeData) {
+    const existing = charToFullCodes.get(item.char);
+    if (existing) {
+      if (!existing.includes(item.code)) existing.push(item.code);
+    } else {
+      charToFullCodes.set(item.char, [item.code]);
+    }
+  }
 }
 
-// 练习模式
+function getFullCode(ch: string): string | null {
+  const codes = charToFullCodes.get(ch);
+  if (!codes || codes.length === 0) return null;
+  return codes.reduce((a, b) => a.length >= b.length ? a : b);
+}
+
+const phraseCodeCache = new Map<string, string | null>();
+
+function getPhraseCode(phrase: string): string | null {
+  const cached = phraseCodeCache.get(phrase);
+  if (cached !== undefined) return cached;
+  const phraseLen = phrase.length;
+  const fullCodes: string[] = [];
+  for (const ch of phrase) {
+    const fc = getFullCode(ch);
+    if (!fc) { phraseCodeCache.set(phrase, null); return null; }
+    fullCodes.push(fc);
+  }
+  let extracted = '';
+  if (phraseLen === 2) {
+    extracted = fullCodes[0].slice(0, 2) + fullCodes[1].slice(0, 2);
+  } else if (phraseLen === 3) {
+    extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1) + fullCodes[2].slice(0, 2);
+  } else if (phraseLen === 4) {
+    extracted = fullCodes.map(c => c.slice(0, 1)).join('');
+  } else {
+    extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1)
+      + fullCodes[2].slice(0, 1) + fullCodes[phraseLen - 1].slice(0, 1);
+  }
+  const result = extracted.length >= 4 ? extracted : null;
+  phraseCodeCache.set(phrase, result);
+  return result;
+}
+
+// ============================================
+// 词组类型 & 配置
+// ============================================
+
+interface PhraseItem {
+  phrase: string;
+  codes: string[];
+  fullCode: string;
+}
+
 type PhraseMode = 'twoChar' | 'threeChar' | 'fourChar' | 'mixed' | 'sentence';
 
 const modeConfig: Record<PhraseMode, { label: string; description: string; icon: typeof Zap }> = {
@@ -29,123 +81,40 @@ const modeConfig: Record<PhraseMode, { label: string; description: string; icon:
   sentence: { label: '短句练习', description: '练习常用短句', icon: Keyboard },
 };
 
-// 短句数据
 const commonShortSentences: string[] = [
-  '我们一起去',
-  '今天天气好',
-  '学习很重要',
-  '工作完成了',
-  '谢谢大家',
-  '请问您贵姓',
-  '很高兴认识',
-  '请多关照',
-  '祝你成功',
-  '一路顺风',
-  '生日快乐',
-  '万事如意',
-  '身体健康',
-  '好好学习',
-  '天天向上',
-  '改革开放',
-  '科学发展',
-  '和谐社会',
-  '美好家园',
-  '共同努力',
+  '我们一起去', '今天天气好', '学习很重要', '工作完成了', '谢谢大家',
+  '请问您贵姓', '很高兴认识', '请多关照', '祝你成功', '一路顺风',
+  '生日快乐', '万事如意', '身体健康', '好好学习', '天天向上',
+  '改革开放', '科学发展', '和谐社会', '美好家园', '共同努力',
 ];
 
-// 根据汉字和编码数据生成词组的编码
-function generatePhraseCodes(phrase: string): { codes: string[]; fullCode: string } {
-  const codes: string[] = [];
-  const charCodeMap = new Map<string, string[]>();
-  
-  // 构建汉字到编码的映射
-  for (const item of charCodeData) {
-    if (!charCodeMap.has(item.char)) {
-      charCodeMap.set(item.char, []);
-    }
-    if (!charCodeMap.get(item.char)!.includes(item.code)) {
-      charCodeMap.get(item.char)!.push(item.code);
-    }
-  }
-  
-  // 获取每个字的首选编码（最短的）
-  for (const char of phrase) {
-    const charCodes = charCodeMap.get(char);
-    if (charCodes && charCodes.length > 0) {
-      // 选择最短的编码作为首选
-      const shortest = charCodes.reduce((a, b) => a.length <= b.length ? a : b);
-      codes.push(shortest);
-    } else {
-      codes.push('?'); // 未知编码
-    }
-  }
-  
-  // 生成完整编码（取每个字编码的首字母或按规则）
-  // 这里使用简化的规则：双字词取每个字全码，三字词取前两个字首码+第三字全码
-  let fullCode = '';
-  if (phrase.length === 2) {
-    // 双字词：各取全码
-    fullCode = codes.join('');
-  } else if (phrase.length === 3) {
-    // 三字词：取首字首码 + 次字首码 + 第三字全码（简化规则）
-    fullCode = (codes[0][0] || '') + (codes[1][0] || '') + codes[2];
-  } else {
-    // 其他：取前两个字首码 + 最后一个字全码
-    fullCode = (codes[0][0] || '') + (codes[1][0] || '') + codes[codes.length - 1];
-  }
-  
-  return { codes, fullCode };
-}
-
-// 构建词组列表
 function buildPhraseList(mode: PhraseMode): PhraseItem[] {
   const phrases: PhraseItem[] = [];
   const seen = new Set<string>();
-  
   const addPhrase = (phrase: string) => {
     if (seen.has(phrase)) return;
     seen.add(phrase);
-    const { codes, fullCode } = generatePhraseCodes(phrase);
-    // 只添加所有字都有编码的词组
-    if (!codes.includes('?')) {
-      phrases.push({ phrase, codes, fullCode });
-    }
+    const fullCode = getPhraseCode(phrase);
+    if (!fullCode) return;
+    const codes = phrase.split('').map(ch => getFullCode(ch) || '?');
+    if (codes.includes('?')) return;
+    phrases.push({ phrase, codes, fullCode });
   };
-  
   if (mode === 'twoChar' || mode === 'mixed') {
-    for (const phrase of twoCharPhrases) {
-      if (phrase.length === 2) addPhrase(phrase);
-    }
+    for (const p of twoCharPhrases) { if (p.length === 2) addPhrase(p); }
   }
-
   if (mode === 'threeChar' || mode === 'mixed') {
-    for (const phrase of threeCharPhrases) {
-      if (phrase.length >= 3) {
-        // 对于混合模式，取前3字
-        const shortPhrase = phrase.slice(0, 3);
-        addPhrase(shortPhrase);
-      }
-    }
+    for (const p of threeCharPhrases) { if (p.length >= 3) addPhrase(p.slice(0, 3)); }
   }
-
   if (mode === 'fourChar') {
-    for (const phrase of fourCharPhrases) {
-      if (phrase.length >= 4) {
-        addPhrase(phrase);
-      }
-    }
+    for (const p of fourCharPhrases) { if (p.length >= 4) addPhrase(p.slice(0, 4)); }
   }
-  
   if (mode === 'sentence') {
-    for (const sentence of commonShortSentences) {
-      addPhrase(sentence);
-    }
+    for (const s of commonShortSentences) addPhrase(s);
   }
-  
   return phrases;
 }
 
-// 打乱数组
 function shuffleArray<T>(array: T[]): T[] {
   const result = [...array];
   for (let i = result.length - 1; i > 0; i--) {
@@ -155,370 +124,416 @@ function shuffleArray<T>(array: T[]): T[] {
   return result;
 }
 
-// 统计信息类型
+// ============================================
+// 组件
+// ============================================
+
 interface PhraseStats {
   totalAttempts: number;
   correctAttempts: number;
-  wrongChars: Record<string, number>;
-  startTime: number;
-  totalCharsTyped: number;   // 总输入字数（用于速度计算）
-  totalInputTime: number;    // 总输入时间（ms）
+  streak: number;
+  maxStreak: number;
 }
 
 export default function PhrasePracticePage() {
   const [mode, setMode] = useLocalStorage<PhraseMode>('phrase-mode', 'twoChar');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPhrase, setCurrentPhrase] = useState<PhraseItem | null>(null);
-  const [userInput, setUserInput] = useState('');
-  const [showAnswer, setShowAnswer] = useState(false);
-  const [isCorrect, setIsCorrect] = useState<boolean | null>(null);
+  const [inputCode, setInputCode] = useState('');
+  const [feedbackType, setFeedbackType] = useState<'correct' | 'wrong' | null>(null);
   const [stats, setStats] = useState<PhraseStats>({
-    totalAttempts: 0,
-    correctAttempts: 0,
-    wrongChars: {},
-    startTime: 0,
-    totalCharsTyped: 0,
-    totalInputTime: 0,
+    totalAttempts: 0, correctAttempts: 0, streak: 0, maxStreak: 0,
   });
-  const [sessionResults, setSessionResults] = useState<Array<{ phrase: string; correct: boolean; input: string; time: number }>>([]);
+  const [sessionResults, setSessionResults] = useState<Array<{
+    phrase: string; correct: boolean; input: string; time: number;
+  }>>([]);
   const [showStats, setShowStats] = useState(false);
   const [phraseQueue, setPhraseQueue] = useState<PhraseItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  
-  const inputRef = useRef<HTMLInputElement>(null);
-  const startTimeRef = useRef<number>(0);
-  
-  // 构建词组池
-  const phrasePool = useMemo(() => buildPhraseList(mode), [mode]);
-  
-  // 开始练习
-  const startPractice = useCallback(() => {
-    if (phrasePool.length === 0) return;
-    const shuffled = shuffleArray(phrasePool).slice(0, 20); // 每次练习20个
-    setPhraseQueue(shuffled);
-    setCurrentIndex(0);
-    setCurrentPhrase(shuffled[0]);
-    setIsPlaying(true);
-    setUserInput('');
-    setShowAnswer(false);
-    setIsCorrect(null);
-    setSessionResults([]);
-    setStats(prev => ({ ...prev, startTime: Date.now() }));
-    startTimeRef.current = Date.now();
-    setTimeout(() => inputRef.current?.focus(), 100);
-  }, [phrasePool]);
-  
-  // 下一题
-  const nextPhrase = useCallback(() => {
+
+  const feedbackTimer = useRef<ReturnType<typeof setTimeout>>();
+  const answerStartTime = useRef<number>(0);
+
+  // 词组池懒初始化
+  const phrasePoolRef = useRef<PhraseItem[]>([]);
+  const [poolReady, setPoolReady] = useState(false);
+  const [poolCount, setPoolCount] = useState(0);
+
+  useEffect(() => {
+    setPoolReady(false);
+    const timer = setTimeout(() => {
+      const pool = buildPhraseList(mode);
+      phrasePoolRef.current = pool;
+      setPoolCount(pool.length);
+      setPoolReady(true);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [mode]);
+
+  const advancePhrase = useCallback(() => {
     const nextIndex = currentIndex + 1;
     if (nextIndex < phraseQueue.length) {
       setCurrentIndex(nextIndex);
       setCurrentPhrase(phraseQueue[nextIndex]);
-      setUserInput('');
-      setShowAnswer(false);
-      setIsCorrect(null);
-      startTimeRef.current = Date.now();
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setInputCode('');
+      setFeedbackType(null);
+      answerStartTime.current = Date.now();
     } else {
-      // 练习结束
       setIsPlaying(false);
       setShowStats(true);
     }
   }, [currentIndex, phraseQueue]);
-  
-  // 检查答案
-  const checkAnswer = useCallback(() => {
-    if (!currentPhrase || !userInput.trim()) return;
-    
-    const input = userInput.trim().toLowerCase();
-    const correct = input === currentPhrase.fullCode.toLowerCase();
-    const time = Date.now() - startTimeRef.current;
-    
-    setIsCorrect(correct);
-    setShowAnswer(true);
-    
+
+  const handleKeyPress = useCallback((key: string) => {
+    if (!isPlaying || feedbackType) return;
+    if (!currentPhrase) return;
+
+    const newCode = inputCode + key;
+    setInputCode(newCode);
+
+    const correctCode = currentPhrase.fullCode;
+
+    // 正确前缀 → 继续
+    if (correctCode.startsWith(newCode)) {
+      if (newCode === correctCode) {
+        // 四码输入完毕且完全正确
+        const time = Date.now() - answerStartTime.current;
+        setFeedbackType('correct');
+        setStats(prev => ({
+          ...prev,
+          totalAttempts: prev.totalAttempts + 1,
+          correctAttempts: prev.correctAttempts + 1,
+          streak: prev.streak + 1,
+          maxStreak: Math.max(prev.maxStreak, prev.streak + 1),
+        }));
+        setSessionResults(prev => [...prev, {
+          phrase: currentPhrase.phrase, correct: true, input: newCode, time,
+        }]);
+        feedbackTimer.current = setTimeout(advancePhrase, 800);
+      }
+      // 未满4码且前缀正确 → 继续等待
+      return;
+    }
+
+    // 前缀不匹配 → 错误
+    const time = Date.now() - answerStartTime.current;
+    setFeedbackType('wrong');
     setStats(prev => ({
       ...prev,
       totalAttempts: prev.totalAttempts + 1,
-      correctAttempts: prev.correctAttempts + (correct ? 1 : 0),
-      totalCharsTyped: prev.totalCharsTyped + currentPhrase.phrase.length,
-      totalInputTime: prev.totalInputTime + time,
+      streak: 0,
     }));
-    
     setSessionResults(prev => [...prev, {
-      phrase: currentPhrase.phrase,
-      correct,
-      input,
-      time,
+      phrase: currentPhrase.phrase, correct: false, input: newCode, time,
     }]);
-    
-    // 自动下一题（延迟1.5秒）
-    setTimeout(() => {
-      nextPhrase();
-    }, 1500);
-  }, [currentPhrase, userInput, nextPhrase]);
-  
-  // 键盘事件处理
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      if (!showAnswer) {
-        checkAnswer();
+    feedbackTimer.current = setTimeout(advancePhrase, 1200);
+  }, [isPlaying, feedbackType, inputCode, currentPhrase, advancePhrase]);
+
+  // 全局键盘监听
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!isPlaying) return;
+      if (e.key === 'Escape') { exitPractice(); return; }
+      if (feedbackType) return;
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        setInputCode(prev => prev.slice(0, -1));
+        return;
       }
-    }
-  }, [showAnswer, checkAnswer]);
-  
-  // 正确率
+      const key = e.key.toLowerCase();
+      if (key.length === 1 && key >= 'a' && key <= 'z') {
+        e.preventDefault();
+        handleKeyPress(key);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isPlaying, feedbackType, handleKeyPress]);
+
+  useEffect(() => {
+    return () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); };
+  }, []);
+
+  const startPractice = useCallback(() => {
+    const pool = phrasePoolRef.current;
+    if (pool.length === 0) return;
+    const shuffled = shuffleArray(pool).slice(0, 20);
+    setPhraseQueue(shuffled);
+    setCurrentIndex(0);
+    setCurrentPhrase(shuffled[0]);
+    setInputCode('');
+    setFeedbackType(null);
+    setIsPlaying(true);
+    setShowStats(false);
+    setSessionResults([]);
+    setStats({ totalAttempts: 0, correctAttempts: 0, streak: 0, maxStreak: 0 });
+    answerStartTime.current = Date.now();
+  }, []);
+
+  const exitPractice = useCallback(() => {
+    setIsPlaying(false);
+    setShowStats(false);
+    setPhraseQueue([]);
+    setCurrentPhrase(null);
+    setInputCode('');
+    setFeedbackType(null);
+  }, []);
+
   const accuracy = stats.totalAttempts > 0
-    ? Math.round((stats.correctAttempts / stats.totalAttempts) * 100)
-    : 0;
-  
-  // 打字速度（字/分钟）
-  const typingSpeed = stats.totalInputTime > 0
-    ? Math.round((stats.totalCharsTyped / stats.totalInputTime) * 60000)
-    : 0;
-
-  // 错误率
-  const errorRate = stats.totalAttempts > 0
-    ? Math.round(((stats.totalAttempts - stats.correctAttempts) / stats.totalAttempts) * 100)
-    : 0;
-
-  // 平均用时（毫秒）
-  const avgTime = stats.totalAttempts > 0
-    ? Math.round(stats.totalInputTime / stats.totalAttempts)
-    : 0;
-  
-  // 当前进度
+    ? Math.round((stats.correctAttempts / stats.totalAttempts) * 100) : 0;
   const progress = phraseQueue.length > 0
-    ? (currentIndex / phraseQueue.length) * 100
-    : 0;
-  
+    ? (currentIndex / phraseQueue.length) * 100 : 0;
+
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="min-h-screen bg-background">
       {/* 标题区 */}
-      <div className="flex items-center gap-3">
-        <BookOpen className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold">词组练习</h1>
-        <Badge variant="secondary">{phrasePool.length} 个词组可用</Badge>
-      </div>
-      
-      {/* 模式选择 */}
-      {!isPlaying && !showStats && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          {(Object.keys(modeConfig) as PhraseMode[]).map((m) => {
-            const config = modeConfig[m];
-            const Icon = config.icon;
-            return (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  'p-4 rounded-xl border-2 text-left transition-all',
-                  mode === m
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50'
-                )}
-              >
-                <Icon className={cn('h-5 w-5 mb-2', mode === m ? 'text-primary' : 'text-muted-foreground')} />
-                <div className="font-medium">{config.label}</div>
-                <div className="text-xs text-muted-foreground mt-1">{config.description}</div>
-              </button>
-            );
-          })}
-        </div>
-      )}
-      
-      {/* 开始按钮或练习区 */}
-      {!isPlaying && !showStats && (
-        <div className="text-center py-8">
-          <Button size="lg" onClick={startPractice} className="gap-2">
-            <Play className="h-5 w-5" />
-            开始练习
-          </Button>
-          <p className="text-sm text-muted-foreground mt-3">
-            当前模式：{modeConfig[mode].label}，共 {phrasePool.length} 个词组
+      <section className="py-12 sm:py-16 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+        <div className="container-page text-center">
+          <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
+            <Keyboard className="h-4 w-4 mr-1.5" />
+            词组练习
+          </Badge>
+          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-4">
+            词组练习
+          </h1>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
+            直接按键输入四码词组编码，自动判定对错
           </p>
-        </div>
-      )}
-      
-      {/* 练习区域 */}
-      {isPlaying && currentPhrase && (
-        <div className="space-y-6">
-          {/* 进度 */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>进度 {currentIndex + 1} / {phraseQueue.length}</span>
-              <span>正确率 {accuracy}%</span>
-            </div>
-            <Progress value={progress} className="h-2" />
+          <div className="mt-6 flex items-center justify-center gap-8 text-sm text-muted-foreground">
+            <span>词组库: <span className="font-bold text-foreground">{poolCount.toLocaleString()}</span> 个</span>
+            <span>四码一组 · 按键即输入 · 满码自动判定</span>
           </div>
-          
-          {/* 词组显示 */}
-          <div className="text-center py-8 space-y-4">
-            <div className="text-5xl font-bold tracking-wider">
-              {currentPhrase.phrase}
+        </div>
+      </section>
+
+      {/* 模式选择（未开始时） */}
+      {!isPlaying && !showStats && (
+        <section className="py-8 sm:py-12">
+          <div className="container-page max-w-3xl mx-auto">
+            <h2 className="text-xl font-bold text-center mb-6">选择练习模式</h2>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+              {(Object.keys(modeConfig) as PhraseMode[]).map((m) => {
+                const config = modeConfig[m];
+                const Icon = config.icon;
+                return (
+                  <button
+                    key={m}
+                    onClick={() => setMode(m)}
+                    className={cn(
+                      'p-4 rounded-xl border-2 text-left transition-all',
+                      mode === m
+                        ? 'border-primary bg-primary/5 shadow-sm'
+                        : 'border-border/50 hover:border-primary/30'
+                    )}
+                  >
+                    <Icon className={cn('h-5 w-5 mb-2', mode === m ? 'text-primary' : 'text-muted-foreground')} />
+                    <div className="font-medium text-sm">{config.label}</div>
+                    <div className="text-xs text-muted-foreground mt-1">{config.description}</div>
+                  </button>
+                );
+              })}
             </div>
-            
-            {/* 单字编码提示 */}
-            <div className="flex justify-center gap-4 text-sm text-muted-foreground">
-              {currentPhrase.phrase.split('').map((char, i) => (
-                <div key={i} className="text-center">
-                  <div className="font-medium">{char}</div>
-                  <div className={cn(
-                    'font-mono transition-opacity',
-                    showAnswer ? 'opacity-100' : 'opacity-0'
-                  )}>
-                    {currentPhrase.codes[i]}
-                  </div>
+
+            <div className="text-center mt-8">
+              <Button size="lg" onClick={startPractice} disabled={!poolReady} className="gap-2 px-8">
+                <Play className="h-5 w-5" />
+                {poolReady ? '开始练习' : '加载中...'}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-3">
+                当前：{modeConfig[mode].label} · 共 {poolCount.toLocaleString()} 个词组 · 每次练习 20 个
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ===== 练习区 ===== */}
+      {isPlaying && currentPhrase && (
+        <section className="py-8 sm:py-12">
+          <div className="container-page max-w-3xl mx-auto">
+            {/* 进度条 + 退出 */}
+            <div className="mb-6">
+              <div className="flex justify-between text-sm items-center mb-2">
+                <span className="text-muted-foreground">
+                  {currentIndex + 1} / {phraseQueue.length}
+                </span>
+                <span className="text-muted-foreground">
+                  正确率 <span className="font-bold text-foreground">{accuracy}%</span>
+                </span>
+                <span className="text-muted-foreground">
+                  连击 <span className="font-bold text-foreground">{stats.streak}</span>
+                </span>
+                <button
+                  onClick={exitPractice}
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  退出
+                  <kbd className="hidden sm:inline ml-0.5 px-1 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/50 rounded font-mono">Esc</kbd>
+                </button>
+              </div>
+              <Progress value={progress} className="h-1.5" />
+            </div>
+
+            {/* 词组显示 */}
+            <div className="text-center py-6 mb-6">
+              <div className="text-5xl sm:text-6xl font-bold tracking-wider mb-4 root-char">
+                {currentPhrase.phrase}
+              </div>
+
+              {/* 逐字全码提示（答案揭晓后显示） */}
+              {feedbackType && (
+                <div className="flex justify-center gap-4 text-sm mb-4 animate-fadeIn">
+                  {currentPhrase.phrase.split('').map((char, i) => (
+                    <div key={i} className="text-center">
+                      <div className="font-bold root-char">{char}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{currentPhrase.codes[i]}</div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              )}
+
+              {/* 四码输入显示 */}
+              <div className="flex justify-center gap-2 mb-4">
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const char = inputCode[i];
+                  const isFilled = !!char;
+                  const isCorrectChar = feedbackType === 'correct' && char;
+                  const isWrongChar = feedbackType === 'wrong' && i < inputCode.length;
+
+                  return (
+                    <div
+                      key={i}
+                      className={cn(
+                        'w-14 h-14 sm:w-16 sm:h-16 rounded-xl border-2 flex items-center justify-center',
+                        'text-2xl font-mono font-bold uppercase transition-all duration-150',
+                        isCorrectChar && 'border-emerald-500 bg-emerald-50 text-emerald-700',
+                        isWrongChar && i < currentPhrase.fullCode.length && char === currentPhrase.fullCode[i]
+                          && 'border-emerald-500 bg-emerald-50 text-emerald-700',
+                        isWrongChar && i < inputCode.length && char !== currentPhrase.fullCode[i]
+                          && 'border-red-500 bg-red-50 text-red-700',
+                        !feedbackType && isFilled && 'border-primary bg-primary/5',
+                        !feedbackType && !isFilled && 'border-border animate-pulse',
+                        feedbackType === 'correct' && !isFilled && 'border-emerald-300 bg-emerald-50/50',
+                        feedbackType === 'wrong' && !isFilled && 'border-red-200 bg-red-50/30',
+                      )}
+                    >
+                      {char || ''}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 正确答案（错误时显示） */}
+              {feedbackType === 'wrong' && (
+                <div className="text-lg font-mono font-bold text-red-600 animate-fadeIn">
+                  正确编码：<span className="uppercase">{currentPhrase.fullCode}</span>
+                </div>
+              )}
+
+              {/* 反馈提示 */}
+              {feedbackType && (
+                <div className={cn(
+                  'mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium animate-fadeIn',
+                  feedbackType === 'correct'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : 'bg-red-100 text-red-700'
+                )}>
+                  {feedbackType === 'correct'
+                    ? <><CheckCircle2 className="h-4 w-4" /> 正确！</>
+                    : <><XCircle className="h-4 w-4" /> 错误</>
+                  }
+                </div>
+              )}
             </div>
-            
-            {/* 完整编码显示 */}
-            {showAnswer && (
-              <div className={cn(
-                'text-2xl font-mono font-bold py-2 px-4 rounded-lg inline-block',
-                isCorrect ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-              )}>
-                {currentPhrase.fullCode}
-                {isCorrect ? (
-                  <CheckCircle2 className="inline h-5 w-5 ml-2" />
-                ) : (
-                  <XCircle className="inline h-5 w-5 ml-2" />
-                )}
+
+            {/* 快捷键提示 */}
+            {!feedbackType && (
+              <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">A-Z</kbd>输入编码</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Esc</kbd>退出</span>
+                <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Backspace</kbd>删除</span>
               </div>
             )}
           </div>
-          
-          {/* 输入区 */}
-          <div className="max-w-md mx-auto space-y-4">
-            <div className="relative">
-              <input
-                ref={inputRef}
-                type="text"
-                value={userInput}
-                onChange={(e) => setUserInput(e.target.value.toLowerCase())}
-                onKeyDown={handleKeyDown}
-                placeholder="输入词组编码..."
-                disabled={showAnswer}
-                className={cn(
-                  'w-full px-4 py-3 text-lg font-mono text-center border-2 rounded-lg outline-none transition-colors',
-                  showAnswer
-                    ? isCorrect
-                      ? 'border-emerald-500 bg-emerald-50'
-                      : 'border-red-500 bg-red-50'
-                    : 'border-border focus:border-primary'
-                )}
-              />
+        </section>
+      )}
+
+      {/* ===== 统计页 ===== */}
+      {showStats && (
+        <section className="py-8 sm:py-12">
+          <div className="container-page max-w-3xl mx-auto">
+            <div className="text-center mb-8">
+              <Trophy className="h-12 w-12 text-amber-500 mx-auto mb-3" />
+              <h2 className="text-2xl font-bold">练习完成！</h2>
+              <p className="text-muted-foreground mt-1">
+                共完成 {sessionResults.length} 个词组
+              </p>
             </div>
-            
-            <div className="flex gap-2 justify-center">
-              {!showAnswer ? (
-                <Button onClick={checkAnswer} className="gap-2">
-                  <Target className="h-4 w-4" />
-                  确认 (Enter)
-                </Button>
-              ) : (
-                <Button onClick={nextPhrase} variant="outline" className="gap-2">
-                  <Zap className="h-4 w-4" />
-                  下一题
-                </Button>
-              )}
-              
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowAnswer(!showAnswer)}
-                title="显示/隐藏答案"
-              >
-                {showAnswer ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+
+            <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 mb-8">
+              <div className="p-4 rounded-xl bg-muted text-center">
+                <div className="text-2xl font-bold text-emerald-600">{accuracy}%</div>
+                <div className="text-xs text-muted-foreground">正确率</div>
+              </div>
+              <div className="p-4 rounded-xl bg-muted text-center">
+                <div className="text-2xl font-bold text-blue-600">{stats.maxStreak}</div>
+                <div className="text-xs text-muted-foreground">最高连击</div>
+              </div>
+              <div className="p-4 rounded-xl bg-muted text-center">
+                <div className="text-2xl font-bold text-emerald-600">{stats.correctAttempts}</div>
+                <div className="text-xs text-muted-foreground">答对</div>
+              </div>
+              <div className="p-4 rounded-xl bg-muted text-center">
+                <div className="text-2xl font-bold text-red-600">{stats.totalAttempts - stats.correctAttempts}</div>
+                <div className="text-xs text-muted-foreground">答错</div>
+              </div>
+            </div>
+
+            <div className="border rounded-xl overflow-hidden mb-8">
+              <div className="px-4 py-3 bg-muted font-medium text-sm">练习详情</div>
+              <div className="max-h-64 overflow-y-auto">
+                {sessionResults.map((result, i) => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'flex items-center gap-3 px-4 py-2 text-sm border-b last:border-b-0',
+                      result.correct ? 'bg-emerald-50/50' : 'bg-red-50/50'
+                    )}
+                  >
+                    <span className="text-muted-foreground w-6 text-right">{i + 1}</span>
+                    <span className="font-medium root-char w-20">{result.phrase}</span>
+                    <span className={cn(
+                      'font-mono text-xs',
+                      result.correct ? 'text-emerald-600' : 'text-red-600'
+                    )}>
+                      {result.input.toUpperCase()}
+                    </span>
+                    {!result.correct && (
+                      <span className="text-xs text-muted-foreground font-mono">
+                        → {phraseQueue[i]?.fullCode.toUpperCase()}
+                      </span>
+                    )}
+                    <span className="ml-auto text-xs text-muted-foreground">
+                      {(result.time / 1000).toFixed(1)}s
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-center">
+              <Button onClick={startPractice} className="gap-2">
+                <RotateCcw className="h-4 w-4" />
+                再来一次
+              </Button>
+              <Button variant="outline" onClick={exitPractice} className="gap-2">
+                <ArrowLeft className="h-4 w-4" />
+                返回模式选择
               </Button>
             </div>
           </div>
-          
-          {/* 提示 */}
-          <div className="text-center text-xs text-muted-foreground">
-            <p>提示：双字词一般取各字全码，三字词取首尾规则</p>
-          </div>
-        </div>
-      )}
-      
-      {/* 统计结果 */}
-      {showStats && (
-        <div className="space-y-6">
-          <div className="text-center py-6">
-            <Trophy className="h-12 w-12 text-amber-500 mx-auto mb-3" />
-            <h2 className="text-2xl font-bold">练习完成！</h2>
-            <p className="text-muted-foreground mt-1">
-              共完成 {sessionResults.length} 个词组
-            </p>
-          </div>
-          
-          {/* 统计卡片 */}
-          <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
-            <div className="p-4 rounded-xl bg-muted text-center">
-              <div className="text-2xl font-bold text-emerald-600">{accuracy}%</div>
-              <div className="text-xs text-muted-foreground">正确率</div>
-            </div>
-            <div className="p-4 rounded-xl bg-muted text-center">
-              <div className="text-2xl font-bold text-blue-600">{typingSpeed}</div>
-              <div className="text-xs text-muted-foreground">字/分钟</div>
-            </div>
-            <div className="p-4 rounded-xl bg-muted text-center">
-              <div className="text-2xl font-bold text-amber-600">{errorRate}%</div>
-              <div className="text-xs text-muted-foreground">错误率</div>
-            </div>
-            <div className="p-4 rounded-xl bg-muted text-center">
-              <div className="text-2xl font-bold text-purple-600">
-                {(avgTime / 1000).toFixed(1)}s
-              </div>
-              <div className="text-xs text-muted-foreground">平均用时</div>
-            </div>
-          </div>
-          
-          {/* 详细结果 */}
-          <div className="border rounded-xl overflow-hidden">
-            <div className="px-4 py-3 bg-muted font-medium text-sm">练习详情</div>
-            <div className="max-h-64 overflow-y-auto">
-              {sessionResults.map((result, i) => (
-                <div
-                  key={i}
-                  className={cn(
-                    'flex items-center gap-3 px-4 py-2 text-sm border-b last:border-b-0',
-                    result.correct ? 'bg-emerald-50/50' : 'bg-red-50/50'
-                  )}
-                >
-                  <span className="text-muted-foreground w-6">{i + 1}</span>
-                  <span className="font-medium w-20">{result.phrase}</span>
-                  <span className={cn(
-                    'font-mono',
-                    result.correct ? 'text-emerald-600' : 'text-red-600'
-                  )}>
-                    {result.input}
-                  </span>
-                  {!result.correct && (
-                    <span className="text-xs text-muted-foreground">
-                      (正确答案：{phraseQueue[i]?.fullCode})
-                    </span>
-                  )}
-                  <span className="ml-auto text-xs text-muted-foreground">
-                    {Math.round(result.time / 1000)}s
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-          
-          {/* 操作按钮 */}
-          <div className="flex gap-3 justify-center">
-            <Button onClick={startPractice} className="gap-2">
-              <RotateCcw className="h-4 w-4" />
-              再来一次
-            </Button>
-            <Button variant="outline" onClick={() => { setShowStats(false); setIsPlaying(false); }}>
-              返回模式选择
-            </Button>
-          </div>
-        </div>
+        </section>
       )}
     </div>
   );

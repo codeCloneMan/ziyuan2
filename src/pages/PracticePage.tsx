@@ -410,6 +410,7 @@ export default function PracticePage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying) return;
       if (e.key === 'Escape') { stopPractice(); return; }
+      if (e.key === ' ') { e.preventDefault(); setShowHint(prev => !prev); return; }
       const key = e.key.toLowerCase();
       if (key.length === 1 && key >= 'a' && key <= 'z') { e.preventDefault(); handleKeyPress(key); }
     };
@@ -457,7 +458,7 @@ export default function PracticePage() {
           <div className="container-page text-center">
             <div className="max-w-2xl mx-auto">
               <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
-                v1.31版 · 字根练习系统
+                v1.32版 · 字根练习系统
               </Badge>
               <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
                 选择你的
@@ -715,8 +716,9 @@ export default function PracticePage() {
                 {stageModeConfig[stageMode].label}
               </Badge>
               <button onClick={stopPractice}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
-                <RotateCcw className="h-3.5 w-3.5" /><span className="hidden sm:inline">退出</span>
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors">
+                <RotateCcw className="h-3.5 w-3.5" /><span>退出</span>
+                <kbd className="hidden sm:inline ml-0.5 px-1 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/50 rounded font-mono">Esc</kbd>
               </button>
               <button onClick={() => setShowHint(!showHint)}
                 className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-300',
@@ -996,18 +998,25 @@ export default function PracticePage() {
               </div>
             </div>
 
-            {/* 练习提示 */}
+            {/* 快捷键提示 */}
             <div className="card-base p-3">
               <h4 className="font-semibold text-xs text-foreground mb-2 flex items-center gap-1.5">
-                <Lightbulb className="h-3.5 w-3.5 text-amber-500" />练习提示
+                <Lightbulb className="h-3.5 w-3.5 text-amber-500" />快捷键
               </h4>
-              <ul className="space-y-1.5 text-[11px] text-muted-foreground">
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>键盘直接输入，无需点击</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>点击「提示开关」控制是否显示提示</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>答错字根3-5题内会再出现</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>连击加倍积分，最高10倍</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>按ESC退出练习</li>
-              </ul>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">A-Z</kbd>
+                  <span className="text-muted-foreground">直接按键输入字根编码</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">Esc</kbd>
+                  <span className="text-muted-foreground">退出当前练习</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">Space</kbd>
+                  <span className="text-muted-foreground">切换是否显示键位提示</span>
+                </div>
+              </div>
             </div>
 
             {/* 统计面板按钮 */}

@@ -90,12 +90,19 @@ export function getSpeedEquivalent(key1: string, key2: string): number {
   return speedEquivalentTable[k1 + k2] ?? computeSpeedEquivalent(k1, k2)
 }
 
-const SPACE_KEY = ' '
-
+/**
+ * 计算字频加权速度当量（宇浩官方算法）
+ *
+ * 与旧版的关键区别：
+ * - 不再用空格（_）补齐码长到 fullLen
+ * - 仅使用编码中实际存在的字母二元组计算速度当量
+ * - 跳过非字母字符（数字、通配符等）组成的二元组
+ *
+ * 参考：https://shurufa.app/ 宇浩系列输入法测评标准
+ */
 export function calcWeightedSpeedEquivalent(
   entries: Array<{ char: string; code: string }>,
   charFrequency: Record<string, number>,
-  fullLen: number = 4
 ): number {
   let totalWeight = 0
   let weightedSum = 0
@@ -104,23 +111,21 @@ export function calcWeightedSpeedEquivalent(
     const freq = charFrequency[entry.char] || 0
     if (freq === 0) continue
 
-    let code = entry.code.toLowerCase()
-    if (code.length < fullLen && !code.endsWith('_')) {
-      code = code + '_'
+    const code = entry.code.toLowerCase()
+    // 提取编码中的纯字母序列（过滤数字和通配符等非字母字符）
+    const letters: string[] = []
+    for (const ch of code) {
+      if (ch >= 'a' && ch <= 'z') {
+        letters.push(ch)
+      }
     }
 
-    const keys = code.split('')
-    if (keys.length < 2) continue
+    // 至少需要 2 个字母才能构成二元组
+    if (letters.length < 2) continue
 
-    for (let i = 0; i < keys.length - 1; i++) {
-      const k1 = keys[i] === '_' ? SPACE_KEY : keys[i]
-      const k2 = keys[i + 1] === '_' ? SPACE_KEY : keys[i + 1]
-      let eq: number
-      if (k1 === SPACE_KEY || k2 === SPACE_KEY) {
-        eq = 1.1
-      } else {
-        eq = getSpeedEquivalent(k1, k2)
-      }
+    // 仅计算实际字母相邻对的速度当量，跳过非字母间隔
+    for (let i = 0; i < letters.length - 1; i++) {
+      const eq = getSpeedEquivalent(letters[i], letters[i + 1])
       weightedSum += eq * freq
       totalWeight += freq
     }

@@ -1,23 +1,26 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import {
   Upload, FileText, BarChart3, Keyboard, CheckCircle2, XCircle,
   Loader2, Trash2, ClipboardCopy, Download, AlertTriangle, Activity,
-  Award, Zap, Info, TrendingUp, Target, Gauge, Flame, BookOpen,
+  Award, Zap, Info, Target, Gauge, Flame, BookOpen, Maximize2,
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import html2canvas from 'html2canvas';
-import { charCodeData } from '@/data/charCodeData';
 import { calculateCoverage } from '@/data/builtinCharSets';
-import { twoCharPhrases, threeCharPhrases, fourCharPhrases } from '@/data/builtinPhrases';
+import {
+  twoCharPhrases, threeCharPhrases, fourCharPhrases,
+  twoCharFreqs, threeCharFreqs, fourCharFreqs,
+  PHRASE_FREQ_TOTAL,
+} from '@/data/builtinPhrases';
 import { charFrequency } from '@/data/charFrequency';
-import { calcWeightedSpeedEquivalent } from '@/data/speedEquivalent';
+import { calcWeightedSpeedEquivalent, getSpeedEquivalent } from '@/data/speedEquivalent';
 import { GB2312_CHARS, GBK_CHARS } from '@/data/standardCharsets';
+import { tongguiAll } from '@/data/tongguiChars';
 
 // ========================================
 // 安全计算工具函数
@@ -36,13 +39,6 @@ const clampPercentage = (value: number): number => {
 // 四舍五入到指定小数位
 const roundTo = (value: number, decimals = 2): number => {
   return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
-};
-
-// 权重归一化
-const normalizeWeights = (weights: number[]): number[] => {
-  if (weights.length === 0) return [];
-  const total = weights.reduce((sum, w) => sum + w, 0);
-  return total > 0 ? weights.map(w => w / total) : weights.map(() => 1 / weights.length);
 };
 
 // ========================================
@@ -70,16 +66,32 @@ const FINGER_MAP: Record<string, string> = {
   'o': '右小指', 'l': '右小指', 'p': '右小指',
 };
 
+/** 键盘行号映射（用于计算跨排行数） */
+const KEY_ROW: Record<string, number> = {
+  'q': 0, 'w': 0, 'e': 0, 'r': 0, 't': 0, 'y': 0, 'u': 0, 'i': 0, 'o': 0, 'p': 0,
+  'a': 1, 's': 1, 'd': 1, 'f': 1, 'g': 1, 'h': 1, 'j': 1, 'k': 1, 'l': 1,
+  'z': 2, 'x': 2, 'c': 2, 'v': 2, 'b': 2, 'n': 2, 'm': 2,
+};
+
 // 字频数据已迁移到 charFrequency.ts（基于 Zipf 定律的真实字频模型）
 
-// 字频分段
+// 字频分段（匹配宇浩测评标准分段，最后一段自动延伸至覆盖全部字符）
 const FREQ_TIERS = [
-  { key: 'top500', label: '前500字', max: 500 },
-  { key: 'top1000', label: '前1000字', max: 1000 },
-  { key: 'top1500', label: '前1500字', max: 1500 },
-  { key: 'top3000', label: '前3000字', max: 3000 },
-  { key: 'top5000', label: '前5000字', max: 5000 },
-  { key: 'all', label: '全部', max: Infinity },
+  { key: '1-300',     label: '1~300',     start: 0,    end: 300 },
+  { key: '301-500',   label: '301~500',   start: 300,  end: 500 },
+  { key: '501-1500',  label: '501~1500',  start: 500,  end: 1500 },
+  { key: '1501-3000', label: '1501~3000', start: 1500, end: 3000 },
+  { key: '3001+',     label: '3001+',     start: 3000, end: Infinity },
+];
+
+// 词组频段（匹配参考图分段）
+const PHRASE_FREQ_TIERS = [
+  { key: '1-2000',       label: '1~2000',       start: 0,    end: 2000 },
+  { key: '2001-5000',    label: '2001~5000',    start: 2000,  end: 5000 },
+  { key: '5001-10000',   label: '5001~10000',   start: 5000,  end: 10000 },
+  { key: '10001-20000',  label: '10001~20000',  start: 10000, end: 20000 },
+  { key: '20001-40000',  label: '20001~40000',  start: 20000, end: 40000 },
+  { key: '40001+',       label: '40001+',       start: 40000, end: Infinity },
 ];
 
 // 评级标准
@@ -93,6 +105,35 @@ function getGrade(score: number): { label: string; color: string; bg: string } {
 function getGradeBadge(score: number) {
   const g = getGrade(score);
   return <span className={cn('inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold text-white', g.bg)}>{g.label}</span>;
+}
+
+// ========================================
+// 字集过滤类型与工具
+// ========================================
+
+/** 可选的字符集过滤范围 */
+type CharsetFilter = 'all' | 'gb2312' | 'gbk' | 'tonggui';
+
+const CHARSET_OPTIONS: Array<{ value: CharsetFilter; label: string; description: string }> = [
+  { value: 'all',      label: '全字库', description: '所有 Unicode CJK 汉字' },
+  { value: 'gb2312',   label: 'GB2312', description: 'GB2312 一级+二级汉字 (6763字)' },
+  { value: 'gbk',      label: 'GBK',    description: 'GBK 扩展汉字集 (21003字)' },
+  { value: 'tonggui',  label: '通规',   description: '通用规范汉字表 (8105字)' },
+];
+
+/** 根据字集过滤码表条目 */
+function filterEntriesByCharset(entries: CodeEntry[], charset: CharsetFilter): CodeEntry[] {
+  if (charset === 'all') return entries;
+
+  // GB2312_CHARS / GBK_CHARS 是长字符串，需要 split 为字符数组；tongguiAll 已经是 string[]
+  const raw = charset === 'gb2312' ? GB2312_CHARS
+    : charset === 'gbk' ? GBK_CHARS
+    : charset === 'tonggui' ? tongguiAll
+    : '';
+  const charArr: string[] = typeof raw === 'string' ? raw.split('') : raw;
+
+  const set = new Set(charArr);
+  return entries.filter(e => set.has(e.char));
 }
 
 // ========================================
@@ -155,9 +196,24 @@ interface EvaluateResult {
   freqTierStats: Array<{
     tier: string;
     charCount: number;
-    dupRate: number;
-    avgCodeLen: number;
-    weightedCodeLen: number;
+    oneCode: number;          // 1码字数
+    twoCode: number;          // 2码字数
+    threeCode: number;        // 3码字数
+    fourCode: number;         // 4码字数
+    shortDupCount: number;    // 简码重码（选重）
+    fullDupCount: number;     // 全码重码
+    theoreticalTwoShort: number; // 理论二简
+    weightedCodeLen: number;  // 加权键长
+    weightedCharEquiv: number; // 加权字均当量
+    weightedKeyEquiv: number;  // 加权键均当量
+    handAltCount: number;     // 左右互击
+    sameFingerBigCross: number; // 同指大跨排
+    sameFingerSmallCross: number; // 同指小跨排
+    sameKeyTriple: number;    // 同键三连
+    sameKeyQuad: number;      // 同键四连
+    sameFingerTriple: number; // 同指三连
+    sameFingerQuad: number;   // 同指四连
+    pinkyCount: number;       // 小指干扰
   }>;
   codeLenChartData: Array<{ name: string; count: number; percent: number }>;
   fingerChartData: Array<{ name: string; value: number; percent: number }>;
@@ -169,6 +225,8 @@ interface EvaluateResult {
     fourChar: PhraseTierResult;
     overall: PhraseTierResult;
   };
+  phraseFreqTierStats: PhraseTierStat[];  // 词组分频段统计
+  topPhraseCount: number;                 // 实际评测的高频词组数
 }
 
 /** 词组分段测评结果 */
@@ -179,6 +237,34 @@ interface PhraseTierResult {
   avgCodeLen: number;         // 平均编码长度（码元数）
   dupRate: number;            // 重码率(%)
   selectionRate: number;      // 选重率(‱)
+  selectionCount: number;      // 选重词组数
+  weightedCodeEquiv: number;   // 加权词均当量
+  handAltCount: number;        // 左右互击
+  sameFingerBigCross: number;  // 同指大跨排
+  sameFingerSmallCross: number;// 同指小跨排
+  sameKeyTriple: number;       // 同键三连
+  sameKeyQuad: number;         // 同键四连
+  sameFingerTriple: number;    // 同指三连
+  sameFingerQuad: number;      // 同指四连
+  pinkyCount: number;          // 小指干扰
+  keyFreq: Record<string, number>; // 词组编码的按键频次（用于热力图）
+}
+
+/** 词组频段统计行 */
+interface PhraseTierStat {
+  tier: string;
+  totalPhrases: number;
+  coveredPhrases: number;
+  selectionCount: number;
+  weightedCodeEquiv: number;
+  handAltCount: number;
+  sameFingerBigCross: number;
+  sameFingerSmallCross: number;
+  sameKeyTriple: number;
+  sameKeyQuad: number;
+  sameFingerTriple: number;
+  sameFingerQuad: number;
+  pinkyCount: number;
 }
 
 // ========================================
@@ -257,10 +343,13 @@ function parseCodeTable(content: string): CodeEntry[] {
 // 核心评码算法
 // ========================================
 
-function evaluate(entries: CodeEntry[]): EvaluateResult {
-  // 构建编码→字映射
+function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all'): EvaluateResult {
+  // ★ 字集过滤：在计算前先筛选符合目标字符集的条目
+  const filteredEntries = filterEntriesByCharset(entries, charset);
+
+  // 构建编码→字映射（使用过滤后的条目）
   const codeToChars = new Map<string, string[]>();
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const existing = codeToChars.get(entry.code);
     if (existing) {
       if (!existing.includes(entry.char)) existing.push(entry.char);
@@ -270,7 +359,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   }
 
   // 基础统计
-  const uniqueEntries = new Set(entries.map(e => `${e.char}|${e.code}`));
+  const uniqueEntries = new Set(filteredEntries.map(e => `${e.char}|${e.code}`));
   let dupCount = 0;
   const dupeList: Array<{ code: string; chars: string[]; count: number }> = [];
 
@@ -292,7 +381,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   let totalLen = 0, maxLen = 0;
   const lengthValues: number[] = [];
 
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const len = entry.code.length;
     codeLengthDist[len] = (codeLengthDist[len] || 0) + 1;
     totalLen += len;
@@ -303,7 +392,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     }
   }
 
-  const avgCodeLength = safeDivide(totalLen, entries.length);
+  const avgCodeLength = safeDivide(totalLen, filteredEntries.length);
   const codeLengthStdDev = (() => {
     if (lengthValues.length === 0) return 0;
     const mean = safeDivide(lengthValues.reduce((a, b) => a + b, 0), lengthValues.length);
@@ -312,7 +401,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
 
   // ★ 字频加权平均码长
   let weightedLenSum = 0, freqSum = 0;
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const freq = getCharFrequencyWeight(entry.char);
     weightedLenSum += freq * entry.code.length;
     freqSum += freq;
@@ -320,7 +409,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   const weightedAvgCodeLen = safeDivide(weightedLenSum, freqSum, avgCodeLength);
 
   // ★ 全码重码率
-  const fullDupRate = clampPercentage(safeDivide(dupCount, entries.length) * 100);
+  const fullDupRate = clampPercentage(safeDivide(dupCount, filteredEntries.length) * 100);
 
   // ★ 出简重码率（出简不出全：有简码的字用简码输入，全码位让给其他字）
   // 简码定义：1-3码的编码
@@ -349,7 +438,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
       }
     }
   }
-  const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, entries.length) * 100);
+  const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, filteredEntries.length) * 100);
 
   // ★ 动态选重率（字频加权，宇浩公式：Nd = Σ p(zij), j≠1）
   // 对每个重码组，按字频降序排列，首选字不需选重，其余字的字频之和 / 总字频
@@ -367,7 +456,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   })();
 
   // ★ 速度当量（字频加权）
-  const speedEquiv = calcWeightedSpeedEquivalent(entries, charFrequency);
+  const speedEquiv = calcWeightedSpeedEquivalent(filteredEntries, charFrequency);
 
   // ★ 当量 = 字频加权码长 + 动态选重率（小数形式）
   const equivalent = weightedAvgCodeLen + safeDivide(dynamicSelectionRate, 10000);
@@ -423,7 +512,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
 
   // 同指连续和左右交替
   let sameFingerCount = 0, handAltCount = 0, totalBigrams = 0;
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const code = entry.code.toLowerCase();
     for (let i = 0; i < code.length - 1; i++) {
       const ck = code[i], nk = code[i + 1];
@@ -437,7 +526,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   const handAlternationRate = clampPercentage(safeDivide(handAltCount, totalBigrams) * 100);
 
   // 覆盖率 - 使用国标字集计算
-  const charSet = entries.map(e => e.char);
+  const charSet = filteredEntries.map(e => e.char);
   const gb2312Result = calculateCoverage(charSet, 'gb2312');
   const gbkResult = calculateCoverage(charSet, 'gbk');
   const tongguiResult = calculateCoverage(charSet, 'tonggui');
@@ -470,7 +559,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   const balanceScore = Math.max(0, Math.min(100, 100 - Math.abs(leftHandRate - 50) * 2));
 
   let weightedSameFinger = 0, weightedHandAlt = 0, weightedBigramFreq = 0;
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const freq = getCharFrequencyWeight(entry.char);
     const code = entry.code.toLowerCase();
     for (let i = 0; i < code.length - 1; i++) {
@@ -498,35 +587,137 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   ));
 
   // 字频分段统计（按字频权重降序取前N个）
-  const sortedByFreq = [...entries].sort((a, b) => {
+  const sortedByFreq = [...filteredEntries].sort((a, b) => {
     const fwA = getCharFrequencyWeight(a.char);
     const fwB = getCharFrequencyWeight(b.char);
     return fwB - fwA;
   });
   const freqTierStats = FREQ_TIERS.map(tier => {
-    const tierEntries = tier.max === Infinity ? sortedByFreq : sortedByFreq.slice(0, tier.max);
+    const tierEntries = sortedByFreq.slice(tier.start, Math.min(tier.end, sortedByFreq.length));
     const tierCodeMap = new Map<string, string[]>();
     for (const e of tierEntries) {
       const existing = tierCodeMap.get(e.code);
       if (existing) { if (!existing.includes(e.char)) existing.push(e.char); }
       else tierCodeMap.set(e.code, [e.char]);
     }
-    let tierDup = 0;
-    for (const [, chars] of tierCodeMap) { if (chars.length > 1) tierDup += chars.length - 1; }
-    const tierDupRate = clampPercentage(safeDivide(tierDup, tierEntries.length) * 100);
-    let tierLenSum = 0, tierFreqSum = 0, tierWeightedLen = 0;
+
+    // 简码重码（选重）：简码编码（长度<4）上存在多个字时，需要选重
+    let shortDup = 0;
+    // 全码重码：同一编码对应多个字
+    let fullDup = 0;
+    for (const [code, chars] of tierCodeMap) {
+      if (chars.length > 1) {
+        fullDup += chars.length - 1;
+        // 简码重码：仅统计简码编码（长度<4）的重码
+        if (code.length < 4) shortDup += chars.length - 1;
+      }
+    }
+
+    // 理论二简：2码编码的字数
+    let theoreticalTwoShort = 0;
+    for (const [code, chars] of tierCodeMap) {
+      if (code.length === 2 && chars.length >= 1) theoreticalTwoShort++;
+    }
+
+    // 码长分布
+    let oneCode = 0, twoCode = 0, threeCode = 0, fourCode = 0;
+    let tierFreqSum = 0, tierWeightedLen = 0;
+    // 工学指标
+    let tierHandAlt = 0, tierSameFingerBig = 0, tierSameFingerSmall = 0;
+    let tierSameKeyTriple = 0, tierSameKeyQuad = 0;
+    let tierSameFingerTriple = 0, tierSameFingerQuad = 0;
+    let tierPinky = 0;
+    // 加权字均当量 = 字频加权的（码长 + 选重罚时）
+    let tierWeightedCharEquiv = 0;
+    // 加权键均当量 = speed equivalent per key
+    let tierWeightedKeyEquiv = 0;
+
     for (const e of tierEntries) {
-      tierLenSum += e.code.length;
+      const len = e.code.length;
+      if (len === 1) oneCode++;
+      else if (len === 2) twoCode++;
+      else if (len === 3) threeCode++;
+      else if (len >= 4) fourCode++;
+
       const f = getCharFrequencyWeight(e.char);
       tierFreqSum += f;
-      tierWeightedLen += f * e.code.length;
+      tierWeightedLen += f * len;
+
+      // 加权字均当量：码长 + 重码选重罚时（简化：每多一个重码字 +0.1）
+      const codeChars = tierCodeMap.get(e.code) || [];
+      const dupPenalty = codeChars.length > 1 ? (codeChars.length - 1) * 0.1 : 0;
+      tierWeightedCharEquiv += f * (len + dupPenalty);
+
+      // 加权键均当量：基于 speed equivalent
+      const letters = e.code.toLowerCase().split('').filter(ch => ch >= 'a' && ch <= 'z');
+      if (letters.length >= 2) {
+        let eqSum = 0;
+        for (let i = 0; i < letters.length - 1; i++) {
+          eqSum += getSpeedEquivalent(letters[i], letters[i + 1]);
+        }
+        tierWeightedKeyEquiv += f * (eqSum / (letters.length - 1));
+      } else {
+        tierWeightedKeyEquiv += f;
+      }
+
+      // 手感指标
+      const code = e.code.toLowerCase();
+      const fingerSeq: string[] = [];
+      for (const ch of code) { if (FINGER_MAP[ch]) fingerSeq.push(FINGER_MAP[ch]); }
+
+      for (let i = 0; i < code.length - 1; i++) {
+        const ck = code[i], nk = code[i + 1];
+        if (!/[a-z]/.test(ck) || !/[a-z]/.test(nk)) continue;
+        const r1 = KEY_ROW[ck], r2 = KEY_ROW[nk];
+        // 左右互击
+        if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) tierHandAlt++;
+        // 同指连续
+        if (FINGER_MAP[ck] && FINGER_MAP[ck] === FINGER_MAP[nk]) {
+          const rowDist = r1 !== undefined && r2 !== undefined ? Math.abs(r1 - r2) : 0;
+          if (rowDist >= 2) tierSameFingerBig++;
+          else if (rowDist >= 1) tierSameFingerSmall++;
+          // 小指干扰
+          if (FINGER_MAP[ck] === '左小指' || FINGER_MAP[ck] === '右小指') tierPinky++;
+        }
+      }
+
+      // 同键三连/四连
+      for (let i = 0; i < code.length - 2; i++) {
+        if (code[i] === code[i+1] && code[i+1] === code[i+2]) {
+          tierSameKeyTriple++;
+          if (i < code.length - 3 && code[i] === code[i+3]) tierSameKeyQuad++;
+        }
+      }
+      // 同指三连/四连
+      for (let i = 0; i < fingerSeq.length - 2; i++) {
+        if (fingerSeq[i] === fingerSeq[i+1] && fingerSeq[i+1] === fingerSeq[i+2]) {
+          tierSameFingerTriple++;
+          if (i < fingerSeq.length - 3 && fingerSeq[i] === fingerSeq[i+3]) tierSameFingerQuad++;
+        }
+      }
     }
+
     return {
       tier: tier.label,
       charCount: tierEntries.length,
-      dupRate: tierDupRate,
-      avgCodeLen: safeDivide(tierLenSum, tierEntries.length),
+      oneCode,
+      twoCode,
+      threeCode,
+      fourCode,
+      shortDupCount: shortDup,
+      fullDupCount: fullDup,
+      theoreticalTwoShort,
       weightedCodeLen: safeDivide(tierWeightedLen, tierFreqSum),
+      weightedCharEquiv: safeDivide(tierWeightedCharEquiv, tierFreqSum),
+      weightedKeyEquiv: safeDivide(tierWeightedKeyEquiv, tierFreqSum),
+      handAltCount: tierHandAlt,
+      sameFingerBigCross: tierSameFingerBig,
+      sameFingerSmallCross: tierSameFingerSmall,
+      sameKeyTriple: tierSameKeyTriple,
+      sameKeyQuad: tierSameKeyQuad,
+      sameFingerTriple: tierSameFingerTriple,
+      sameFingerQuad: tierSameFingerQuad,
+      pinkyCount: tierPinky,
     };
   });
 
@@ -536,7 +727,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     .map(([len, count]) => ({
       name: `${len}码`,
       count,
-      percent: clampPercentage(safeDivide(count, entries.length) * 100),
+      percent: clampPercentage(safeDivide(count, filteredEntries.length) * 100),
     }));
 
   // 手指分布图表数据
@@ -552,7 +743,7 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
   // ★ 词组测评
   // 构建字→编码映射（用于词组编码）
   const charToCodes = new Map<string, string[]>();
-  for (const entry of entries) {
+  for (const entry of filteredEntries) {
     const existing = charToCodes.get(entry.char);
     if (existing) {
       if (!existing.includes(entry.code)) existing.push(entry.code);
@@ -561,35 +752,124 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     }
   }
 
-  /** 计算词组编码：每个字取首选（最短）编码 */
+  /**
+   * 计算词组编码：按词组长度从每个字的全码中提取码元，组成四码词组码
+   * - 二字词：每字取全码前2码 → 2+2=4码
+   * - 三字词：前两字各取全码前1码，末字取前2码 → 1+1+2=4码
+   * - 四字词：每字取全码前1码 → 1×4=4码
+   * - 五字及以上：取第1、2、3字和末字的全码前1码 → 1×4=4码
+   */
   function getPhraseCode(phrase: string): string | null {
-    const codes: string[] = [];
+    const phraseLen = phrase.length;
+    // 取每个字的全码（最长编码，即全码）
+    const fullCodes: string[] = [];
     for (const ch of phrase) {
       const charCodes = charToCodes.get(ch);
-      if (!charCodes || charCodes.length === 0) return null; // 无法编码
-      // 取最短编码作为首选
-      codes.push(charCodes.reduce((a, b) => a.length <= b.length ? a : b));
+      if (!charCodes || charCodes.length === 0) return null;
+      fullCodes.push(charCodes.reduce((a, b) => a.length >= b.length ? a : b));
     }
-    return codes.join(' ');
+
+    let extracted = '';
+    if (phraseLen === 2) {
+      // 每字取前2码
+      extracted = fullCodes[0].slice(0, 2) + fullCodes[1].slice(0, 2);
+    } else if (phraseLen === 3) {
+      // 前两字各取前1码，末字取前2码
+      extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1) + fullCodes[2].slice(0, 2);
+    } else if (phraseLen === 4) {
+      // 每字取前1码
+      extracted = fullCodes.map(c => c.slice(0, 1)).join('');
+    } else {
+      // 5+字：取第1、2、3字和末字的前1码
+      extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1) + fullCodes[2].slice(0, 1) + fullCodes[phraseLen - 1].slice(0, 1);
+    }
+
+    return extracted.length >= 4 ? extracted : null;
+  }
+
+  // 词组编码缓存：避免 evalPhraseTier 和 phraseFreqTierStats 对同一词组重复计算
+  const phraseCodeCache = new Map<string, string | null>();
+  const getCachedPhraseCode = (phrase: string): string | null => {
+    let code = phraseCodeCache.get(phrase);
+    if (code === undefined) {
+      code = getPhraseCode(phrase);
+      phraseCodeCache.set(phrase, code);
+    }
+    return code;
+  };
+
+  /**
+   * 共享指法指标计算：对一段编码序列统计左右互击、同指跨排、同键/同指连击、小指干扰
+   * 被 evalPhraseTier 和 phraseFreqTierStats 共用，避免逻辑重复
+   */
+  function computeErgonomics(code: string, acc: {
+    handAlt: number; sfb: number; sfs: number;
+    skt: number; skq: number; sft: number; sfq: number; pk: number;
+  }) {
+    for (let i = 0; i < code.length - 1; i++) {
+      const ck = code[i], nk = code[i + 1];
+      if (!/[a-z]/.test(ck) || !/[a-z]/.test(nk)) continue;
+      if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) acc.handAlt++;
+      if (FINGER_MAP[ck] && FINGER_MAP[ck] === FINGER_MAP[nk]) {
+        const r1 = KEY_ROW[ck], r2 = KEY_ROW[nk];
+        const rowDist = r1 !== undefined && r2 !== undefined ? Math.abs(r1 - r2) : 0;
+        if (rowDist >= 2) acc.sfb++;
+        else if (rowDist >= 1) acc.sfs++;
+        if (FINGER_MAP[ck] === '左小指' || FINGER_MAP[ck] === '右小指') acc.pk++;
+      }
+    }
+    for (let i = 0; i < code.length - 2; i++) {
+      if (code[i] === code[i+1] && code[i+1] === code[i+2]) {
+        acc.skt++;
+        if (i < code.length - 3 && code[i] === code[i+3]) acc.skq++;
+      }
+    }
+    const fs: string[] = [];
+    for (const ch of code) { if (FINGER_MAP[ch]) fs.push(FINGER_MAP[ch]); }
+    for (let i = 0; i < fs.length - 2; i++) {
+      if (fs[i] === fs[i+1] && fs[i+1] === fs[i+2]) {
+        acc.sft++;
+        if (i < fs.length - 3 && fs[i] === fs[i+3]) acc.sfq++;
+      }
+    }
   }
 
   /** 计算单类词组测评指标 */
-  function evalPhraseTier(phrases: string[]): PhraseTierResult {
+  function evalPhraseTier(phrases: string[], freqArr?: number[]): PhraseTierResult {
     const totalPhrases = phrases.length;
     if (totalPhrases === 0) {
-      return { totalPhrases: 0, coveredPhrases: 0, coverageRate: 0, avgCodeLen: 0, dupRate: 0, selectionRate: 0 };
+      return { totalPhrases: 0, coveredPhrases: 0, coverageRate: 0, avgCodeLen: 0,
+        dupRate: 0, selectionRate: 0, selectionCount: 0, weightedCodeEquiv: 0,
+        handAltCount: 0, sameFingerBigCross: 0, sameFingerSmallCross: 0,
+        sameKeyTriple: 0, sameKeyQuad: 0, sameFingerTriple: 0, sameFingerQuad: 0,
+        pinkyCount: 0, keyFreq: {} };
     }
 
+    // 预建索引：词组→位置索引（O(1) 查找替代 indexOf 的 O(n)）
+    const phraseIndexMap = new Map<string, number>();
+    for (let i = 0; i < phrases.length; i++) phraseIndexMap.set(phrases[i], i);
+
     // 计算编码和覆盖
+    const phraseCodes: Array<{ phrase: string; code: string | null; idx: number; weight: number }> = [];
     const phraseCodeMap = new Map<string, string[]>(); // 编码→词组列表
     let coveredPhrases = 0;
     let totalCodeLen = 0;
 
-    for (const phrase of phrases) {
-      const code = getPhraseCode(phrase);
-      if (code === null) continue; // 无法编码的词组
+    const getWeight = (phrase: string, idx: number): number => {
+      if (freqArr && idx >= 0 && idx < freqArr.length) return freqArr[idx] / PHRASE_FREQ_TOTAL;
+      let w = 0;
+      for (const ch of phrase) w += getCharFrequencyWeight(ch);
+      return w;
+    };
+
+    for (let pi = 0; pi < phrases.length; pi++) {
+      const phrase = phrases[pi];
+      const code = getCachedPhraseCode(phrase);
+      const weight = getWeight(phrase, pi);
+      phraseCodes.push({ phrase, code, idx: pi, weight });
+      if (code === null) continue;
       coveredPhrases++;
-      totalCodeLen += code.replace(/ /g, '').length; // 去空格计算实际码长
+      totalCodeLen += code.replace(/ /g, '').length;
 
       const existing = phraseCodeMap.get(code);
       if (existing) {
@@ -602,47 +882,171 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     const coverageRate = clampPercentage(safeDivide(coveredPhrases, totalPhrases) * 100);
     const avgCodeLen = roundTo(safeDivide(totalCodeLen, coveredPhrases), 3);
 
-    // 重码率：重码词组数/已覆盖词组数
-    let dupCount = 0;
-    for (const [, plist] of phraseCodeMap) {
-      if (plist.length > 1) dupCount += plist.length - 1;
-    }
-    const dupRate = clampPercentage(safeDivide(dupCount, coveredPhrases) * 100);
-
-    // 注意：词频近似为词组中所有字的字频之和，非真实词频数据
-    // 宇浩测评网使用《现代汉语语料库分词类词频表》的真实词频
+    // 重码统计
+    let dupCount = 0, selectionCount = 0;
     let phraseSelectionFreq = 0, phraseTotalFreq = 0;
     for (const [, plist] of phraseCodeMap) {
       if (plist.length > 1) {
+        dupCount += plist.length - 1;
         const sorted = [...plist].sort((a, b) => {
-          const fa = [...a].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
-          const fb = [...b].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
-          return fb - fa;
+          const ai = phraseIndexMap.get(a) ?? -1;
+          const bi = phraseIndexMap.get(b) ?? -1;
+          return getWeight(b, bi) - getWeight(a, ai);
         });
         for (let i = 1; i < sorted.length; i++) {
-          const f = [...sorted[i]].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
-          phraseSelectionFreq += f;
+          selectionCount++;
+          const idx = phraseIndexMap.get(sorted[i]) ?? -1;
+          phraseSelectionFreq += getWeight(sorted[i], idx);
         }
       }
     }
-    for (const phrase of phrases) {
-      phraseTotalFreq += [...phrase].reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+    for (let pi = 0; pi < phrases.length; pi++) {
+      phraseTotalFreq += getWeight(phrases[pi], pi);
     }
+    const dupRate = clampPercentage(safeDivide(dupCount, coveredPhrases) * 100);
     const selectionRate = safeDivide(phraseSelectionFreq, phraseTotalFreq) * 10000;
 
-    return { totalPhrases, coveredPhrases, coverageRate, avgCodeLen, dupRate, selectionRate };
+    // 加权词均当量（简化：码长 + 重码罚时）
+    let weightedCodeEquiv = 0;
+    for (const pc of phraseCodes) {
+      if (pc.code === null) continue;
+      const pureLen = pc.code.replace(/ /g, '').length;
+      const codeChrs = phraseCodeMap.get(pc.code) || [];
+      const dupPenalty = codeChrs.length > 1 ? (codeChrs.length - 1) * 0.1 : 0;
+      weightedCodeEquiv += pc.weight * (pureLen + dupPenalty);
+    }
+    weightedCodeEquiv = safeDivide(weightedCodeEquiv, phraseTotalFreq);
+
+    // 指法指标
+    const ergo = { handAlt: 0, sfb: 0, sfs: 0, skt: 0, skq: 0, sft: 0, sfq: 0, pk: 0 };
+    const keyFreq: Record<string, number> = {};
+
+    for (const pc of phraseCodes) {
+      if (pc.code === null) continue;
+      const code = pc.code.replace(/ /g, '').toLowerCase();
+      // 统计按键频次
+      for (const ch of code) {
+        if (/[a-z]/.test(ch)) keyFreq[ch] = (keyFreq[ch] || 0) + 1;
+      }
+      computeErgonomics(code, ergo);
+    }
+
+    return {
+      totalPhrases, coveredPhrases, coverageRate, avgCodeLen, dupRate,
+      selectionRate, selectionCount, weightedCodeEquiv,
+      handAltCount: ergo.handAlt, sameFingerBigCross: ergo.sfb, sameFingerSmallCross: ergo.sfs,
+      sameKeyTriple: ergo.skt, sameKeyQuad: ergo.skq, sameFingerTriple: ergo.sft, sameFingerQuad: ergo.sfq,
+      pinkyCount: ergo.pk, keyFreq,
+    };
   }
 
-  const allPhrases = [...twoCharPhrases, ...threeCharPhrases, ...fourCharPhrases];
+  // 三路归并：各分类数据已按词频降序排列，归并取前 50000 个高频词（O(50K) vs 排序 O(80K log 80K)）
+  type PhraseSource = { phrase: string; freq: number; type: '2' | '3' | '4' };
+  const TOP_50K = 50000;
+  const topItems: PhraseSource[] = [];
+  {
+    let i2 = 0, i3 = 0, i4 = 0;
+    while (topItems.length < TOP_50K && (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length)) {
+      const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
+      const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
+      const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
+      if (f2 >= f3 && f2 >= f4) { topItems.push({ phrase: twoCharPhrases[i2], freq: f2, type: '2' }); i2++; }
+      else if (f3 >= f4) { topItems.push({ phrase: threeCharPhrases[i3], freq: f3, type: '3' }); i3++; }
+      else { topItems.push({ phrase: fourCharPhrases[i4], freq: f4, type: '4' }); i4++; }
+    }
+  }
+
+  // 拆回各自分类（用于按类型评测）
+  const top2: string[] = [], top2f: number[] = [];
+  const top3: string[] = [], top3f: number[] = [];
+  const top4: string[] = [], top4f: number[] = [];
+  for (const item of topItems) {
+    if (item.type === '2') { top2.push(item.phrase); top2f.push(item.freq); }
+    else if (item.type === '3') { top3.push(item.phrase); top3f.push(item.freq); }
+    else { top4.push(item.phrase); top4f.push(item.freq); }
+  }
+
+  // topAll：按频率降序排列的全部 50K 词组（用于分频段统计）
+  const topAll: string[] = topItems.map(item => item.phrase);
+  const topAllF: number[] = topItems.map(item => item.freq);
+
   const phraseEval = {
-    twoChar: evalPhraseTier(twoCharPhrases),
-    threeChar: evalPhraseTier(threeCharPhrases),
-    fourChar: evalPhraseTier(fourCharPhrases),
-    overall: evalPhraseTier(allPhrases),
+    twoChar: evalPhraseTier(top2, top2f),
+    threeChar: evalPhraseTier(top3, top3f),
+    fourChar: evalPhraseTier(top4, top4f),
+    overall: evalPhraseTier(topAll, topAllF),
   };
 
+  // ★ 词组分频段统计
+  // 只对 top 词组进行分频段统计以提升性能
+  const coveredPhraseList: Array<{ phrase: string; code: string; weight: number; idx: number }> = [];
+  const phraseCodeMapOverall = new Map<string, string[]>();
+  for (let pi = 0; pi < topAll.length; pi++) {
+    const phrase = topAll[pi];
+    const code = getCachedPhraseCode(phrase);
+    if (code === null) continue;
+    const weight = topAllF[pi] / PHRASE_FREQ_TOTAL;
+    coveredPhraseList.push({ phrase, code, weight, idx: pi });
+    const existing = phraseCodeMapOverall.get(code);
+    if (existing) { if (!existing.includes(phrase)) existing.push(phrase); }
+    else phraseCodeMapOverall.set(code, [phrase]);
+  }
+  coveredPhraseList.sort((a, b) => b.weight - a.weight);
+
+  const phraseIndexMapOverall = new Map<string, number>();
+  for (let i = 0; i < topAll.length; i++) phraseIndexMapOverall.set(topAll[i], i);
+
+  const phraseFreqTierStats: PhraseTierStat[] = PHRASE_FREQ_TIERS.map(tier => {
+    // 按原始 topAll 排行序号分频段（idx 存储了原始位置）
+    const tierItems = coveredPhraseList.filter(item => item.idx >= tier.start && item.idx < tier.end);
+    let selCount = 0, wce = 0;
+    let tierWeightSum = 0;
+    const tierErgo = { handAlt: 0, sfb: 0, sfs: 0, skt: 0, skq: 0, sft: 0, sfq: 0, pk: 0 };
+
+    for (const item of tierItems) {
+      tierWeightSum += item.weight;
+      const code = item.code.replace(/ /g, '').toLowerCase();
+      const pureLen = code.length;
+      const codeChrs = phraseCodeMapOverall.get(item.code) || [];
+      const dupPenalty = codeChrs.length > 1 ? (codeChrs.length - 1) * 0.1 : 0;
+      wce += item.weight * (pureLen + dupPenalty);
+
+      computeErgonomics(code, tierErgo);
+
+      // 统计选重
+      if (codeChrs.length > 1) {
+        const sorted = [...codeChrs].sort((a, b) => {
+          const ai2 = phraseIndexMapOverall.get(a) ?? -1;
+          const bi2 = phraseIndexMapOverall.get(b) ?? -1;
+          return (bi2 >= 0 && bi2 < topAllF.length ? topAllF[bi2] : 0) - (ai2 >= 0 && ai2 < topAllF.length ? topAllF[ai2] : 0);
+        });
+        const posInGroup = sorted.indexOf(item.phrase);
+        if (posInGroup > 0) selCount++;
+      }
+    }
+
+    const covered = tierItems.length;
+    // totalPhrases 为该频段在原始 topAll 中的词组总数（含未编码的）
+    const totalInTier = Math.min(tier.end, topAll.length) - tier.start;
+    return {
+      tier: tier.label,
+      totalPhrases: totalInTier,
+      coveredPhrases: covered,
+      selectionCount: selCount,
+      weightedCodeEquiv: safeDivide(wce, tierWeightSum),
+      handAltCount: tierErgo.handAlt,
+      sameFingerBigCross: tierErgo.sfb,
+      sameFingerSmallCross: tierErgo.sfs,
+      sameKeyTriple: tierErgo.skt,
+      sameKeyQuad: tierErgo.skq,
+      sameFingerTriple: tierErgo.sft,
+      sameFingerQuad: tierErgo.sfq,
+      pinkyCount: tierErgo.pk,
+    };
+  });
+
   return {
-    totalChars: entries.length,
+    totalChars: filteredEntries.length,
     totalCodes: codeToChars.size,
     uniqueCodes: uniqueEntries.size,
     duplicateCount: dupCount,
@@ -684,6 +1088,8 @@ function evaluate(entries: CodeEntry[]): EvaluateResult {
     codeLenChartData,
     fingerChartData,
     phraseEval,
+    phraseFreqTierStats,
+    topPhraseCount: topItems.length,
   };
 }
 
@@ -705,38 +1111,82 @@ export default function EvaluatePage() {
     tonggui: { covered: number; total: number; percentage: number; missing: string[] } | null;
   } | null>(null);
   const [useBuiltin, setUseBuiltin] = useState(false);
+  const [charsetFilter, setCharsetFilter] = useState<CharsetFilter>('all');
+  const [countSpace, setCountSpace] = useState(false); // 计算空格模式
   const resultRef = useRef<HTMLDivElement>(null);
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  // Escape 键关闭全屏展开模式
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && expandedSection) setExpandedSection(null);
+    };
+    if (expandedSection) {
+      document.addEventListener('keydown', handleEsc);
+      document.body.style.overflow = 'hidden'; // 全屏时锁定背景滚动
+    }
+    return () => {
+      document.removeEventListener('keydown', handleEsc);
+      document.body.style.overflow = '';
+    };
+  }, [expandedSection]);
+
+  // ★ 当字集过滤器或原始条目变化时，重新计算测评结果和覆盖率
+  const reEvaluate = useCallback((entries: CodeEntry[], charset: CharsetFilter) => {
+    if (entries.length === 0) return;
+    const filtered = filterEntriesByCharset(entries, charset);
+    const res = evaluate(entries, charset);
+    setResult(res);
+
+    // 覆盖率基于过滤后的条目计算，响应字集选择
+    try {
+      const singleChars = filtered.filter(e => [...e.char].length === 1).map(e => e.char);
+      setCharCoverage({
+        gb2312: calculateCoverage(singleChars, 'gb2312'),
+        gbk: calculateCoverage(singleChars, 'gbk'),
+        tonggui: calculateCoverage(singleChars, 'tonggui'),
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  useEffect(() => {
+    if (rawEntries.length > 0 && !parsing) {
+      reEvaluate(rawEntries, charsetFilter);
+    }
+  }, [charsetFilter, rawEntries, parsing, reEvaluate]);
 
   // 预置方案一键测评
-  const handleBuiltinEvaluate = useCallback(() => {
+  const handleBuiltinEvaluate = useCallback(async () => {
     setUseBuiltin(true);
     setParsing(true);
     setParseProgress(0);
     setError('');
     setResult(null);
-    setFileName('字源131方案（内置）');
+    setFileName('字源单字方案 v1.32（内置）');
 
-    setTimeout(() => {
-      const entries: CodeEntry[] = charCodeData.map(d => ({ char: d.char, code: d.code }));
-      setRawEntries(entries);
-      setParseProgress(50);
+    try {
+      const response = await fetch('/字源单字.txt');
+      if (!response.ok) throw new Error('加载失败');
+      const text = await response.text();
+      setParseProgress(10);
 
       setTimeout(() => {
-        const res = evaluate(entries);
-        setParseProgress(100);
-        setResult(res);
-        setParsing(false);
+        const entries = parseCodeTable(text);
+        if (entries.length === 0) {
+          setError('未能解析出有效码表数据');
+          setParsing(false);
+          return;
+        }
 
-        try {
-          const singleChars = entries.filter(e => e.char.length === 1).map(e => e.char);
-          setCharCoverage({
-            gb2312: calculateCoverage(singleChars, 'gb2312'),
-            gbk: calculateCoverage(singleChars, 'gbk'),
-            tonggui: calculateCoverage(singleChars, 'tonggui'),
-          });
-        } catch {}
+        setRawEntries(entries);
+        setParseProgress(100);
+        // 由 useEffect 监听 rawEntries 变化后调用 reEvaluate 统一计算
+        setParsing(false);
       }, 50);
-    }, 100);
+    } catch {
+      setError('加载内置码表失败，请检查网络连接');
+      setParsing(false);
+    }
   }, []);
 
   // 文件上传处理
@@ -761,23 +1211,9 @@ export default function EvaluatePage() {
         }
 
         setRawEntries(entries);
-        setParseProgress(50);
-
-        setTimeout(() => {
-          const res = evaluate(entries);
-          setParseProgress(100);
-          setResult(res);
-          setParsing(false);
-
-          try {
-            const singleChars = entries.filter(e => e.char.length === 1).map(e => e.char);
-            setCharCoverage({
-              gb2312: calculateCoverage(singleChars, 'gb2312'),
-              gbk: calculateCoverage(singleChars, 'gbk'),
-              tonggui: calculateCoverage(singleChars, 'tonggui'),
-            });
-          } catch {}
-        }, 50);
+        setParseProgress(100);
+        // 由 useEffect 监听 rawEntries 变化后调用 reEvaluate 统一计算
+        setParsing(false);
       }, 50);
     } catch {
       setError('文件读取失败');
@@ -808,14 +1244,18 @@ export default function EvaluatePage() {
       link.download = `码表测评_${fileName.replace(/\.[^/.]+$/, '')}_${new Date().toISOString().slice(0,10)}.png`;
       link.href = canvas.toDataURL('image/png', 1.0);
       link.click();
-    } catch {} finally { setExportingImage(false); }
+    } catch (err) {
+      setError('导出图片失败：' + (err instanceof Error ? err.message : '未知错误'));
+    } finally { setExportingImage(false); }
   };
 
   // 复制报告
   const copyResult = () => {
     if (!result) return;
+    const charsetLabel = CHARSET_OPTIONS.find(o => o.value === charsetFilter)?.label ?? '全字库';
     const lines = [
       `码表测评结果 - ${fileName}`,
+      `字集范围: ${charsetLabel}`,
       `总字数: ${result.totalChars}`,
       `字频加权码长: ${result.weightedAvgCodeLen.toFixed(3)}`,
       `全码重码率: ${result.fullDupRate.toFixed(2)}%`,
@@ -835,25 +1275,10 @@ export default function EvaluatePage() {
       `  三字词: 覆盖${result.phraseEval.threeChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.threeChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.threeChar.dupRate.toFixed(2)}%`,
       `  四字词: 覆盖${result.phraseEval.fourChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.fourChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.fourChar.dupRate.toFixed(2)}%`,
     ];
-    navigator.clipboard.writeText(lines.join('\n'));
+    navigator.clipboard.writeText(lines.join('\n')).catch(() => {
+      setError('复制到剪贴板失败，请手动复制');
+    });
   };
-
-  const maxKeyFreq = useMemo(() => {
-    if (!result || !result.keyFreq) return 1;
-    return Math.max(...Object.values(result.keyFreq), 1);
-  }, [result]);
-
-  const getHeatColor = useCallback((freq: number) => {
-    const ratio = safeDivide(freq, maxKeyFreq);
-    if (ratio === 0) return 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500';
-    if (ratio < 0.1) return 'bg-cyan-50 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-300';
-    if (ratio < 0.2) return 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-200';
-    if (ratio < 0.35) return 'bg-cyan-200 dark:bg-cyan-800/60 text-cyan-900 dark:text-cyan-100';
-    if (ratio < 0.5) return 'bg-blue-300 dark:bg-blue-700 text-blue-900 dark:text-blue-100';
-    if (ratio < 0.65) return 'bg-indigo-400 dark:bg-indigo-600 text-white';
-    if (ratio < 0.8) return 'bg-violet-500 dark:bg-violet-600 text-white';
-    return 'bg-purple-600 dark:bg-purple-700 text-white';
-  }, [maxKeyFreq]);
 
   // ========================================
   // 渲染
@@ -875,14 +1300,14 @@ export default function EvaluatePage() {
             </div>
             {result && (
               <div className="flex gap-2">
-                <Button variant="outline" size="sm" onClick={copyResult} className="gap-1.5">
+                <Button variant="outline" size="sm" onClick={copyResult} className="gap-1.5 transition-colors hover:bg-primary/5">
                   <ClipboardCopy className="h-3.5 w-3.5" />复制报告
                 </Button>
-                <Button variant="outline" size="sm" onClick={exportAsImage} disabled={exportingImage} className="gap-1.5">
+                <Button variant="outline" size="sm" onClick={exportAsImage} disabled={exportingImage} className="gap-1.5 transition-colors hover:bg-primary/5">
                   {exportingImage ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
                   {exportingImage ? '导出中...' : '导出图片'}
                 </Button>
-                <Button variant="ghost" size="sm" onClick={() => { setResult(null); setFileName(''); setRawEntries([]); setError(''); setUseBuiltin(false); }} className="gap-1.5 text-muted-foreground">
+                <Button variant="ghost" size="sm" onClick={() => { setResult(null); setFileName(''); setRawEntries([]); setError(''); setUseBuiltin(false); setCharsetFilter('all'); }} className="gap-1.5 text-muted-foreground hover:text-red-600 dark:hover:text-red-400 transition-colors">
                   <Trash2 className="h-3.5 w-3.5" />重新测评
                 </Button>
               </div>
@@ -892,16 +1317,16 @@ export default function EvaluatePage() {
           {!result && !parsing && (
             <div className="grid gap-4 lg:grid-cols-3">
               {/* 文件上传 */}
-              <Card className="lg:col-span-2 border-dashed border-2 hover:border-primary/40 transition-colors">
+              <Card className="lg:col-span-2 border-dashed border-2 hover:border-primary/40 transition-all duration-200 hover:shadow-sm">
                 <CardContent className="p-6">
                   <div
-                    className="flex flex-col items-center justify-center cursor-pointer py-6"
+                    className="flex flex-col items-center justify-center cursor-pointer py-6 rounded-lg transition-colors hover:bg-muted/30"
                     onDrop={handleDrop}
                     onDragOver={(e) => e.preventDefault()}
                     onClick={() => document.getElementById('evaluate-file-input')?.click()}
                   >
                     <input id="evaluate-file-input" type="file" accept=".txt,.mb,.csv,.yaml,.dict.yaml,.enc,.dat" onChange={handleInput} className="hidden" />
-                    <Upload className="mb-3 h-12 w-12 text-muted-foreground/60" />
+                    <Upload className="mb-3 h-12 w-12 text-muted-foreground/50 transition-colors group-hover:text-primary" />
                     <p className="text-base font-medium text-foreground mb-1">点击或拖拽上传码表文件</p>
                     <p className="text-sm text-muted-foreground">支持 .txt / .mb / .csv / .yaml / .dict.yaml 等格式</p>
                   </div>
@@ -920,7 +1345,7 @@ export default function EvaluatePage() {
                     <Zap className="h-7 w-7 text-primary" />
                   </div>
                   <h3 className="font-bold text-foreground mb-1">预置方案测评</h3>
-                  <p className="text-sm text-muted-foreground mb-4">使用当前字源131方案码表<br/>一键查看测评结果</p>
+                  <p className="text-sm text-muted-foreground mb-4">使用字源单字完整码表<br/>一键查看测评结果</p>
                   <Button onClick={handleBuiltinEvaluate} className="gap-2">
                     <Zap className="h-4 w-4" />快速测评
                   </Button>
@@ -987,8 +1412,48 @@ export default function EvaluatePage() {
             {useBuiltin && <Badge className="bg-primary/10 text-primary">内置方案</Badge>}
           </div>
 
+          {/* ★ 字集过滤选择器 */}
+          <Card className="border-primary/20">
+            <CardContent className="p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex items-center gap-2 shrink-0">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  <span className="text-sm font-semibold text-foreground">测评字集范围</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {CHARSET_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setCharsetFilter(opt.value)}
+                      className={cn(
+                        'px-3 py-1.5 rounded-lg text-sm font-medium transition-all border',
+                        charsetFilter === opt.value
+                          ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                          : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
+                      )}
+                      title={opt.description}
+                    >
+                      {opt.label}
+                      <span className="ml-1.5 text-xs opacity-70">
+                        {opt.value === 'gb2312' && '(6763字)'}
+                        {opt.value === 'gbk' && '(21003字)'}
+                        {opt.value === 'tonggui' && '(8105字)'}
+                        {opt.value === 'all' && `(${rawEntries.length.toLocaleString()}字)`}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {charsetFilter !== 'all' && (
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    过滤后 {result.totalChars.toLocaleString()} 字
+                  </Badge>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           {/* 8个核心评分卡片 */}
-          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
             {/* 平均码长 */}
             <ScoreCard
               icon={<Target className="h-5 w-5" />}
@@ -1070,18 +1535,18 @@ export default function EvaluatePage() {
               })()}
               colorScheme="violet"
             />
-            {/* 动态选重率 */}
+            {/* GB2312静态重码数 */}
             <ScoreCard
-              icon={<Gauge className="h-5 w-5" />}
-              title="动态选重率"
-              value={result.dynamicSelectionRate.toFixed(1)}
-              unit="‱"
-              reference="< 5‱ 优秀"
-              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 50) * 100))}
+              icon={<AlertTriangle className="h-5 w-5" />}
+              title="GB2312重码"
+              value={result.gb2312StaticDup.toString()}
+              unit="字"
+              reference="越少越好"
+              progress={Math.max(0, Math.min(100, (1 - result.gb2312StaticDup / 1000) * 100))}
               score={(() => {
-                if (result.dynamicSelectionRate < 5) return 100;
-                if (result.dynamicSelectionRate < 20) return 85;
-                if (result.dynamicSelectionRate < 50) return 65;
+                if (result.gb2312StaticDup < 200) return 100;
+                if (result.gb2312StaticDup < 500) return 85;
+                if (result.gb2312StaticDup < 1000) return 65;
                 return 35;
               })()}
               colorScheme="cyan"
@@ -1116,379 +1581,568 @@ export default function EvaluatePage() {
             />
           </div>
 
-          {/* 字符集覆盖率 */}
+          {/* ===== C. 字符集覆盖率 + 综合测评表 ===== */}
+
+          {/* 字符集覆盖率（精简版） */}
           {charCoverage && (
-            <Card className="border-0 shadow-lg overflow-hidden">
-              <div className={cn(
-                "px-6 py-3",
-                (charCoverage.gb2312.percentage < 90 || charCoverage.gbk.percentage < 70)
-                  ? "bg-gradient-to-r from-red-500 via-orange-500 to-amber-500"
-                  : "bg-gradient-to-r from-emerald-500 via-teal-500 to-cyan-500"
-              )}>
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className="h-5 w-5 text-white" />
-                  <h3 className="text-base font-bold text-white">字符集覆盖率检测</h3>
-                  {(charCoverage.gb2312.percentage < 90 || charCoverage.gbk.percentage < 70) ? (
-                    <Badge className="bg-white/20 text-white border-white/30">需关注</Badge>
-                  ) : (
-                    <Badge className="bg-white/20 text-white border-white/30">达标</Badge>
-                  )}
-                </div>
-              </div>
+            <Card>
               <CardContent className="p-4">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  <CoverageBar label="GB2312" total={charCoverage.gb2312.total} covered={charCoverage.gb2312.covered} percentage={charCoverage.gb2312.percentage} missing={charCoverage.gb2312.missing} />
-                  <CoverageBar label="通规一二级" total={charCoverage.tonggui?.total ?? 6500} covered={charCoverage.tonggui?.covered ?? 0} percentage={charCoverage.tonggui?.percentage ?? 0} missing={charCoverage.tonggui?.missing ?? []} />
-                  <CoverageBar label="GBK" total={charCoverage.gbk.total} covered={charCoverage.gbk.covered} percentage={charCoverage.gbk.percentage} missing={charCoverage.gbk.missing} />
+                <div className="flex items-center gap-2 mb-3">
+                  <BookOpen className="h-4 w-4 text-primary" />
+                  <h3 className="text-sm font-bold text-foreground">字符集覆盖率</h3>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {([
+                    { label: 'GB2312', data: charCoverage.gb2312 },
+                    { label: '通规', data: charCoverage.tonggui },
+                    { label: 'GBK', data: charCoverage.gbk },
+                  ] as const).map(({ label, data }) => data && (
+                    <div key={label} className="flex items-center gap-3">
+                      <span className="text-xs font-medium text-muted-foreground w-12 shrink-0">{label}</span>
+                      <div className="flex-1 h-4 rounded-full bg-secondary overflow-hidden">
+                        <div
+                          className={cn('h-full rounded-full transition-all', data.percentage >= 90 ? 'bg-emerald-500' : data.percentage >= 70 ? 'bg-amber-500' : 'bg-red-500')}
+                          style={{ width: `${Math.min(data.percentage, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-xs font-semibold tabular-nums w-14 text-right">{data.percentage.toFixed(1)}%</span>
+                      <span className="text-[10px] text-muted-foreground">{data.covered}/{data.total}</span>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* ===== C. 详细统计区（Tab标签页） ===== */}
-          <Card>
+          {/* ===== 单字测评综合表 ===== */}
+          <Card className={cn(expandedSection === 'single-char' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardContent className="p-4 sm:p-6">
-              <Tabs defaultValue="dup" className="w-full">
-                <TabsList className="flex-wrap h-auto gap-1">
-                  <TabsTrigger value="dup" className="gap-1.5"><AlertTriangle className="h-3.5 w-3.5" />重码分析</TabsTrigger>
-                  <TabsTrigger value="codelen" className="gap-1.5"><BarChart3 className="h-3.5 w-3.5" />码长分布</TabsTrigger>
-                  <TabsTrigger value="keyboard" className="gap-1.5"><Keyboard className="h-3.5 w-3.5" />按键分析</TabsTrigger>
-                  <TabsTrigger value="freq" className="gap-1.5"><TrendingUp className="h-3.5 w-3.5" />字频分析</TabsTrigger>
-                  <TabsTrigger value="phrase" className="gap-1.5"><BookOpen className="h-3.5 w-3.5" />词组测评</TabsTrigger>
-                </TabsList>
-
-                {/* Tab1: 重码分析 */}
-                <TabsContent value="dup" className="mt-4 space-y-4">
-                  <h4 className="text-sm font-semibold text-foreground">按字频段统计重码</h4>
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-muted/50 border-b border-border">
-                          <th className="px-3 py-2.5 text-left font-semibold">字频段</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">字数</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">重码率</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">平均码长</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">加权码长</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {result.freqTierStats.map((stat) => (
-                          <tr key={stat.tier} className="border-b border-border hover:bg-accent/5">
-                            <td className="px-3 py-2 font-medium text-foreground">{stat.tier}</td>
-                            <td className="px-3 py-2 text-center tabular-nums">{stat.charCount.toLocaleString()}</td>
-                            <td className={cn('px-3 py-2 text-center tabular-nums font-semibold', stat.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' : stat.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400')}>
-                              {stat.dupRate.toFixed(2)}%
-                            </td>
-                            <td className="px-3 py-2 text-center tabular-nums">{stat.avgCodeLen.toFixed(2)}</td>
-                            <td className="px-3 py-2 text-center tabular-nums">{stat.weightedCodeLen.toFixed(3)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <h4 className="text-sm font-semibold text-foreground mt-4">Top 重码编码（前30）</h4>
-                  {result.topDupes.length === 0 ? (
-                    <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 py-4">
-                      <CheckCircle2 className="h-4 w-4" />无重码
-                    </div>
-                  ) : (
-                    <div className="max-h-64 overflow-y-auto space-y-1">
-                      {result.topDupes.map((dupe, i) => (
-                        <div key={i} className="flex items-center gap-2 text-sm px-2 py-1 rounded hover:bg-accent/5">
-                          <Badge variant="outline" className="shrink-0 font-mono text-xs">{dupe.code}</Badge>
-                          <span className="text-foreground">{dupe.chars.join(' ')}</span>
-                          <Badge variant="secondary" className="ml-auto shrink-0 text-xs">{dupe.count}字</Badge>
-                        </div>
-                      ))}
-                    </div>
+              {expandedSection === 'single-char' && (
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                  <span className="font-bold text-foreground text-base">单字测评 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
+                  <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary">收起</Button>
+                </div>
+              )}
+              <h3 className="text-base font-bold text-foreground mb-3 flex items-center gap-2">
+                <BarChart3 className="h-5 w-5 text-primary" />单字测评（{countSpace ? '计算空格' : '不计算空格'}）
+                {expandedSection !== 'single-char' && (
+                  <button onClick={() => setExpandedSection('single-char')} className="ml-1 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-primary" title="点击放大查看（Esc 收起）">
+                    <Maximize2 className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setCountSpace(!countSpace)}
+                  className={cn(
+                    'ml-auto text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    countSpace
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                      : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
                   )}
-                </TabsContent>
+                >
+                  {countSpace ? '计算空格 ✓' : '不计算空格'}
+                </button>
+              </h3>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className={cn('w-full leading-normal', expandedSection === 'single-char' ? 'text-sm min-w-[1400px]' : 'text-xs min-w-[1100px]')}>
+                  <thead>
+                    <tr className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-border">
+                      <th className="px-2 py-2.5 text-left font-bold text-foreground whitespace-nowrap text-sm sticky left-0 bg-emerald-50 dark:bg-emerald-950/20 z-10">范围</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground text-sm">字数</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground text-sm">1码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground text-sm">2码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground text-sm">3码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground text-sm">4码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="简码重码（选重）">简码<br/>重码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="全码重码">全码<br/>重码</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="理论二简">理论<br/>二简</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="字频加权码长">加权<br/>键长</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="字频加权字均当量">加权<br/>字均当量</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="字频加权键均当量">加权<br/>键均当量</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="左右互击">左右<br/>互击</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同指大跨排">同指<br/>大跨排</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同指小跨排">同指<br/>小跨排</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同键三连">同键<br/>三连</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同键四连">同键<br/>四连</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同指三连">同指<br/>三连</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="同指四连">同指<br/>四连</th>
+                      <th className="px-2 py-2.5 text-center font-bold text-foreground whitespace-nowrap text-sm" title="小指干扰">小指<br/>干扰</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const tiers = result.freqTierStats;
+                      const highTiers = tiers.slice(0, 3);
+                      const lowTiers = tiers.slice(3);
 
-                {/* Tab2: 码长分布 */}
-                <TabsContent value="codelen" className="mt-4 space-y-4">
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    {/* 柱状图 */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground mb-3">码长分布柱状图</h4>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={result.codeLenChartData}>
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                            <YAxis tick={{ fontSize: 12 }} />
-                            <Tooltip
-                              formatter={(value: number) => [value.toLocaleString(), '字数']}
-                              contentStyle={{ fontSize: 12 }}
-                            />
-                            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                              {result.codeLenChartData.map((_, index) => (
-                                <Cell key={index} fill={['#3b82f6','#6366f1','#8b5cf6','#a855f7','#c026d3'][index % 5]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                    {/* 表格 */}
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground mb-3">码长分布详情</h4>
-                      <div className="space-y-2">
-                        {result.codeLenChartData.map((item) => (
-                          <div key={item.name} className="flex items-center gap-3">
-                            <span className="w-10 text-sm font-medium text-foreground">{item.name}</span>
-                            <div className="flex-1 h-5 rounded-full bg-secondary overflow-hidden">
-                              <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${item.percent}%` }} />
-                            </div>
-                            <span className="w-24 text-right text-sm tabular-nums text-muted-foreground">
-                              {item.count.toLocaleString()} ({item.percent.toFixed(1)}%)
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                      <div className="mt-4 p-3 rounded-lg bg-muted/50 text-sm space-y-1">
-                        <div className="flex justify-between"><span className="text-muted-foreground">平均码长</span><span className="font-semibold tabular-nums">{result.avgCodeLength.toFixed(3)}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">字频加权码长</span><span className="font-semibold tabular-nums">{result.weightedAvgCodeLen.toFixed(3)}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">最大码长</span><span className="font-semibold tabular-nums">{result.maxCodeLength}</span></div>
-                        <div className="flex justify-between"><span className="text-muted-foreground">标准差</span><span className="font-semibold tabular-nums">{result.codeLengthStdDev.toFixed(3)}</span></div>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
+                      /** 汇总一组 tier 的所有指标 */
+                      const sumTier = (arr: typeof tiers) => {
+                        const totalChars = arr.reduce((s, t) => s + t.charCount, 0);
+                        return {
+                          charCount: totalChars,
+                          oneCode: arr.reduce((s, t) => s + t.oneCode, 0),
+                          twoCode: arr.reduce((s, t) => s + t.twoCode, 0),
+                          threeCode: arr.reduce((s, t) => s + t.threeCode, 0),
+                          fourCode: arr.reduce((s, t) => s + t.fourCode, 0),
+                          shortDupCount: arr.reduce((s, t) => s + t.shortDupCount, 0),
+                          fullDupCount: arr.reduce((s, t) => s + t.fullDupCount, 0),
+                          theoreticalTwoShort: arr.reduce((s, t) => s + t.theoreticalTwoShort, 0),
+                          weightedCodeLen: totalChars > 0 ? arr.reduce((s, t) => s + t.weightedCodeLen * t.charCount, 0) / totalChars : 0,
+                          weightedCharEquiv: totalChars > 0 ? arr.reduce((s, t) => s + t.weightedCharEquiv * t.charCount, 0) / totalChars : 0,
+                          weightedKeyEquiv: totalChars > 0 ? arr.reduce((s, t) => s + t.weightedKeyEquiv * t.charCount, 0) / totalChars : 0,
+                          handAltCount: arr.reduce((s, t) => s + t.handAltCount, 0),
+                          sameFingerBigCross: arr.reduce((s, t) => s + t.sameFingerBigCross, 0),
+                          sameFingerSmallCross: arr.reduce((s, t) => s + t.sameFingerSmallCross, 0),
+                          sameKeyTriple: arr.reduce((s, t) => s + t.sameKeyTriple, 0),
+                          sameKeyQuad: arr.reduce((s, t) => s + t.sameKeyQuad, 0),
+                          sameFingerTriple: arr.reduce((s, t) => s + t.sameFingerTriple, 0),
+                          sameFingerQuad: arr.reduce((s, t) => s + t.sameFingerQuad, 0),
+                          pinkyCount: arr.reduce((s, t) => s + t.pinkyCount, 0),
+                        };
+                      };
 
-                {/* Tab3: 按键分析 */}
-                <TabsContent value="keyboard" className="mt-4 space-y-4">
-                  {/* 键盘热力图 */}
-                  <div>
-                    <h4 className="text-sm font-semibold text-foreground mb-3">26键使用频率热力图</h4>
-                    <div className="flex flex-col items-center gap-2">
-                      {KEYBOARD_ROWS.map((row, ri) => (
-                        <div key={ri} className="flex gap-1.5" style={{ paddingLeft: ri === 1 ? '20px' : ri === 2 ? '36px' : '0' }}>
-                          {row.map((key) => {
-                            const freq = result.keyFreq[key] || 0;
-                            const rate = result.keyUsageRate[key] || 0;
-                            const heatClass = getHeatColor(freq);
-                            return (
-                              <div
-                                key={key}
-                                className={cn(
-                                  'relative flex h-12 w-12 flex-col items-center justify-center rounded-lg text-sm font-mono font-semibold border border-border/50 transition-all shadow-sm',
-                                  heatClass,
-                                  freq === 0 && 'opacity-30'
-                                )}
-                                title={`${key.toUpperCase()}: ${freq.toLocaleString()}次 (${rate.toFixed(1)}%)`}
-                              >
-                                <span className="text-lg font-bold leading-none">{key.toUpperCase()}</span>
-                                {freq > 0 && (
-                                  <span className="text-[9px] leading-tight font-sans font-bold tabular-nums mt-0.5">
-                                    {freq >= 1000 ? `${(freq/1000).toFixed(1)}k` : freq}
-                                  </span>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
+                      const highSum = sumTier(highTiers);
+                      const allSum = sumTier(tiers);
 
-                  {/* 左右手+手指分布 */}
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground mb-3">左右手使用比例</h4>
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="text-center p-4 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-                          <div className="text-2xl font-bold tabular-nums text-blue-700 dark:text-blue-300">{result.leftHandRate.toFixed(1)}%</div>
-                          <div className="text-sm text-muted-foreground mt-1">左手</div>
-                        </div>
-                        <div className="text-center p-4 rounded-xl bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
-                          <div className="text-2xl font-bold tabular-nums text-purple-700 dark:text-purple-300">{result.rightHandRate.toFixed(1)}%</div>
-                          <div className="text-sm text-muted-foreground mt-1">右手</div>
-                        </div>
-                      </div>
-                      <div className="mt-2 text-center">
-                        <span className={cn(
-                          'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium',
-                          Math.abs(result.leftHandRate - 50) <= 10 ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300' :
-                          'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300'
-                        )}>
-                          {Math.abs(result.leftHandRate - 50) <= 10 ? '平衡良好' : '轻微偏重'}
-                          ({Math.abs(result.leftHandRate - 50).toFixed(1)}%偏差)
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <h4 className="text-sm font-semibold text-foreground mb-3">各手指负担分布</h4>
-                      <div className="h-56">
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={result.fingerChartData} layout="vertical">
-                            <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                            <XAxis type="number" tick={{ fontSize: 11 }} />
-                            <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={60} />
-                            <Tooltip formatter={(value: number) => [`${value.toLocaleString()}次`, '按键次数']} contentStyle={{ fontSize: 12 }} />
-                            <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                              {result.fingerChartData.map((_, i) => (
-                                <Cell key={i} fill={['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#f43f5e','#f97316','#eab308','#22c55e','#14b8a6'][i % 10]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    </div>
-                  </div>
-                </TabsContent>
+                      /** 数值单元格 */
+                      const nc = (v: number) => (
+                        <td className="px-2 py-1.5 text-center tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
+                      );
+                      // 计算空格模式下，加权键长 +1
+                      const wcl = (v: number) => countSpace ? v + 1 : v;
 
-                {/* Tab4: 字频分析 */}
-                <TabsContent value="freq" className="mt-4 space-y-4">
-                  <h4 className="text-sm font-semibold text-foreground">按字频排名分段统计</h4>
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-muted/50 border-b border-border">
-                          <th className="px-3 py-2.5 text-left font-semibold">字频段</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">字数</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">重码率</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">平均码长</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">加权码长</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">编码效率</th>
+                      /** 渲染单个 tier 行 */
+                      const renderTierRow = (s: typeof tiers[0]) => (
+                        <tr key={s.tier} className="border-b border-border hover:bg-muted/20">
+                          <td className="px-2 py-1.5 font-medium text-foreground whitespace-nowrap sticky left-0 bg-background z-10">{s.tier}</td>
+                          {nc(s.charCount)} {nc(s.oneCode)} {nc(s.twoCode)} {nc(s.threeCode)} {nc(s.fourCode)}
+                          <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.shortDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.shortDupCount}</td>
+                          <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.fullDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.fullDupCount}</td>
+                          {nc(s.theoreticalTwoShort)} {nc(wcl(s.weightedCodeLen))} {nc(s.weightedCharEquiv)} {nc(s.weightedKeyEquiv)}
+                          {nc(s.handAltCount)} {nc(s.sameFingerBigCross)} {nc(s.sameFingerSmallCross)}
+                          {nc(s.sameKeyTriple)} {nc(s.sameKeyQuad)} {nc(s.sameFingerTriple)} {nc(s.sameFingerQuad)}
+                          {nc(s.pinkyCount)}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {result.freqTierStats.map((stat) => {
-                          const efficiency = stat.weightedCodeLen > 0 ? Math.min(100, safeDivide(2, stat.weightedCodeLen) * 100) : 0;
-                          return (
-                            <tr key={stat.tier} className="border-b border-border hover:bg-accent/5">
-                              <td className="px-3 py-2 font-medium text-foreground">{stat.tier}</td>
-                              <td className="px-3 py-2 text-center tabular-nums">{stat.charCount.toLocaleString()}</td>
-                              <td className={cn('px-3 py-2 text-center tabular-nums font-semibold', stat.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' : stat.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400')}>
-                                {stat.dupRate.toFixed(2)}%
-                              </td>
-                              <td className="px-3 py-2 text-center tabular-nums">{stat.avgCodeLen.toFixed(2)}</td>
-                              <td className="px-3 py-2 text-center tabular-nums">{stat.weightedCodeLen.toFixed(3)}</td>
-                              <td className="px-3 py-2 text-center">
-                                <div className="flex items-center justify-center gap-2">
-                                  <div className="w-16 h-2 rounded-full bg-secondary overflow-hidden">
-                                    <div className={cn('h-full rounded-full', efficiency > 70 ? 'bg-emerald-500' : efficiency > 50 ? 'bg-amber-500' : 'bg-red-500')} style={{ width: `${efficiency}%` }} />
-                                  </div>
-                                  <span className="text-xs tabular-nums text-muted-foreground">{efficiency.toFixed(0)}%</span>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </TabsContent>
+                      );
 
-                {/* Tab5: 词组测评 */}
-                <TabsContent value="phrase" className="mt-4 space-y-4">
-                  <h4 className="text-sm font-semibold text-foreground">词组编码测评</h4>
-                  <p className="text-xs text-muted-foreground">
-                    基于内置高频词组列表，测试码表对词组的编码覆盖能力、平均码长和重码情况。词组编码规则：每个字取首选（最短）编码拼接。
-                  </p>
-                  <div className="overflow-x-auto rounded-lg border border-border">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-muted/50 border-b border-border">
-                          <th className="px-3 py-2.5 text-left font-semibold">词组类型</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">总数</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">可编码</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">覆盖率</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">平均码长</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">重码率</th>
-                          <th className="px-3 py-2.5 text-center font-semibold">选重率</th>
+                      /** 渲染小计/总计行 */
+                      const renderSumRow = (label: string, sum: ReturnType<typeof sumTier>) => (
+                        <tr key={label} className="bg-emerald-50/50 dark:bg-emerald-950/10 border-b border-border font-semibold">
+                          <td className="px-2 py-1.5 text-foreground sticky left-0 bg-emerald-50/50 dark:bg-emerald-950/10 z-10">{label}</td>
+                          {nc(sum.charCount)} {nc(sum.oneCode)} {nc(sum.twoCode)} {nc(sum.threeCode)} {nc(sum.fourCode)}
+                          <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.shortDupCount}</td>
+                          <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.fullDupCount}</td>
+                          {nc(sum.theoreticalTwoShort)} {nc(wcl(sum.weightedCodeLen))} {nc(sum.weightedCharEquiv)} {nc(sum.weightedKeyEquiv)}
+                          {nc(sum.handAltCount)} {nc(sum.sameFingerBigCross)} {nc(sum.sameFingerSmallCross)}
+                          {nc(sum.sameKeyTriple)} {nc(sum.sameKeyQuad)} {nc(sum.sameFingerTriple)} {nc(sum.sameFingerQuad)}
+                          {nc(sum.pinkyCount)}
                         </tr>
-                      </thead>
-                      <tbody>
-                        {[
-                          { label: '二字词', data: result.phraseEval.twoChar },
-                          { label: '三字词', data: result.phraseEval.threeChar },
-                          { label: '四字词+', data: result.phraseEval.fourChar },
-                          { label: '全部词组', data: result.phraseEval.overall },
-                        ].map(({ label, data }) => (
-                          <tr key={label} className={cn('border-b border-border hover:bg-accent/5', label === '全部词组' && 'bg-muted/20 font-semibold')}>
-                            <td className="px-3 py-2 text-foreground">{label}</td>
-                            <td className="px-3 py-2 text-center tabular-nums">{data.totalPhrases}</td>
-                            <td className="px-3 py-2 text-center tabular-nums">{data.coveredPhrases}</td>
-                            <td className={cn(
-                              'px-3 py-2 text-center tabular-nums font-semibold',
-                              data.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
-                              data.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
-                              'text-red-600 dark:text-red-400'
-                            )}>
-                              {data.coverageRate.toFixed(1)}%
-                            </td>
-                            <td className="px-3 py-2 text-center tabular-nums">{data.avgCodeLen.toFixed(2)}</td>
-                            <td className={cn(
-                              'px-3 py-2 text-center tabular-nums font-semibold',
-                              data.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
-                              data.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
-                              'text-red-600 dark:text-red-400'
-                            )}>
-                              {data.dupRate.toFixed(2)}%
-                            </td>
-                            <td className={cn(
-                              'px-3 py-2 text-center tabular-nums font-semibold',
-                              data.selectionRate < 200 ? 'text-emerald-600 dark:text-emerald-400' :
-                              data.selectionRate < 500 ? 'text-amber-600 dark:text-amber-400' :
-                              'text-red-600 dark:text-red-400'
-                            )}>
-                              {data.selectionRate.toFixed(1)}‱
-                            </td>
+                      );
+
+                      /** 渲染加权比重行（百分比） */
+                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>) => {
+                        const n = sum.charCount;
+                        const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
+                        // 手感指标用二元组数做分母（码长均值近似）
+                        const avgLen = n > 0 ? (sum.oneCode + sum.twoCode * 2 + sum.threeCode * 3 + sum.fourCode * 4) / n : 1;
+                        const pairCount = n * Math.max(1, avgLen - 1);
+                        const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
+                        return (
+                          <tr key={label} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
+                            <td className="px-2 py-1.5 font-medium sticky left-0 bg-blue-50/50 dark:bg-blue-950/10 z-10">{label}</td>
+                            <td colSpan={2} className="px-2 py-1.5 text-center tabular-nums">{pct(sum.oneCode)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.twoCode)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.threeCode)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fourCode)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.shortDupCount)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fullDupCount)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.theoreticalTwoShort)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.handAltCount)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerBigCross)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerSmallCross)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyTriple)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyQuad)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerTriple)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerQuad)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyCount)}</td>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                        );
+                      };
 
-                  {/* 词组覆盖率说明 */}
-                  <div className="grid gap-3 sm:grid-cols-3">
-                    {[
-                      { label: '二字词覆盖', data: result.phraseEval.twoChar, desc: '高频二字词组编码能力' },
-                      { label: '三字词覆盖', data: result.phraseEval.threeChar, desc: '高频三字词组编码能力' },
-                      { label: '四字词覆盖', data: result.phraseEval.fourChar, desc: '成语和四字词编码能力' },
-                    ].map(({ label, data, desc }) => (
-                      <div key={label} className="p-3 rounded-lg border border-border bg-muted/20">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-sm font-medium text-foreground">{label}</span>
-                          <span className={cn(
-                            'text-lg font-bold tabular-nums',
-                            data.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
-                            data.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
-                            'text-red-600 dark:text-red-400'
-                          )}>
-                            {data.coverageRate.toFixed(1)}%
-                          </span>
-                        </div>
-                        <div className="w-full h-2 rounded-full bg-secondary overflow-hidden mb-1">
-                          <div
-                            className={cn(
-                              'h-full rounded-full transition-all',
-                              data.coverageRate >= 90 ? 'bg-emerald-500' :
-                              data.coverageRate >= 70 ? 'bg-amber-500' :
-                              'bg-red-500'
-                            )}
-                            style={{ width: `${Math.min(data.coverageRate, 100)}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-xs text-muted-foreground">
-                          <span>{desc}</span>
-                          <span>{data.coveredPhrases}/{data.totalPhrases}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </TabsContent>
-              </Tabs>
+                      return (
+                        <>
+                          {highTiers.map(renderTierRow)}
+                          {renderSumRow('小计(1~1500)', highSum)}
+                          {renderPctRow('加权比重', highSum)}
+                          {lowTiers.map(renderTierRow)}
+                          {renderSumRow('总计', allSum)}
+                          {renderPctRow('加权比重', allSum)}
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
             </CardContent>
           </Card>
 
+          {/* ===== 键盘热力图 ===== */}
+          <Card className={cn(expandedSection === 'heatmap' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
+            <CardContent className="p-4 sm:p-6">
+              {expandedSection === 'heatmap' && (
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                  <span className="font-bold text-foreground text-base">键位热力图 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
+                  <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
+                </div>
+              )}
+              <h3 className="text-base font-bold text-foreground mb-4 flex items-center gap-2">
+                <Keyboard className="h-5 w-5 text-primary" />键位热力图（单位：%）
+                {expandedSection !== 'heatmap' && (
+                  <button onClick={() => setExpandedSection('heatmap')} className="ml-1 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-primary" title="点击放大查看（Esc 收起）">
+                    <Maximize2 className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+              </h3>
+              <div className={cn("flex flex-col items-center", expandedSection === 'heatmap' ? 'gap-3' : 'gap-2')}>
+                {KEYBOARD_ROWS.map((row, ri) => (
+                  <div key={ri} className={cn("flex", expandedSection === 'heatmap' ? 'gap-2.5' : 'gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'heatmap' ? '40px' : '24px') : ri === 2 ? (expandedSection === 'heatmap' ? '80px' : '48px') : '0' }}>
+                    {row.map((key) => {
+                      const rate = result.keyUsageRate[key] || 0;
+                      const freq = result.keyFreq[key] || 0;
+                      // 根据使用率设置背景色强度
+                      const bgIntensity = Math.min(rate / 7, 1); // 7% 为最大参考值
+                      const bgColor = freq === 0
+                        ? 'bg-gray-50 dark:bg-gray-800 text-gray-400'
+                        : bgIntensity < 0.2 ? 'bg-orange-50 dark:bg-orange-950/20 text-orange-800 dark:text-orange-300'
+                        : bgIntensity < 0.4 ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200'
+                        : bgIntensity < 0.6 ? 'bg-orange-200 dark:bg-orange-800/50 text-orange-900 dark:text-orange-100'
+                        : bgIntensity < 0.8 ? 'bg-orange-300 dark:bg-orange-700/60 text-orange-900 dark:text-white'
+                        : 'bg-orange-400 dark:bg-orange-600 text-white';
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-all shadow-sm',
+                            expandedSection === 'heatmap' ? 'h-20 w-20' : 'h-14 w-14',
+                            bgColor,
+                          )}
+                          title={`${key.toUpperCase()}: ${freq.toLocaleString()}次 (${rate.toFixed(1)}%)`}
+                        >
+                          <span className={cn('font-bold leading-none', expandedSection === 'heatmap' ? 'text-xl' : 'text-base')}>{key.toUpperCase()}</span>
+                          {freq > 0 && (
+                            <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'heatmap' ? 'text-sm' : 'text-[10px]')}>
+                              {rate.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+              {/* 左右手比例 */}
+              <div className="mt-5 flex items-center justify-center gap-6">
+                <div className="text-center">
+                  <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{result.leftHandRate.toFixed(2)}%</div>
+                  <div className="text-sm text-muted-foreground">左手</div>
+                </div>
+                <span className="text-2xl font-bold text-muted-foreground">:</span>
+                <div className="text-center">
+                  <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">{result.rightHandRate.toFixed(2)}%</div>
+                  <div className="text-sm text-muted-foreground">右手</div>
+                </div>
+              </div>
+              {/* 手指负担分布 */}
+              <div className="mt-5">
+                <h4 className="text-sm font-semibold text-muted-foreground mb-3 text-center">各手指负担分布</h4>
+                <div className="h-56">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={result.fingerChartData} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                      <XAxis type="number" tick={{ fontSize: 11 }} />
+                      <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={72} />
+                      <Tooltip formatter={(value: number) => [`${value.toLocaleString()}次`, '按键次数']} contentStyle={{ fontSize: 12 }} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                        {result.fingerChartData.map((_, i) => (
+                          <Cell key={i} fill={['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#f43f5e','#f97316','#eab308','#22c55e','#14b8a6'][i % 10]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* ===== 词组测评 ===== */}
+          <Card className={cn(expandedSection === 'phrase' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
+            <CardContent className="p-4 sm:p-6">
+              {expandedSection === 'phrase' && (
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                  <span className="font-bold text-foreground text-base">词组测评 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
+                  <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
+                </div>
+              )}
+              <h3 className="text-base font-bold text-foreground mb-3 flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-primary" />词组测评
+                <span className="text-xs font-normal text-muted-foreground ml-2">共 {result.topPhraseCount.toLocaleString()} 词（高频前5万）</span>
+                {expandedSection !== 'phrase' && (
+                  <button onClick={() => setExpandedSection('phrase')} className="ml-1 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-primary" title="点击放大查看（Esc 收起）">
+                    <Maximize2 className="h-4 w-4 text-muted-foreground" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setCountSpace(!countSpace)}
+                  className={cn(
+                    'ml-auto text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    countSpace
+                      ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                      : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
+                  )}
+                >
+                  {countSpace ? '计算空格 ✓' : '不计算空格'}
+                </button>
+              </h3>
+
+              {/* 词组分频段统计表 */}
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className={cn('w-full leading-normal', expandedSection === 'phrase' ? 'text-sm min-w-[1200px]' : 'text-xs min-w-[900px]')}>
+                  <thead>
+                    <tr className="bg-emerald-50 dark:bg-emerald-950/20 border-b border-border">
+                      <th className="px-3 py-2.5 text-left font-bold text-foreground">统计范围</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">选重</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">加权词均当量</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">左右互击</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同指大跨排</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同指小跨排</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同键三连</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同键四连</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同指三连</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">同指四连</th>
+                      <th className="px-3 py-2.5 text-center font-bold text-foreground">小指干扰</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(() => {
+                      const tiers = result.phraseFreqTierStats;
+                      const highTiers = tiers.slice(0, 3);
+                      const lowTiers = tiers.slice(3);
+
+                      /** 汇总一组 tier 的所有指标 */
+                      const sumTier = (arr: typeof tiers) => {
+                        const totalPhrases = arr.reduce((s, t) => s + t.totalPhrases, 0);
+                        return {
+                          totalPhrases,
+                          selectionCount: arr.reduce((s, t) => s + t.selectionCount, 0),
+                          weightedCodeEquiv: totalPhrases > 0 ? arr.reduce((s, t) => s + t.weightedCodeEquiv * t.totalPhrases, 0) / totalPhrases : 0,
+                          handAltCount: arr.reduce((s, t) => s + t.handAltCount, 0),
+                          sameFingerBigCross: arr.reduce((s, t) => s + t.sameFingerBigCross, 0),
+                          sameFingerSmallCross: arr.reduce((s, t) => s + t.sameFingerSmallCross, 0),
+                          sameKeyTriple: arr.reduce((s, t) => s + t.sameKeyTriple, 0),
+                          sameKeyQuad: arr.reduce((s, t) => s + t.sameKeyQuad, 0),
+                          sameFingerTriple: arr.reduce((s, t) => s + t.sameFingerTriple, 0),
+                          sameFingerQuad: arr.reduce((s, t) => s + t.sameFingerQuad, 0),
+                          pinkyCount: arr.reduce((s, t) => s + t.pinkyCount, 0),
+                        };
+                      };
+
+                      const highSum = sumTier(highTiers);
+                      const allSum = sumTier(tiers);
+
+                      /** 数值单元格 */
+                      const nc = (v: number) => (
+                        <td className="px-3 py-1.5 text-center tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
+                      );
+
+                      /** 渲染单个 tier 行 */
+                      const renderTierRow = (s: typeof tiers[0]) => (
+                        <tr key={s.tier} className="border-b border-border hover:bg-muted/20">
+                          <td className="px-3 py-1.5 font-medium text-foreground whitespace-nowrap">{s.tier}</td>
+                          {nc(s.selectionCount)} {nc(s.weightedCodeEquiv)}
+                          {nc(s.handAltCount)} {nc(s.sameFingerBigCross)} {nc(s.sameFingerSmallCross)}
+                          {nc(s.sameKeyTriple)} {nc(s.sameKeyQuad)} {nc(s.sameFingerTriple)} {nc(s.sameFingerQuad)}
+                          {nc(s.pinkyCount)}
+                        </tr>
+                      );
+
+                      /** 渲染小计/总计行 */
+                      const renderSumRow = (label: string, sum: ReturnType<typeof sumTier>) => (
+                        <tr key={label} className="bg-emerald-50/50 dark:bg-emerald-950/10 border-b border-border font-semibold">
+                          <td className="px-3 py-1.5 text-foreground">{label}</td>
+                          {nc(sum.selectionCount)} {nc(sum.weightedCodeEquiv)}
+                          {nc(sum.handAltCount)} {nc(sum.sameFingerBigCross)} {nc(sum.sameFingerSmallCross)}
+                          {nc(sum.sameKeyTriple)} {nc(sum.sameKeyQuad)} {nc(sum.sameFingerTriple)} {nc(sum.sameFingerQuad)}
+                          {nc(sum.pinkyCount)}
+                        </tr>
+                      );
+
+                      /** 渲染加权比重行（百分比） */
+                      const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>) => {
+                        const n = sum.totalPhrases;
+                        const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
+                        // 手感指标用二元组数做分母（词组平均码长近似）
+                        const avgLen = result.phraseEval.overall.avgCodeLen;
+                        const pairCount = n * Math.max(1, avgLen - 1);
+                        const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
+                        return (
+                          <tr key={label} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
+                            <td className="px-3 py-1.5 font-medium">{label}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pct(sum.selectionCount)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">/</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.handAltCount)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerBigCross)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerSmallCross)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyTriple)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyQuad)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerTriple)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerQuad)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyCount)}</td>
+                          </tr>
+                        );
+                      };
+
+                      return (
+                        <>
+                          {highTiers.map(renderTierRow)}
+                          {renderSumRow('小计', highSum)}
+                          {renderPctRow('加权比重', highSum)}
+                          {lowTiers.map(renderTierRow)}
+                          {renderSumRow('总计', allSum)}
+                          {renderPctRow('加权比重', allSum)}
+                        </>
+                      );
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 词组测评汇总统计 */}
+              <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-lg border border-border p-3 text-center">
+                  <div className={cn('text-2xl font-bold tabular-nums',
+                    result.phraseEval.overall.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
+                    result.phraseEval.overall.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
+                    'text-red-600 dark:text-red-400'
+                  )}>{result.phraseEval.overall.coverageRate.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">覆盖率</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 text-center">
+                  <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                    {countSpace ? (result.phraseEval.overall.avgCodeLen + 1).toFixed(2) : result.phraseEval.overall.avgCodeLen.toFixed(2)}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">平均码长</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 text-center">
+                  <div className={cn('text-2xl font-bold tabular-nums',
+                    result.phraseEval.overall.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
+                    result.phraseEval.overall.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
+                    'text-red-600 dark:text-red-400'
+                  )}>{result.phraseEval.overall.dupRate.toFixed(2)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">重码率</div>
+                </div>
+                <div className="rounded-lg border border-border p-3 text-center">
+                  <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
+                    {result.phraseEval.overall.selectionRate.toFixed(1)}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-1">选重率（‱）</div>
+                </div>
+              </div>
+
+              {/* 词组键盘热力图 */}
+              <div className="mt-5">
+                <h4 className="text-sm font-semibold text-foreground mb-3">词组键位热力图（%）</h4>
+                <div className={cn("flex flex-col items-center", expandedSection === 'phrase' ? 'gap-3' : 'gap-2')}>
+                  {(() => {
+                    const totalPhraseKeys = Object.values(result.phraseEval.overall.keyFreq).reduce((s, f) => s + f, 0);
+                    return KEYBOARD_ROWS.map((row, ri) => (
+                    <div key={ri} className={cn("flex", expandedSection === 'phrase' ? 'gap-2.5' : 'gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'phrase' ? '40px' : '24px') : ri === 2 ? (expandedSection === 'phrase' ? '80px' : '48px') : '0' }}>
+                      {row.map((key) => {
+                        const freq = result.phraseEval.overall.keyFreq[key] || 0;
+                        const rate = totalPhraseKeys > 0 ? (freq / totalPhraseKeys * 100) : 0;
+                        const bgIntensity = Math.min(rate / 7, 1);
+                        const bgColor = freq === 0
+                          ? 'bg-gray-50 dark:bg-gray-800 text-gray-400'
+                          : bgIntensity < 0.2 ? 'bg-orange-50 dark:bg-orange-950/20 text-orange-800 dark:text-orange-300'
+                          : bgIntensity < 0.4 ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-200'
+                          : bgIntensity < 0.6 ? 'bg-orange-200 dark:bg-orange-800/50 text-orange-900 dark:text-orange-100'
+                          : bgIntensity < 0.8 ? 'bg-orange-300 dark:bg-orange-700/60 text-orange-900 dark:text-white'
+                          : 'bg-orange-400 dark:bg-orange-600 text-white';
+                        return (
+                          <div
+                            key={key}
+                            className={cn(
+                              'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-all shadow-sm',
+                              expandedSection === 'phrase' ? 'h-20 w-20' : 'h-14 w-14',
+                              bgColor,
+                            )}
+                            title={`${key.toUpperCase()}: ${freq.toLocaleString()}次 (${rate.toFixed(1)}%)`}
+                          >
+                            <span className={cn('font-bold leading-none', expandedSection === 'phrase' ? 'text-xl' : 'text-base')}>{key.toUpperCase()}</span>
+                            {freq > 0 && (
+                              <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'phrase' ? 'text-sm' : 'text-[10px]')}>
+                                {rate.toFixed(1)}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))})()}
+                </div>
+                {/* 词组输入左右手比例 */}
+                <div className="mt-4 flex items-center justify-center gap-6">
+                  {(() => {
+                    const kf = result.phraseEval.overall.keyFreq;
+                    const total = Object.values(kf).reduce((s, f) => s + f, 0);
+                    let leftSum = 0, rightSum = 0;
+                    for (const [k, v] of Object.entries(kf)) {
+                      if (LEFT_HAND_KEYS.has(k)) leftSum += v;
+                      else if (RIGHT_HAND_KEYS.has(k)) rightSum += v;
+                    }
+                    const lRate = total > 0 ? (leftSum / total * 100) : 0;
+                    const rRate = total > 0 ? (rightSum / total * 100) : 0;
+                    return (
+                      <>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{lRate.toFixed(2)}%</div>
+                          <div className="text-sm text-muted-foreground">左手</div>
+                        </div>
+                        <span className="text-2xl font-bold text-muted-foreground">:</span>
+                        <div className="text-center">
+                          <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">{rRate.toFixed(2)}%</div>
+                          <div className="text-sm text-muted-foreground">右手</div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground mt-3">
+                数据来源：jieba 中文分词词典（fxsjy/jieba），基于 Liu Chinese Corpus 约 3.5 亿词次统计
+              </p>
+            </CardContent>
+          </Card>
+
+
           {/* ===== D. 底部汇总表 ===== */}
-          <Card>
+          <Card className={cn(expandedSection === 'summary' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardHeader className="pb-2">
+              {expandedSection === 'summary' && (
+                <div className="-mx-6 -mt-6 mb-2 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                  <span className="font-bold text-foreground text-base">完整统计指标汇总 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
+                  <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
+                </div>
+              )}
               <CardTitle className="text-sm font-semibold flex items-center gap-2">
                 <FileText className="h-4 w-4" />完整统计指标汇总
+                {expandedSection !== 'summary' && (
+                  <button onClick={() => setExpandedSection('summary')} className="ml-2 p-1.5 rounded-md hover:bg-muted hover:text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-primary" title="点击放大查看（Esc 收起）">
+                    <Maximize2 className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -1587,78 +2241,30 @@ function ScoreCard({ icon, title, value, unit, reference, progress, score, color
   colorScheme: string;
   highlight?: boolean;
 }) {
-  const grade = getGrade(score);
-  const colorMap: Record<string, { border: string; bg: string; iconBg: string; bar: string; barBg: string }> = {
-    blue:    { border: 'border-blue-200 dark:border-blue-800', bg: 'bg-blue-50/50 dark:bg-blue-950/20', iconBg: 'bg-blue-500/10 text-blue-600 dark:text-blue-400', bar: 'bg-blue-500', barBg: 'bg-blue-100 dark:bg-blue-900/40' },
-    orange:  { border: 'border-orange-200 dark:border-orange-800', bg: 'bg-orange-50/50 dark:bg-orange-950/20', iconBg: 'bg-orange-500/10 text-orange-600 dark:text-orange-400', bar: 'bg-orange-500', barBg: 'bg-orange-100 dark:bg-orange-900/40' },
-    rose:    { border: 'border-rose-200 dark:border-rose-800', bg: 'bg-rose-50/50 dark:bg-rose-950/20', iconBg: 'bg-rose-500/10 text-rose-600 dark:text-rose-400', bar: 'bg-rose-500', barBg: 'bg-rose-100 dark:bg-rose-900/40' },
-    amber:   { border: 'border-amber-200 dark:border-amber-800', bg: 'bg-amber-50/50 dark:bg-amber-950/20', iconBg: 'bg-amber-500/10 text-amber-600 dark:text-amber-400', bar: 'bg-amber-500', barBg: 'bg-amber-100 dark:bg-amber-900/40' },
-    violet:  { border: 'border-violet-200 dark:border-violet-800', bg: 'bg-violet-50/50 dark:bg-violet-950/20', iconBg: 'bg-violet-500/10 text-violet-600 dark:text-violet-400', bar: 'bg-violet-500', barBg: 'bg-violet-100 dark:bg-violet-900/40' },
-    emerald: { border: 'border-emerald-200 dark:border-emerald-800', bg: 'bg-emerald-50/50 dark:bg-emerald-950/20', iconBg: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400', bar: 'bg-emerald-500', barBg: 'bg-emerald-100 dark:bg-emerald-900/40' },
-    cyan:    { border: 'border-cyan-200 dark:border-cyan-800', bg: 'bg-cyan-50/50 dark:bg-cyan-950/20', iconBg: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400', bar: 'bg-cyan-500', barBg: 'bg-cyan-100 dark:bg-cyan-900/40' },
-    indigo:  { border: 'border-indigo-200 dark:border-indigo-800', bg: 'bg-indigo-50/50 dark:bg-indigo-950/20', iconBg: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400', bar: 'bg-indigo-500', barBg: 'bg-indigo-100 dark:bg-indigo-900/40' },
-  };
-  const c = colorMap[colorScheme] || colorMap.blue;
+  // 统一使用更克制的色彩系统：仅区分好坏状态，不使用 8 种颜色
+  const barColor = highlight
+    ? 'bg-emerald-500'
+    : score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-red-400';
 
   return (
     <div className={cn(
-      'rounded-xl border p-4 transition-all hover:shadow-md',
-      c.border, c.bg,
-      highlight && 'ring-2 ring-emerald-500/30'
+      'rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:shadow-md hover:border-primary/20',
+      highlight && 'ring-2 ring-emerald-500/30 border-emerald-200 dark:border-emerald-800'
     )}>
-      <div className="flex items-center gap-2 mb-2">
-        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', c.iconBg)}>{icon}</div>
-        <span className="text-xs font-medium text-muted-foreground truncate">{title}</span>
+      <div className="flex items-center gap-2 mb-3">
+        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center bg-muted', highlight && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400')}>{icon}</div>
+        <span className="text-xs font-medium text-muted-foreground leading-tight">{title}</span>
       </div>
-      <div className="flex items-baseline gap-1 mb-2">
-        <span className={cn('text-2xl font-bold tabular-nums', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
+      <div className="flex items-baseline gap-1 mb-3">
+        <span className={cn('text-2xl font-bold tabular-nums tracking-tight', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
         {unit && <span className="text-sm text-muted-foreground">{unit}</span>}
       </div>
-      <div className={cn('w-full h-2 rounded-full overflow-hidden mb-2', c.barBg)}>
-        <div className={cn('h-full rounded-full transition-all duration-700', c.bar)} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
+      <div className="w-full h-1.5 rounded-full overflow-hidden mb-2 bg-muted">
+        <div className={cn('h-full rounded-full transition-all duration-500', barColor)} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
       </div>
       <div className="flex items-center justify-between">
         <span className="text-[10px] text-muted-foreground">{reference}</span>
         {getGradeBadge(score)}
-      </div>
-    </div>
-  );
-}
-
-function CoverageBar({ label, total, covered, percentage, missing }: {
-  label: string; total: number; covered: number; percentage: number; missing: string[];
-}) {
-  const color = percentage >= 90 ? 'emerald' : percentage >= 70 ? 'amber' : 'red';
-  return (
-    <div className={cn(
-      'p-4 rounded-xl border-2',
-      color === 'emerald' ? 'bg-emerald-50/50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-700' :
-      color === 'amber' ? 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-700' :
-      'bg-red-50/50 dark:bg-red-950/20 border-red-200 dark:border-red-700'
-    )}>
-      <div className="flex items-center justify-between mb-2">
-        <div>
-          <h4 className="font-bold text-foreground">{label}字符集</h4>
-          <p className="text-xs text-muted-foreground">{total.toLocaleString()}字</p>
-        </div>
-        <div className={cn(
-          'px-3 py-1 rounded-xl font-black text-2xl tabular-nums text-white',
-          color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-red-500'
-        )}>
-          {percentage.toFixed(1)}%
-        </div>
-      </div>
-      <div className="w-full h-2.5 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden mb-2">
-        <div
-          className={cn('h-full rounded-full transition-all', color === 'emerald' ? 'bg-emerald-500' : color === 'amber' ? 'bg-amber-500' : 'bg-red-500')}
-          style={{ width: `${Math.min(percentage, 100)}%` }}
-        />
-      </div>
-      <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{covered.toLocaleString()} / {total.toLocaleString()}</span>
-        {missing.length > 0 && percentage < 100 && (
-          <span className="text-red-500 dark:text-red-400">缺{missing.length}字</span>
-        )}
       </div>
     </div>
   );

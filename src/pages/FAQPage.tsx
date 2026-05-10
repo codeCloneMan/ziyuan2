@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
   Accordion,
@@ -12,7 +12,7 @@ import { faqCategories } from '@/data/faqData';
 
 const externalResources = [
   { label: 'QQ群：261418302', href: 'https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0', icon: MessageCircle },
-  { label: '网盘下载', href: 'http://ziyuan.ysepan.com/', icon: ExternalLink },
+  { label: '网盘下载', href: 'https://ziyuan.ysepan.com/', icon: ExternalLink },
   { label: '宇浩测码', href: 'https://ceping.shurufa.app/', icon: ExternalLink },
 ];
 
@@ -20,16 +20,18 @@ export default function FAQPage() {
   const [searchQuery, setSearchQuery] = useState('');
 
 
-  const filteredFaqs = searchQuery.trim()
-    ? faqCategories.map((cat) => ({
-        ...cat,
-        faqs: cat.faqs.filter(
-          (faq) =>
-            faq.q.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            faq.a.toLowerCase().includes(searchQuery.toLowerCase())
-        ),
-      })).filter((cat) => cat.faqs.length > 0)
-    : faqCategories;
+  const filteredFaqs = useMemo(() => {
+    if (!searchQuery.trim()) return faqCategories;
+    const query = searchQuery.toLowerCase();
+    return faqCategories.map((cat) => ({
+      ...cat,
+      faqs: cat.faqs.filter(
+        (faq) =>
+          faq.q.toLowerCase().includes(query) ||
+          faq.a.toLowerCase().includes(query)
+      ),
+    })).filter((cat) => cat.faqs.length > 0);
+  }, [searchQuery]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,6 +62,7 @@ export default function FAQPage() {
             <input
               type="text"
               placeholder="搜索问题..."
+              aria-label="搜索常见问题"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full"

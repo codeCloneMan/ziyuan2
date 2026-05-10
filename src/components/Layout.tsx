@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, Outlet, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -81,7 +81,7 @@ export default function Layout() {
 
   const q = searchQuery.trim().toLowerCase();
 
-  const searchResults: SearchResult[] = q
+  const searchResults: SearchResult[] = useMemo(() => q
     ? [
         ...rootMappings
           .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
@@ -96,7 +96,7 @@ export default function Layout() {
           .slice(0, 4)
           .map(faq => ({ type: 'faq' as const, q: faq.q, a: faq.a, category: faq.category })),
       ]
-    : [];
+    : [], [q]);
 
   useEffect(() => {
     setMobileMenuOpen(false);
@@ -493,7 +493,7 @@ export default function Layout() {
                 <span className="text-lg font-bold">字源形码</span>
               </Link>
               <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
-                基于「字源1.31版字根」的专业字根记忆训练平台
+                基于「字源1.32版字根」的专业字根记忆训练平台
               </p>
             </div>
 

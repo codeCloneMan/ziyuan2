@@ -26,19 +26,18 @@ export function SidebarLayout({
   });
 
   return (
-    <div className={cn('flex min-h-[calc(100vh-4rem)]', className)}>
-      {/* 左侧边栏 */}
-      <aside 
-        className="flex-shrink-0 border-r border-border bg-card/30 overflow-y-auto sticky top-16 h-[calc(100vh-4rem)]"
-        style={{ width: sidebarWidth }}
+    <div className={cn('flex flex-col md:flex-row min-h-[calc(100vh-4rem)]', className)}>
+      {/* 左侧边栏 - 移动端堆叠在顶部，桌面端左侧固定 */}
+      <aside
+        className="w-full md:w-auto border-b md:border-b-0 md:border-r border-border bg-card/30 overflow-y-auto md:sticky md:top-16 md:h-[calc(100vh-4rem)] md:flex-shrink-0"
       >
-        <div className="p-4">
+        <div className="p-4" style={{ width: sidebarWidth, maxWidth: '100%' }}>
           {sidebar}
         </div>
       </aside>
 
       {/* 右侧主内容区 */}
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto min-w-0">
         <div className="p-4 lg:p-6 max-w-none">
           {mainContent}
         </div>

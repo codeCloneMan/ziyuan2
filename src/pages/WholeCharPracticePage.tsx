@@ -408,13 +408,25 @@ export default function WholeCharPracticePage() {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying || feedbackType) return;
       if (e.key === 'Escape') { stopPractice(); return; }
-      if (e.key === ' ' && showHint) {
+      if (e.key === ' ') {
         e.preventDefault();
-        // 显示拆分提示
-        setShowSplitViz(true);
-        setSplitAnimationStep(splitParts.length);
-        // 记录为答错
-        handleKeyPress(' ');
+        // 有输入时 Space 显示拆分提示并标记答错
+        if (showHint && inputCode.length > 0) {
+          setShowSplitViz(true);
+          setSplitAnimationStep(splitParts.length);
+          handleKeyPress(' ');
+        } else {
+          setShowHint(prev => !prev);
+        }
+        return;
+      }
+      if (e.key === 'Backspace') {
+        e.preventDefault();
+        if (inputCode.length > 0) {
+          const newCode = inputCode.slice(0, -1);
+          setInputCode(newCode);
+          updateData(prev => ({ ...prev, inputCode: newCode }));
+        }
         return;
       }
       const key = e.key.toLowerCase();
@@ -425,7 +437,7 @@ export default function WholeCharPracticePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, feedbackType, handleKeyPress, stopPractice, splitParts.length, showHint]);
+  }, [isPlaying, feedbackType, handleKeyPress, stopPractice, splitParts.length, showHint, inputCode, updateData]);
 
   useEffect(() => { return () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); }; }, []);
   useEffect(() => { if (isPlaying && inputRef.current) inputRef.current.focus(); }, [isPlaying, currentItem]);
@@ -682,8 +694,9 @@ export default function WholeCharPracticePage() {
                 </Badge>
               )}
               <button onClick={stopPractice}
-                className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs text-muted-foreground hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors">
-                <RotateCcw className="h-3.5 w-3.5" /><span className="hidden sm:inline">退出</span>
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors">
+                <RotateCcw className="h-3.5 w-3.5" /><span>退出</span>
+                <kbd className="hidden sm:inline ml-0.5 px-1 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/50 rounded font-mono">Esc</kbd>
               </button>
               <button onClick={() => setShowHint(!showHint)}
                 className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-300',
@@ -921,18 +934,32 @@ export default function WholeCharPracticePage() {
               </div>
             </div>
 
-            {/* 练习提示 */}
+            {/* 快捷键提示 */}
             <div className="card-base p-3">
               <h4 className="font-semibold text-xs text-foreground mb-2 flex items-center gap-1.5">
-                <Lightbulb className="h-3.5 w-3.5 text-amber-500" />练习提示
+                <Lightbulb className="h-3.5 w-3.5 text-amber-500" />快捷键
               </h4>
-              <ul className="space-y-1.5 text-[11px] text-muted-foreground">
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>逐字母输入完整编码</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>点击「提示开关」控制是否显示提示</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>答错时显示正确答案</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>编码中大码用蓝色，小码用绿色</li>
-                <li className="flex items-start gap-1.5"><span className="text-primary">•</span>按ESC退出练习</li>
-              </ul>
+              <div className="space-y-1.5 text-[11px]">
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">A-Z</kbd>
+                  <span className="text-muted-foreground">逐字母输入完整编码（自动校验）</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">Esc</kbd>
+                  <span className="text-muted-foreground">退出当前练习</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">Backspace</kbd>
+                  <span className="text-muted-foreground">删除最后一个输入字母</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <kbd className="px-1.5 py-0.5 rounded bg-muted border text-[10px] font-mono min-w-[2rem] text-center">Space</kbd>
+                  <span className="text-muted-foreground">查看拆分提示（标记为答错）</span>
+                </div>
+                <div className="flex items-start gap-2 mt-1 pt-1 border-t border-border/40">
+                  <span className="text-muted-foreground">大码 <span className="text-blue-600 dark:text-blue-400 font-semibold">蓝</span>，小码 <span className="text-emerald-600 dark:text-emerald-400 font-semibold">绿</span></span>
+                </div>
+              </div>
             </div>
 
             {/* 统计面板按钮 */}

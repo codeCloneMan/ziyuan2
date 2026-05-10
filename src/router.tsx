@@ -9,6 +9,7 @@ import FAQPage from '@/pages/FAQPage';
 import EvaluatePage from '@/pages/EvaluatePage';
 import SplitSearchPage from '@/pages/SplitSearchPage';
 import Layout from '@/components/Layout';
+import NotFoundPage from '@/pages/NotFoundPage';
 
 const router = createHashRouter([
   {
@@ -24,6 +25,7 @@ const router = createHashRouter([
       { path: 'faq', element: <FAQPage /> },
       { path: 'evaluate', element: <EvaluatePage /> },
       { path: 'split-search', element: <SplitSearchPage /> },
+      { path: '*', element: <NotFoundPage /> },
     ],
   },
 ]);
