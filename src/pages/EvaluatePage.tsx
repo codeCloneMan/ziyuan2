@@ -376,10 +376,39 @@ const ALL_PHRASES_MERGED: Array<{ phrase: string; freq: number }> = (() => {
 // ========================================
 
 function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResult?: EvaluateResult | null): EvaluateResult {
-  // ★ 字集过滤：在计算前先筛选符合目标字符集的条目
-  const filteredEntries = filterEntriesByCharset(entries, charset);
+  // ★ 固定字集：始终以前6000高频字为评估基准
+  // charset 参数只控制哪些字参与评估（如 gb2312 只评估6000字中的GB2312子集），
+  // 不影响码表条目的查找范围（编码始终从完整码表中查找）
 
-  // 构建编码→字映射（使用过滤后的条目）
+  // 1. 从完整码表构建 字→所有编码 映射（供词组编码和选重检测使用）
+  const allCharToCodes = new Map<string, string[]>();
+  for (const entry of entries) {
+    const existing = allCharToCodes.get(entry.char);
+    if (existing) {
+      if (!existing.includes(entry.code)) existing.push(entry.code);
+    } else {
+      allCharToCodes.set(entry.char, [entry.code]);
+    }
+  }
+
+  // 2. 确定目标字集：从字频表取前N高频字，按字集过滤
+  const targetChars = Object.keys(charFrequency);
+  const charsetSet = getCharsetSet(charset);
+  const evalChars = charsetSet
+    ? targetChars.filter(ch => charsetSet.has(ch))
+    : targetChars;
+
+  // 3. 为每个目标字查找最短编码，构建评估用的 filteredEntries
+  const filteredEntries: CodeEntry[] = [];
+  for (const ch of evalChars) {
+    const codes = allCharToCodes.get(ch);
+    if (!codes || codes.length === 0) continue;
+    // 取最短编码（简码优先）
+    const shortest = codes.reduce((a, b) => a.length <= b.length ? a : b);
+    filteredEntries.push({ char: ch, code: shortest });
+  }
+
+  // 4. 构建编码→字映射（用于重码检测）
   const codeToChars = new Map<string, string[]>();
   for (const entry of filteredEntries) {
     const existing = codeToChars.get(entry.code);
@@ -431,11 +460,20 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     return Math.sqrt(safeDivide(lengthValues.reduce((s, v) => s + Math.pow(v - mean, 2), 0), lengthValues.length));
   })();
 
-  // ★ 字频加权平均码长
+  // ★ 字频加权平均码长（按字去重：同一字多编码只计入一次，取最短码长）
   let weightedLenSum = 0, freqSum = 0;
+  const seenCharsForWeightedLen = new Map<string, { freq: number; minLen: number }>();
   for (const entry of filteredEntries) {
     const freq = getCharFrequencyWeight(entry.char);
-    weightedLenSum += freq * entry.code.length;
+    const existing = seenCharsForWeightedLen.get(entry.char);
+    if (!existing) {
+      seenCharsForWeightedLen.set(entry.char, { freq, minLen: entry.code.length });
+    } else if (entry.code.length < existing.minLen) {
+      existing.minLen = entry.code.length; // 取最短码长（简码优先）
+    }
+  }
+  for (const { freq, minLen } of seenCharsForWeightedLen.values()) {
+    weightedLenSum += freq * minLen;
     freqSum += freq;
   }
   const weightedAvgCodeLen = safeDivide(weightedLenSum, freqSum, avgCodeLength);
@@ -472,18 +510,29 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
   }
   const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, filteredEntries.length) * 100);
 
-  // ★ 动态选重率（字频加权）
-  // 分子：重码组内所有字的字频之和（含首选字）
-  // 分母：全部字的字频之和
+  // ★ 动态选重率（字频加权，按字去重）
+  // 分子：最短码处于重码组的字的字频之和
+  // 分母：全部字的字频之和（去重）
+  // 注意：用户实际只使用最短码（简码），所以只统计最短码的重码情况
   const dynamicSelectionRate = (() => {
-    let dupFreqSum = 0;
-    for (const [, chars] of codeToChars) {
-      if (chars.length > 1) {
-        // 累加重码组内每个字的字频
-        for (const ch of chars) {
-          dupFreqSum += getCharFrequencyWeight(ch);
-        }
+    // 先找出每个字的最短码
+    const charShortestCode = new Map<string, string>();
+    for (const entry of filteredEntries) {
+      const existing = charShortestCode.get(entry.char);
+      if (!existing || entry.code.length < existing.length) {
+        charShortestCode.set(entry.char, entry.code);
       }
+    }
+    // 检查每个字的最短码是否处于重码组
+    let dupFreqSum = 0;
+    const countedChars = new Set<string>();
+    for (const [char, shortestCode] of charShortestCode) {
+      if (countedChars.has(char)) continue;
+      const chars = codeToChars.get(shortestCode);
+      if (chars && chars.length > 1) {
+        dupFreqSum += getCharFrequencyWeight(char);
+      }
+      countedChars.add(char);
     }
     return safeDivide(dupFreqSum, freqSum);
   })();
@@ -619,11 +668,14 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     0.15 * balanceScore
   ));
 
-  // 字频分段统计（按字频权重降序取前N个）
+  // 字频分段统计（按字频权重降序取前N个，同字条目保持相邻）
   const sortedByFreq = [...filteredEntries].sort((a, b) => {
     const fwA = getCharFrequencyWeight(a.char);
     const fwB = getCharFrequencyWeight(b.char);
-    return fwB - fwA;
+    if (fwB !== fwA) return fwB - fwA;
+    // 字面稳定器：同字条目必须相邻，避免跨 tier 边界
+    if (a.char !== b.char) return a.char < b.char ? -1 : 1;
+    return a.code.length - b.code.length; // 短码在前
   });
   const freqTierStats = FREQ_TIERS.map(tier => {
     const tierEntries = sortedByFreq.slice(tier.start, Math.min(tier.end, sortedByFreq.length));
@@ -673,44 +725,54 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     // 加权键均当量 = speed equivalent per key
     let tierWeightedKeyEquiv = 0;
 
+    // ★ 字频去重：同一字多编码条目时，字频按最短码（简码）归入对应桶，分母只计一次
+    // 排序已保证同字条目相邻且短码在前，首次遇到即为最短码
+    const tierSeenChars = new Set<string>();
+
     for (const e of tierEntries) {
       const len = e.code.length;
-      if (len === 1) oneCode++;
-      else if (len === 2) twoCode++;
-      else if (len === 3) threeCode++;
-      else if (len >= 4) fourCode++;
-
       const f = getCharFrequencyWeight(e.char);
-      // 码长频率加权
-      if (len === 1) oneCodeFreq += f;
-      else if (len === 2) twoCodeFreq += f;
-      else if (len === 3) threeCodeFreq += f;
-      else if (len >= 4) fourCodeFreq += f;
-      tierFreqSum += f;
-      tierWeightedLen += f * len;
-
-      // 加权字均当量：码长 + 重码选重罚时（简化：每多一个重码字 +0.1）
       const codeChars = tierCodeMap.get(e.code) || [];
-      const dupPenalty = codeChars.length > 1 ? (codeChars.length - 1) * 0.1 : 0;
-      tierWeightedCharEquiv += f * (len + dupPenalty);
-      // 重码频率加权
+      const isFirstOccurrence = !tierSeenChars.has(e.char);
+
+      if (isFirstOccurrence) {
+        // 首次遇到该字：计入码长统计和分母（取最短码）
+        if (len === 1) oneCode++;
+        else if (len === 2) twoCode++;
+        else if (len === 3) threeCode++;
+        else if (len >= 4) fourCode++;
+
+        // 码长频率加权（每字只计一次，归入最短码桶）
+        if (len === 1) oneCodeFreq += f;
+        else if (len === 2) twoCodeFreq += f;
+        else if (len === 3) threeCodeFreq += f;
+        else if (len >= 4) fourCodeFreq += f;
+
+        tierFreqSum += f;
+        tierWeightedLen += f * len;
+
+        // 加权字均当量：码长 + 重码选重罚时
+        const dupPenalty = codeChars.length > 1 ? (codeChars.length - 1) * 0.1 : 0;
+        tierWeightedCharEquiv += f * (len + dupPenalty);
+        // 加权键均当量：基于最短码的 speed equivalent
+        const letters = e.code.toLowerCase().split('').filter(ch => ch >= 'a' && ch <= 'z');
+        if (letters.length >= 2) {
+          let eqSum = 0;
+          for (let i = 0; i < letters.length - 1; i++) {
+            eqSum += getSpeedEquivalent(letters[i], letters[i + 1]);
+          }
+          tierWeightedKeyEquiv += f * (eqSum / (letters.length - 1));
+        } else {
+          tierWeightedKeyEquiv += f;
+        }
+        tierSeenChars.add(e.char);
+      }
+      // 重码频率加权（每个编码条目独立判断，因为不同码长的重码状态不同）
       if (codeChars.length > 1) {
         fullDupFreq += f;
         if (e.code.length < 4) shortDupFreq += f;
       }
       if (len === 2 && codeChars.length >= 1) theoreticalTwoShortFreq += f;
-
-      // 加权键均当量：基于 speed equivalent
-      const letters = e.code.toLowerCase().split('').filter(ch => ch >= 'a' && ch <= 'z');
-      if (letters.length >= 2) {
-        let eqSum = 0;
-        for (let i = 0; i < letters.length - 1; i++) {
-          eqSum += getSpeedEquivalent(letters[i], letters[i + 1]);
-        }
-        tierWeightedKeyEquiv += f * (eqSum / (letters.length - 1));
-      } else {
-        tierWeightedKeyEquiv += f;
-      }
 
       // 手感指标
       const code = e.code.toLowerCase();
@@ -815,16 +877,8 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     .sort((a, b) => b.value - a.value);
 
   // ★ 词组测评
-  // 构建字→编码映射（用于词组编码）
-  const charToCodes = new Map<string, string[]>();
-  for (const entry of filteredEntries) {
-    const existing = charToCodes.get(entry.char);
-    if (existing) {
-      if (!existing.includes(entry.code)) existing.push(entry.code);
-    } else {
-      charToCodes.set(entry.char, [entry.code]);
-    }
-  }
+  // 使用完整的字→编码映射（allCharToCodes，含全码+简码），用于词组编码
+  const charToCodes = allCharToCodes;
 
   /**
    * 计算词组编码：按词组长度从每个字的全码中提取码元，组成四码词组码
@@ -2283,8 +2337,8 @@ export default function EvaluatePage() {
                       /** 渲染加权比重行（字频加权百分比） */
                       const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
                         const fs = sum.freqSum;
-                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(1) + '%' : '0%';
-                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(1) + '%' : '0%';
+                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(2) + '%' : '0%';
+                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(2) + '%' : '0%';
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-2 py-1.5 font-medium sticky left-0 bg-blue-50/50 dark:bg-blue-950/10 z-10">{label}</td>
@@ -2559,8 +2613,8 @@ export default function EvaluatePage() {
                       /** 渲染加权比重行（词频加权百分比） */
                       const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
                         const fs = sum.freqSum;
-                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(1) + '%' : '0%';
-                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(1) + '%' : '0%';
+                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(2) + '%' : '0%';
+                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(2) + '%' : '0%';
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-3 py-1.5 font-medium">{label}</td>
