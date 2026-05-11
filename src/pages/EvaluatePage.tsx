@@ -81,7 +81,7 @@ const FREQ_TIERS = [
   { key: '301-500',   label: '301~500',   start: 300,  end: 500 },
   { key: '501-1500',  label: '501~1500',  start: 500,  end: 1500 },
   { key: '1501-3000', label: '1501~3000', start: 1500, end: 3000 },
-  { key: '3001+',     label: '3001+',     start: 3000, end: Infinity },
+  { key: '3001-6000', label: '3001~6000', start: 3000, end: 6000 },
 ];
 
 // 词组频段（匹配参考图分段）
@@ -249,7 +249,7 @@ interface PhraseTierResult {
   coverageRate: number;       // 覆盖率(%)
   avgCodeLen: number;         // 平均编码长度（码元数）
   dupRate: number;            // 重码率(%)
-  selectionRate: number;      // 选重率(‱)
+  selectionRate: number;      // 选重率（词频加权比值 0~1）
   selectionCount: number;      // 选重词组数
   weightedCodeEquiv: number;   // 加权词均当量
   handAltCount: number;        // 左右互击
@@ -472,26 +472,27 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
   }
   const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, filteredEntries.length) * 100);
 
-  // ★ 动态选重率（字频加权，宇浩公式：Nd = Σ p(zij), j≠1）
-  // 对每个重码组，按字频降序排列，首选字不需选重，其余字的字频之和 / 总字频
+  // ★ 动态选重率（字频加权）
+  // 分子：重码组内所有字的字频之和（含首选字）
+  // 分母：全部字的字频之和
   const dynamicSelectionRate = (() => {
-    let sum = 0;
+    let dupFreqSum = 0;
     for (const [, chars] of codeToChars) {
       if (chars.length > 1) {
-        const sorted = [...chars].sort((a, b) => getCharFrequencyWeight(b) - getCharFrequencyWeight(a));
-        for (let i = 1; i < sorted.length; i++) {
-          sum += getCharFrequencyWeight(sorted[i]);
+        // 累加重码组内每个字的字频
+        for (const ch of chars) {
+          dupFreqSum += getCharFrequencyWeight(ch);
         }
       }
     }
-    return safeDivide(sum, freqSum) * 10000;
+    return safeDivide(dupFreqSum, freqSum);
   })();
 
   // ★ 速度当量（字频加权）
   const speedEquiv = calcWeightedSpeedEquivalent(filteredEntries, charFrequency);
 
   // ★ 当量 = 字频加权码长 + 动态选重率（小数形式）
-  const equivalent = weightedAvgCodeLen + safeDivide(dynamicSelectionRate, 10000);
+  const equivalent = weightedAvgCodeLen + dynamicSelectionRate;
 
   // ★ 综合评分（参考国标GB/T18031加权公式）
   // 各项得分 = max(0, 100 - (实际值 - 优秀值) / (较差值 - 优秀值) × 100)
@@ -513,7 +514,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
 
   const codeLenScore = calcScore(weightedAvgCodeLen, 2.5, 4.5, true);
   const dupScore = calcScore(fullDupRate, 3, 15, true);
-  const dynamicSelScore = calcScore(dynamicSelectionRate, 5, 50, true);
+  const dynamicSelScore = calcScore(dynamicSelectionRate, 0.0005, 0.005, true);
   const speedEquivScore = calcScore(speedEquiv, 1.0, 1.5, true);
 
   const compositeScore = Math.max(0, Math.min(100,
@@ -574,8 +575,8 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     if (chars.length > 9) codesNeedingPage++;
   }
 
-  const gb2312Set = new Set([...GB2312_CHARS]);
-  const gbkSet = new Set([...GBK_CHARS]);
+  const gb2312Set = getCharsetSet('gb2312')!;
+  const gbkSet = getCharsetSet('gbk')!;
   let gb2312MaxCandidates = 0, gbkMaxCandidates = 0;
   let gb2312StaticDup = 0, gbkStaticDup = 0;
   for (const [, chars] of codeToChars) {
@@ -608,7 +609,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
   const efficiencyScore = Math.max(0, Math.min(100,
     0.35 * calcScore(fullDupRate, 3, 15, true) +
     0.30 * calcScore(weightedAvgCodeLen, 2.5, 4.5, true) +
-    0.20 * calcScore(dynamicSelectionRate, 5, 50, true) +
+    0.20 * calcScore(dynamicSelectionRate, 0.0005, 0.005, true) +
     0.15 * balanceScore
   ));
   const ergonomicsScore = Math.max(0, Math.min(100,
@@ -654,11 +655,19 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     // 码长分布
     let oneCode = 0, twoCode = 0, threeCode = 0, fourCode = 0;
     let tierFreqSum = 0, tierWeightedLen = 0;
+    // 码长频率加权计数（加权比重用）
+    let oneCodeFreq = 0, twoCodeFreq = 0, threeCodeFreq = 0, fourCodeFreq = 0;
+    // 重码频率加权计数（加权比重用）
+    let shortDupFreq = 0, fullDupFreq = 0, theoreticalTwoShortFreq = 0;
     // 工学指标
     let tierHandAlt = 0, tierSameFingerBig = 0, tierSameFingerSmall = 0;
     let tierSameKeyTriple = 0, tierSameKeyQuad = 0;
     let tierSameFingerTriple = 0, tierSameFingerQuad = 0;
     let tierPinky = 0;
+    // 工学指标频率加权（加权比重用）
+    let tierPairFreqSum = 0;
+    let tierHandAltFreq = 0, tierSfbFreq = 0, tierSfsFreq = 0;
+    let tierSktFreq = 0, tierSkqFreq = 0, tierSftFreq = 0, tierSfqFreq = 0, tierPinkyFreq = 0;
     // 加权字均当量 = 字频加权的（码长 + 选重罚时）
     let tierWeightedCharEquiv = 0;
     // 加权键均当量 = speed equivalent per key
@@ -672,6 +681,11 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
       else if (len >= 4) fourCode++;
 
       const f = getCharFrequencyWeight(e.char);
+      // 码长频率加权
+      if (len === 1) oneCodeFreq += f;
+      else if (len === 2) twoCodeFreq += f;
+      else if (len === 3) threeCodeFreq += f;
+      else if (len >= 4) fourCodeFreq += f;
       tierFreqSum += f;
       tierWeightedLen += f * len;
 
@@ -679,6 +693,12 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
       const codeChars = tierCodeMap.get(e.code) || [];
       const dupPenalty = codeChars.length > 1 ? (codeChars.length - 1) * 0.1 : 0;
       tierWeightedCharEquiv += f * (len + dupPenalty);
+      // 重码频率加权
+      if (codeChars.length > 1) {
+        fullDupFreq += f;
+        if (e.code.length < 4) shortDupFreq += f;
+      }
+      if (len === 2 && codeChars.length >= 1) theoreticalTwoShortFreq += f;
 
       // 加权键均当量：基于 speed equivalent
       const letters = e.code.toLowerCase().split('').filter(ch => ch >= 'a' && ch <= 'z');
@@ -697,34 +717,38 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
       const fingerSeq: string[] = [];
       for (const ch of code) { if (FINGER_MAP[ch]) fingerSeq.push(FINGER_MAP[ch]); }
 
+      // 该字的频率加权二元组数（分母用）
+      const letterPairs = Math.max(0, code.replace(/[^a-z]/g, '').length - 1);
+      tierPairFreqSum += f * letterPairs;
+
       for (let i = 0; i < code.length - 1; i++) {
         const ck = code[i], nk = code[i + 1];
         if (!/[a-z]/.test(ck) || !/[a-z]/.test(nk)) continue;
         const r1 = KEY_ROW[ck], r2 = KEY_ROW[nk];
         // 左右互击
-        if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) tierHandAlt++;
+        if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) { tierHandAlt++; tierHandAltFreq += f; }
         // 同指连续
         if (FINGER_MAP[ck] && FINGER_MAP[ck] === FINGER_MAP[nk]) {
           const rowDist = r1 !== undefined && r2 !== undefined ? Math.abs(r1 - r2) : 0;
-          if (rowDist >= 2) tierSameFingerBig++;
-          else if (rowDist >= 1) tierSameFingerSmall++;
+          if (rowDist >= 2) { tierSameFingerBig++; tierSfbFreq += f; }
+          else if (rowDist >= 1) { tierSameFingerSmall++; tierSfsFreq += f; }
           // 小指干扰
-          if (FINGER_MAP[ck] === '左小指' || FINGER_MAP[ck] === '右小指') tierPinky++;
+          if (FINGER_MAP[ck] === '左小指' || FINGER_MAP[ck] === '右小指') { tierPinky++; tierPinkyFreq += f; }
         }
       }
 
       // 同键三连/四连
       for (let i = 0; i < code.length - 2; i++) {
         if (code[i] === code[i+1] && code[i+1] === code[i+2]) {
-          tierSameKeyTriple++;
-          if (i < code.length - 3 && code[i] === code[i+3]) tierSameKeyQuad++;
+          tierSameKeyTriple++; tierSktFreq += f;
+          if (i < code.length - 3 && code[i] === code[i+3]) { tierSameKeyQuad++; tierSkqFreq += f; }
         }
       }
       // 同指三连/四连
       for (let i = 0; i < fingerSeq.length - 2; i++) {
         if (fingerSeq[i] === fingerSeq[i+1] && fingerSeq[i+1] === fingerSeq[i+2]) {
-          tierSameFingerTriple++;
-          if (i < fingerSeq.length - 3 && fingerSeq[i] === fingerSeq[i+3]) tierSameFingerQuad++;
+          tierSameFingerTriple++; tierSftFreq += f;
+          if (i < fingerSeq.length - 3 && fingerSeq[i] === fingerSeq[i+3]) { tierSameFingerQuad++; tierSfqFreq += f; }
         }
       }
     }
@@ -750,6 +774,24 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
       sameFingerTriple: tierSameFingerTriple,
       sameFingerQuad: tierSameFingerQuad,
       pinkyCount: tierPinky,
+      // 频率加权字段（加权比重用）
+      freqSum: tierFreqSum,
+      oneCodeFreq,
+      twoCodeFreq,
+      threeCodeFreq,
+      fourCodeFreq,
+      shortDupFreq,
+      fullDupFreq,
+      theoreticalTwoShortFreq,
+      pairFreqSum: tierPairFreqSum,
+      handAltFreq: tierHandAltFreq,
+      sfbFreq: tierSfbFreq,
+      sfsFreq: tierSfsFreq,
+      sktFreq: tierSktFreq,
+      skqFreq: tierSkqFreq,
+      sftFreq: tierSftFreq,
+      sfqFreq: tierSfqFreq,
+      pinkyFreq: tierPinkyFreq,
     };
   });
 
@@ -916,7 +958,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
 
     // 重码统计
     let dupCount = 0, selectionCount = 0;
-    let phraseSelectionFreq = 0, phraseTotalFreq = 0;
+    let phraseDupFreq = 0, phraseTotalFreq = 0;
     for (const [, plist] of phraseCodeMap) {
       if (plist.length > 1) {
         dupCount += plist.length - 1;
@@ -925,18 +967,21 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
           const bi = phraseIndexMap.get(b) ?? -1;
           return getWeight(b, bi) - getWeight(a, ai);
         });
-        for (let i = 1; i < sorted.length; i++) {
-          selectionCount++;
-          const idx = phraseIndexMap.get(sorted[i]) ?? -1;
-          phraseSelectionFreq += getWeight(sorted[i], idx);
+        // 分子：重码组内所有词的词频之和（含首选词）
+        for (const phrase of sorted) {
+          const idx = phraseIndexMap.get(phrase) ?? -1;
+          phraseDupFreq += getWeight(phrase, idx);
         }
+        selectionCount += sorted.length - 1;
       }
     }
+    // 分母：全部词组词频之和
     for (let pi = 0; pi < phrases.length; pi++) {
       phraseTotalFreq += getWeight(phrases[pi], pi);
     }
     const dupRate = clampPercentage(safeDivide(dupCount, coveredPhrases) * 100);
-    const selectionRate = safeDivide(phraseSelectionFreq, phraseTotalFreq) * 10000;
+    // 词频加权重码率 = 重码组内所有词的词频之和 / 全部词组词频之和（原始比值 0~1）
+    const selectionRate = safeDivide(phraseDupFreq, phraseTotalFreq);
 
     // 加权词均当量（简化：码长 + 重码罚时）
     let weightedCodeEquiv = 0;
@@ -1040,26 +1085,31 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     }
     coveredPhraseList.sort((a, b) => b.weight - a.weight);
 
-    const phraseDupGroups: Array<{ code: string; phrases: Array<{ phrase: string; freq: number }> }> = [];
+    // 先建索引 Map，供后续 O(1) 查找
+    const phraseIndexMapOverall = new Map<string, number>();
+    for (let i = 0; i < topAll.length; i++) phraseIndexMapOverall.set(topAll[i], i);
+
+    // 赋值给外层 let（避免 const 遮蔽导致外层变量未赋值）
+    phraseDupGroups = [];
     for (const [code, phrases] of phraseCodeMapOverall) {
       if (phrases.length <= 1) continue;
       const sorted = phrases.map(p => {
-        const idx = topAll.indexOf(p);
-        return { phrase: p, freq: idx >= 0 ? topAllF[idx] : 0 };
+        const idx = phraseIndexMapOverall.get(p) ?? -1;
+        return { phrase: p, freq: idx >= 0 && idx < topAllF.length ? topAllF[idx] : 0 };
       }).sort((a, b) => b.freq - a.freq);
       phraseDupGroups.push({ code, phrases: sorted });
     }
     phraseDupGroups.sort((a, b) => b.phrases.length - a.phrases.length || b.phrases[0].freq - a.phrases[0].freq);
 
-    const phraseIndexMapOverall = new Map<string, number>();
-    for (let i = 0; i < topAll.length; i++) phraseIndexMapOverall.set(topAll[i], i);
-
     topPhraseCount = topItems.length;
     phraseFreqTierStats = PHRASE_FREQ_TIERS.map(tier => {
       const tierItems = coveredPhraseList.filter(item => item.idx >= tier.start && item.idx < tier.end);
-      let selCount = 0, wce = 0;
+      let selCount = 0, selFreqSum = 0, wce = 0;
       let tierWeightSum = 0;
       const tierErgo = { handAlt: 0, sfb: 0, sfs: 0, skt: 0, skq: 0, sft: 0, sfq: 0, pk: 0 };
+      // 频率加权工学指标
+      let tierPairFreqSum = 0, tierHandAltFreq = 0, tierSfbFreq = 0, tierSfsFreq = 0;
+      let tierSktFreq = 0, tierSkqFreq = 0, tierSftFreq = 0, tierSfqFreq = 0, tierPinkyFreq = 0;
 
       for (const item of tierItems) {
         tierWeightSum += item.weight;
@@ -1071,6 +1121,30 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
 
         computeErgonomics(code, tierErgo);
 
+        // 频率加权工学指标
+        const letterPairs = Math.max(0, code.replace(/[^a-z]/g, '').length - 1);
+        tierPairFreqSum += item.weight * letterPairs;
+        for (let i = 0; i < code.length - 1; i++) {
+          const ck = code[i], nk = code[i + 1];
+          if (!/[a-z]/.test(ck) || !/[a-z]/.test(nk)) continue;
+          if ((LEFT_HAND_KEYS.has(ck) && RIGHT_HAND_KEYS.has(nk)) || (RIGHT_HAND_KEYS.has(ck) && LEFT_HAND_KEYS.has(nk))) tierHandAltFreq += item.weight;
+          if (FINGER_MAP[ck] && FINGER_MAP[ck] === FINGER_MAP[nk]) {
+            const r1 = KEY_ROW[ck], r2 = KEY_ROW[nk];
+            const rowDist = r1 !== undefined && r2 !== undefined ? Math.abs(r1 - r2) : 0;
+            if (rowDist >= 2) tierSfbFreq += item.weight;
+            else if (rowDist >= 1) tierSfsFreq += item.weight;
+            if (FINGER_MAP[ck] === '左小指' || FINGER_MAP[ck] === '右小指') tierPinkyFreq += item.weight;
+          }
+        }
+        for (let i = 0; i < code.length - 2; i++) {
+          if (code[i] === code[i+1] && code[i+1] === code[i+2]) { tierSktFreq += item.weight; if (i < code.length - 3 && code[i] === code[i+3]) tierSkqFreq += item.weight; }
+        }
+        const fs: string[] = [];
+        for (const ch of code) { if (FINGER_MAP[ch]) fs.push(FINGER_MAP[ch]); }
+        for (let i = 0; i < fs.length - 2; i++) {
+          if (fs[i] === fs[i+1] && fs[i+1] === fs[i+2]) { tierSftFreq += item.weight; if (i < fs.length - 3 && fs[i] === fs[i+3]) tierSfqFreq += item.weight; }
+        }
+
         if (codeChrs.length > 1) {
           const sorted = [...codeChrs].sort((a, b) => {
             const ai2 = phraseIndexMapOverall.get(a) ?? -1;
@@ -1078,7 +1152,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
             return (bi2 >= 0 && bi2 < topAllF.length ? topAllF[bi2] : 0) - (ai2 >= 0 && ai2 < topAllF.length ? topAllF[ai2] : 0);
           });
           const posInGroup = sorted.indexOf(item.phrase);
-          if (posInGroup > 0) selCount++;
+          if (posInGroup > 0) { selCount++; selFreqSum += item.weight; }
         }
       }
 
@@ -1098,6 +1172,18 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
         sameFingerTriple: tierErgo.sft,
         sameFingerQuad: tierErgo.sfq,
         pinkyCount: tierErgo.pk,
+        // 频率加权字段
+        freqSum: tierWeightSum,
+        selFreqSum,
+        pairFreqSum: tierPairFreqSum,
+        handAltFreq: tierHandAltFreq,
+        sfbFreq: tierSfbFreq,
+        sfsFreq: tierSfsFreq,
+        sktFreq: tierSktFreq,
+        skqFreq: tierSkqFreq,
+        sftFreq: tierSftFreq,
+        sfqFreq: tierSfqFreq,
+        pinkyFreq: tierPinkyFreq,
       };
     });
   }
@@ -1283,7 +1369,7 @@ const PhraseFreqPanel = ({
               const idx = startIdx + vi;
               return (
                 <div
-                  key={idx}
+                  key={item.phrase}
                   className={cn(
                     'absolute left-0 right-0 flex items-center justify-between px-4 hover:bg-muted/30 transition-colors',
                     idx % 2 === 0 && 'bg-muted/10'
@@ -1431,7 +1517,7 @@ const CharFreqPanel = ({
               const idx = startIdx + vi;
               return (
                 <div
-                  key={idx}
+                  key={item.char}
                   className={cn(
                     'absolute left-0 right-0 flex items-center px-4 hover:bg-muted/30 transition-colors gap-2',
                     idx % 2 === 0 && 'bg-muted/10'
@@ -1491,12 +1577,12 @@ export default function EvaluatePage() {
         else if (expandedSection) setExpandedSection(null);
       }
     };
+    // 任一弹层打开时锁定背景滚动并注册 Esc
     if (expandedSection || selectedDupCode) {
       document.addEventListener('keydown', handleEsc);
+      document.body.style.overflow = 'hidden';
     }
-    if (expandedSection) {
-      document.body.style.overflow = 'hidden'; // 全屏时锁定背景滚动
-    }
+    // cleanup：始终恢复 overflow（新 effect 会按需重新锁定）
     return () => {
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = '';
@@ -1552,7 +1638,7 @@ export default function EvaluatePage() {
         gbk: calculateCoverage(singleChars, 'gbk'),
         tonggui: calculateCoverage(singleChars, 'tonggui'),
       };
-    } catch { /* ignore */ }
+    } catch (e) { console.warn('覆盖率计算失败:', e); }
 
     // 写入缓存
     charsetResultCache.current.set(charset, res);
@@ -1683,7 +1769,7 @@ export default function EvaluatePage() {
       `字频加权码长: ${result.weightedAvgCodeLen.toFixed(3)}`,
       `全码重码率: ${result.fullDupRate.toFixed(2)}%`,
       `出简重码率: ${result.simplifiedDupRate.toFixed(2)}%`,
-      `动态选重率: ${result.dynamicSelectionRate.toFixed(1)}‱`,
+      `动态选重率: ${(result.dynamicSelectionRate * 100).toFixed(2)}%`,
       `当量: ${result.equivalent.toFixed(3)}`,
       `速度当量: ${result.speedEquivalent.toFixed(3)}`,
       `综合评分: ${result.compositeScore.toFixed(1)}/100`,
@@ -1934,14 +2020,14 @@ export default function EvaluatePage() {
             <ScoreCard
               icon={<Gauge className="h-5 w-5" />}
               title="动态选重率"
-              value={result.dynamicSelectionRate.toFixed(1)}
-              unit="‱"
-              reference="< 5‱ 优秀"
-              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 50) * 100))}
+              value={(result.dynamicSelectionRate * 100).toFixed(2)}
+              unit="%"
+              reference="< 0.05% 优秀"
+              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 0.005) * 100))}
               score={(() => {
-                if (result.dynamicSelectionRate < 5) return 100;
-                if (result.dynamicSelectionRate < 20) return 85;
-                if (result.dynamicSelectionRate < 50) return 65;
+                if (result.dynamicSelectionRate < 0.0005) return 100;
+                if (result.dynamicSelectionRate < 0.002) return 85;
+                if (result.dynamicSelectionRate < 0.005) return 65;
                 return 35;
               })()}
               colorScheme="amber"
@@ -2135,6 +2221,24 @@ export default function EvaluatePage() {
                           sameFingerTriple: arr.reduce((s, t) => s + t.sameFingerTriple, 0),
                           sameFingerQuad: arr.reduce((s, t) => s + t.sameFingerQuad, 0),
                           pinkyCount: arr.reduce((s, t) => s + t.pinkyCount, 0),
+                          // 频率加权汇总
+                          freqSum: arr.reduce((s, t) => s + t.freqSum, 0),
+                          oneCodeFreq: arr.reduce((s, t) => s + t.oneCodeFreq, 0),
+                          twoCodeFreq: arr.reduce((s, t) => s + t.twoCodeFreq, 0),
+                          threeCodeFreq: arr.reduce((s, t) => s + t.threeCodeFreq, 0),
+                          fourCodeFreq: arr.reduce((s, t) => s + t.fourCodeFreq, 0),
+                          shortDupFreq: arr.reduce((s, t) => s + t.shortDupFreq, 0),
+                          fullDupFreq: arr.reduce((s, t) => s + t.fullDupFreq, 0),
+                          theoreticalTwoShortFreq: arr.reduce((s, t) => s + t.theoreticalTwoShortFreq, 0),
+                          pairFreqSum: arr.reduce((s, t) => s + t.pairFreqSum, 0),
+                          handAltFreq: arr.reduce((s, t) => s + t.handAltFreq, 0),
+                          sfbFreq: arr.reduce((s, t) => s + t.sfbFreq, 0),
+                          sfsFreq: arr.reduce((s, t) => s + t.sfsFreq, 0),
+                          sktFreq: arr.reduce((s, t) => s + t.sktFreq, 0),
+                          skqFreq: arr.reduce((s, t) => s + t.skqFreq, 0),
+                          sftFreq: arr.reduce((s, t) => s + t.sftFreq, 0),
+                          sfqFreq: arr.reduce((s, t) => s + t.sfqFreq, 0),
+                          pinkyFreq: arr.reduce((s, t) => s + t.pinkyFreq, 0),
                         };
                       };
 
@@ -2176,35 +2280,32 @@ export default function EvaluatePage() {
                         </tr>
                       );
 
-                      /** 渲染加权比重行（百分比） */
+                      /** 渲染加权比重行（字频加权百分比） */
                       const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
-                        const n = sum.charCount;
-                        const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
-                        // 手感指标用二元组数做分母（码长均值近似）
-                        const avgLen = n > 0 ? (sum.oneCode + sum.twoCode * 2 + sum.threeCode * 3 + sum.fourCode * 4) / n : 1;
-                        const pairCount = n * Math.max(1, avgLen - 1);
-                        const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
+                        const fs = sum.freqSum;
+                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(1) + '%' : '0%';
+                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(1) + '%' : '0%';
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-2 py-1.5 font-medium sticky left-0 bg-blue-50/50 dark:bg-blue-950/10 z-10">{label}</td>
-                            <td colSpan={2} className="px-2 py-1.5 text-center tabular-nums">{pct(sum.oneCode)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.twoCode)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.threeCode)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fourCode)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.shortDupCount)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fullDupCount)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.theoreticalTwoShort)}</td>
+                            <td colSpan={2} className="px-2 py-1.5 text-center tabular-nums">{pct(sum.oneCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.twoCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.threeCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fourCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.shortDupFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fullDupFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.theoreticalTwoShortFreq)}</td>
                             <td className="px-2 py-1.5 text-center tabular-nums">/</td>
                             <td className="px-2 py-1.5 text-center tabular-nums">/</td>
                             <td className="px-2 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.handAltCount)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerBigCross)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerSmallCross)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyTriple)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyQuad)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerTriple)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerQuad)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyCount)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.handAltFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfbFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfsFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sktFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.skqFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sftFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfqFreq)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyFreq)}</td>
                           </tr>
                         );
                       };
@@ -2332,7 +2433,7 @@ export default function EvaluatePage() {
                 <button
                   onClick={() => setCountSpace(!countSpace)}
                   className={cn(
-                    'text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
+                    'ml-auto text-xs px-3 py-1.5 rounded-full border font-medium transition-all duration-200 focus-visible:outline-2 focus-visible:outline-primary',
                     countSpace
                       ? 'bg-primary text-primary-foreground border-primary shadow-sm'
                       : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
@@ -2410,6 +2511,18 @@ export default function EvaluatePage() {
                           sameFingerTriple: arr.reduce((s, t) => s + t.sameFingerTriple, 0),
                           sameFingerQuad: arr.reduce((s, t) => s + t.sameFingerQuad, 0),
                           pinkyCount: arr.reduce((s, t) => s + t.pinkyCount, 0),
+                          // 频率加权汇总
+                          freqSum: arr.reduce((s, t) => s + t.freqSum, 0),
+                          selFreqSum: arr.reduce((s, t) => s + t.selFreqSum, 0),
+                          pairFreqSum: arr.reduce((s, t) => s + t.pairFreqSum, 0),
+                          handAltFreq: arr.reduce((s, t) => s + t.handAltFreq, 0),
+                          sfbFreq: arr.reduce((s, t) => s + t.sfbFreq, 0),
+                          sfsFreq: arr.reduce((s, t) => s + t.sfsFreq, 0),
+                          sktFreq: arr.reduce((s, t) => s + t.sktFreq, 0),
+                          skqFreq: arr.reduce((s, t) => s + t.skqFreq, 0),
+                          sftFreq: arr.reduce((s, t) => s + t.sftFreq, 0),
+                          sfqFreq: arr.reduce((s, t) => s + t.sfqFreq, 0),
+                          pinkyFreq: arr.reduce((s, t) => s + t.pinkyFreq, 0),
                         };
                       };
 
@@ -2443,27 +2556,24 @@ export default function EvaluatePage() {
                         </tr>
                       );
 
-                      /** 渲染加权比重行（百分比） */
+                      /** 渲染加权比重行（词频加权百分比） */
                       const renderPctRow = (label: string, sum: ReturnType<typeof sumTier>, keySuffix: string) => {
-                        const n = sum.totalPhrases;
-                        const pct = (v: number) => n > 0 ? (v / n * 100).toFixed(1) + '%' : '0%';
-                        // 手感指标用二元组数做分母（词组平均码长近似）
-                        const avgLen = result.phraseEval.overall.avgCodeLen;
-                        const pairCount = n * Math.max(1, avgLen - 1);
-                        const pctPair = (v: number) => pairCount > 0 ? (v / pairCount * 100).toFixed(1) + '%' : '0%';
+                        const fs = sum.freqSum;
+                        const pct = (v: number) => fs > 0 ? (v / fs * 100).toFixed(1) + '%' : '0%';
+                        const pctPair = (v: number) => sum.pairFreqSum > 0 ? (v / sum.pairFreqSum * 100).toFixed(1) + '%' : '0%';
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-3 py-1.5 font-medium">{label}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pct(sum.selectionCount)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pct(sum.selFreqSum)}</td>
                             <td className="px-3 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.handAltCount)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerBigCross)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerSmallCross)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyTriple)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameKeyQuad)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerTriple)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sameFingerQuad)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyCount)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.handAltFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfbFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfsFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sktFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.skqFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sftFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfqFreq)}</td>
+                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyFreq)}</td>
                           </tr>
                         );
                       };
@@ -2501,7 +2611,7 @@ export default function EvaluatePage() {
                 </div>
                 <div
                   className="rounded-lg border border-border p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors" title="存在重码的词组占比（按编码数计）—— 点击查看重码词组"
-                  onClick={() => phraseDupGroups.length > 0 && setSelectedDupCode(phraseDupGroups[0].code)}
+                  onClick={() => (result?.phraseDupGroups?.length ?? 0) > 0 && setSelectedDupCode(result!.phraseDupGroups![0].code)}
                 >
                   <div className={cn('text-2xl font-bold tabular-nums',
                     result.phraseEval.overall.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
@@ -2511,12 +2621,12 @@ export default function EvaluatePage() {
                   <div className="text-xs text-muted-foreground mt-1">重码率 <span className="text-[10px] text-primary">点击查看</span></div>
                   <div className="text-[10px] text-muted-foreground/60 mt-0.5">重码编码占比</div>
                 </div>
-                <div className="rounded-lg border border-border p-3 text-center" title="因重码需按数字键选重的万分比（词频加权）">
+                <div className="rounded-lg border border-border p-3 text-center" title="因重码需按数字键选重的比例（词频加权）">
                   <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
-                    {result.phraseEval.overall.selectionRate.toFixed(1)}
+                    {(result.phraseEval.overall.selectionRate * 100).toFixed(2)}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-1">选重率（‱）</div>
-                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">需选重的万分比</div>
+                  <div className="text-xs text-muted-foreground mt-1">选重率（%）</div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">词频加权重码占比</div>
                 </div>
               </div>
 
@@ -2637,7 +2747,7 @@ export default function EvaluatePage() {
                         { name: '字频加权码长', value: result.weightedAvgCodeLen.toFixed(3), score: result.weightedAvgCodeLen < 3.5 ? 90 : result.weightedAvgCodeLen < 4.5 ? 65 : 40 },
                         { name: '全码重码率', value: `${result.fullDupRate.toFixed(2)}%（${result.staticDupCount}字）`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
                         { name: '出简重码率', value: `${result.simplifiedDupRate.toFixed(2)}%`, score: result.simplifiedDupRate < 5 ? 90 : result.simplifiedDupRate < 10 ? 65 : 35 },
-                        { name: '动态选重率', value: `${result.dynamicSelectionRate.toFixed(1)}‱`, score: result.dynamicSelectionRate < 5 ? 95 : result.dynamicSelectionRate < 20 ? 75 : 40 },
+                        { name: '动态选重率', value: `${(result.dynamicSelectionRate * 100).toFixed(2)}%`, score: result.dynamicSelectionRate < 0.0005 ? 95 : result.dynamicSelectionRate < 0.002 ? 75 : 40 },
                         { name: '当量', value: result.equivalent.toFixed(3), score: result.equivalent < 1.5 ? 95 : result.equivalent < 2.5 ? 70 : 40 },
                         { name: '速度当量', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.1 ? 95 : result.speedEquivalent < 1.3 ? 75 : 40 },
                         { name: '综合评分', value: `${result.compositeScore.toFixed(1)}/100`, score: result.compositeScore },
@@ -2711,8 +2821,9 @@ export default function EvaluatePage() {
       />}
 
       {/* ===== 重码词组弹窗 ===== */}
-      {selectedDupCode && (() => {
-        const group = phraseDupGroups.find(g => g.code === selectedDupCode);
+      {selectedDupCode && result?.phraseDupGroups && (() => {
+        const dupGroups = result.phraseDupGroups!;
+        const group = dupGroups.find(g => g.code === selectedDupCode);
         // 如果没有找到特定组，显示所有重码词组的总览
         const showOverview = !group;
         return (
@@ -2722,7 +2833,7 @@ export default function EvaluatePage() {
                 <div>
                   <h3 className="font-bold text-foreground">重码词组</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    共 {phraseDupGroups.length} 组重码编码，涉及 {phraseDupGroups.reduce((s, g) => s + g.phrases.length, 0)} 个词组
+                    共 {dupGroups.length} 组重码编码，涉及 {dupGroups.reduce((s, g) => s + g.phrases.length, 0)} 个词组
                   </p>
                 </div>
                 <button onClick={() => setSelectedDupCode(null)} className="p-2 rounded-full hover:bg-muted transition-colors">
@@ -2730,7 +2841,7 @@ export default function EvaluatePage() {
                 </button>
               </div>
               <div className="overflow-y-auto flex-1 p-4 space-y-3">
-                {phraseDupGroups.slice(0, 50).map((g, gi) => (
+                {dupGroups.slice(0, 50).map((g, gi) => (
                   <div key={g.code} className="rounded-lg border border-border/50 overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
                       <div className="flex items-center gap-2">
@@ -2749,7 +2860,7 @@ export default function EvaluatePage() {
                     </div>
                   </div>
                 ))}
-                {phraseDupGroups.length > 50 && (
+                {dupGroups.length > 50 && (
                   <p className="text-xs text-muted-foreground text-center py-2">仅显示频次最高的 50 组</p>
                 )}
               </div>
