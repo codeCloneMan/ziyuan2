@@ -29,14 +29,14 @@ export default function ChartPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
-      <section className="py-16 sm:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-8 sm:py-16 lg:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
         <div className="container-page text-center max-w-4xl">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <ImageIcon className="h-4 w-4 mr-1.5" />
             v1.32版完整字根图
           </Badge>
           
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
+          <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
             字根
             <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 图</span>
           </h1>

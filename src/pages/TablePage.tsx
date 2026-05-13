@@ -80,7 +80,7 @@ export default function TablePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
-      <section className="py-16 sm:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-8 sm:py-16 lg:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <BookOpen className="h-4 w-4 mr-1.5" />
@@ -98,17 +98,17 @@ export default function TablePage() {
           </p>
 
           {/* 快速统计 */}
-          <div className="mt-8 flex items-center justify-center gap-8 sm:gap-12 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="mt-4 sm:mt-8 flex items-center justify-center gap-4 sm:gap-12 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
             <div className="text-center">
               <div className="stat-number text-primary">{totalRoots}</div>
               <div className="stat-label">总字根数</div>
             </div>
-            <div className="w-px h-12 bg-border"></div>
+            <div className="w-px h-8 sm:h-12 bg-border"></div>
             <div className="text-center">
               <div className="stat-number text-accent">26</div>
               <div className="stat-label">键位数</div>
             </div>
-            <div className="w-px h-12 bg-border"></div>
+            <div className="w-px h-8 sm:h-12 bg-border"></div>
             <div className="text-center">
               <div className="stat-number">{Math.round(totalRoots / 26)}</div>
               <div className="stat-label">平均每键</div>
@@ -118,8 +118,8 @@ export default function TablePage() {
       </section>
 
       {/* 搜索与筛选区 */}
-      <section className="py-8 sm:py-12 sticky top-16 z-40 bg-background/80 backdrop-blur-md border-b border-border">
-        <div className="container-page max-w-4xl">
+      <section className="py-4 sm:py-8 lg:py-12 sticky top-16 z-40 bg-background/80 backdrop-blur-md border-b border-border">
+        <div className="max-w-4xl mx-auto px-2 sm:px-4 lg:px-8">
           {/* 搜索栏 */}
           <div className="max-w-lg mx-auto mb-6">
             <div className="input-search">
@@ -169,9 +169,9 @@ export default function TablePage() {
 
           {/* 虚拟键盘选择器 */}
           <div className="flex justify-center">
-            <div className="inline-flex flex-col items-center gap-1.5 p-4 rounded-2xl bg-muted/30 border border-border/60">
+            <div className="flex flex-col items-center gap-1 p-2 sm:p-4 rounded-2xl bg-muted/30 border border-border/60 w-full max-w-lg">
               {keyboardRows.map((row, rowIndex) => (
-                <div key={rowIndex} className="flex gap-1.5" style={{ paddingLeft: `${rowIndex * 12}px` }}>
+                <div key={rowIndex} className="flex gap-1 sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 6}px` }}>
                   {row.map((key) => {
                     const rootCount = renderableRootCountBykey[key] || 0;
                     const isSelected = selectedKey === key;
@@ -183,9 +183,9 @@ export default function TablePage() {
                           setSearchQuery('');
                         }}
                         className={cn(
-                          'group relative flex h-10 w-10 flex-col items-center justify-center rounded-xl border-2 text-xs font-semibold transition-all cursor-pointer select-none',
+                          'group relative flex flex-1 min-w-0 h-11 sm:h-10 sm:w-10 sm:flex-none flex-col items-center justify-center rounded-lg sm:rounded-xl border-2 text-xs font-semibold transition-colors cursor-pointer select-none',
                           isSelected
-                            ? 'border-primary bg-primary shadow-md scale-105'
+                            ? 'border-primary bg-primary shadow-md sm:scale-105'
                             : 'border-border bg-card hover:border-primary/40 hover:bg-card/80 hover:shadow-sm'
                         )}
                       >
@@ -196,12 +196,12 @@ export default function TablePage() {
                           {key.toUpperCase()}
                         </span>
                         <span className={cn(
-                          'text-[10px]',
+                          'text-[9px] sm:text-[10px]',
                           isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
                         )}>
                           {rootCount}
                         </span>
-                        
+
                         {isSelected && (
                           <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-primary ring-4 ring-background" />
                         )}
@@ -216,10 +216,10 @@ export default function TablePage() {
       </section>
 
       {/* 字根分组展示 */}
-      <section className="py-12 sm:py-16">
-        <div className="container-page max-w-6xl">
+      <section className="py-6 sm:py-12 lg:py-16">
+        <div className="max-w-6xl mx-auto px-2 sm:px-4 lg:px-8">
           <div className={cn(
-            "grid gap-4 sm:gap-6",
+            "grid gap-3 sm:gap-4 lg:gap-6",
             displayMode === 'compact'
               ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
               : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
@@ -231,21 +231,21 @@ export default function TablePage() {
                 style={{ animationDelay: `${idx * 50}ms` }}
               >
                 {/* 卡片头部 */}
-                <div className="flex items-center gap-3 mb-4 pb-3 border-b border-border/60">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-base font-bold text-primary-foreground shadow-sm">
+                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-2 sm:pb-3 border-b border-border/60">
+                  <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-primary text-sm sm:text-base font-bold text-primary-foreground shadow-sm shrink-0">
                     {group.key.toUpperCase()}
                   </div>
-                  
-                  <div className="flex-1">
-                    <h3 className="font-bold text-foreground">
+
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-bold text-sm sm:text-base text-foreground">
                       键位 {group.key.toUpperCase()}
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
                       包含 {group.roots.length} 个字根
                     </p>
                   </div>
 
-                  <Badge variant="secondary" className="bg-primary/10 text-primary font-semibold">
+                  <Badge variant="secondary" className="bg-primary/10 text-primary font-semibold text-[11px] sm:text-xs shrink-0">
                     {group.roots.length}
                   </Badge>
                 </div>

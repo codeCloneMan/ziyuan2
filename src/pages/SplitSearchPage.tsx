@@ -154,7 +154,7 @@ export default function SplitSearchPage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
-      <section className="py-16 sm:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-8 sm:py-16 lg:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <SplitSquareHorizontal className="h-4 w-4 mr-1.5" />
@@ -166,25 +166,22 @@ export default function SplitSearchPage() {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             查询单字拆分、词组编码，支持高频词组检索
           </p>
-          <div className="mt-8 flex items-center justify-center gap-8 sm:gap-12">
+          <div className="mt-4 sm:mt-8 grid grid-cols-2 gap-4 sm:gap-6 sm:flex sm:items-center sm:justify-center sm:gap-8 lg:gap-12">
             <div className="text-center">
-              <div className="text-3xl font-bold text-primary">{uniqueChars}</div>
-              <div className="text-xs text-muted-foreground">汉字数</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-primary">{uniqueChars}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">汉字数</div>
             </div>
-            <div className="w-px h-12 bg-border" />
             <div className="text-center">
-              <div className="text-3xl font-bold text-accent">{totalChars}</div>
-              <div className="text-xs text-muted-foreground">编码数</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-accent">{totalChars}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">编码数</div>
             </div>
-            <div className="w-px h-12 bg-border" />
             <div className="text-center">
-              <div className="text-3xl font-bold">{rootMappings.length}</div>
-              <div className="text-xs text-muted-foreground">字根数</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold">{rootMappings.length}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">字根数</div>
             </div>
-            <div className="w-px h-12 bg-border" />
             <div className="text-center">
-              <div className="text-3xl font-bold text-amber-600">{TOP_PHRASES.length.toLocaleString()}</div>
-              <div className="text-xs text-muted-foreground">词组数</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600">{TOP_PHRASES.length.toLocaleString()}</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">词组数</div>
             </div>
           </div>
         </div>

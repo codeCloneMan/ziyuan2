@@ -6,9 +6,10 @@ import { cn } from '@/lib/utils';
 import { charCodeData } from '@/data/charCodeData';
 import { twoCharPhrases, threeCharPhrases, fourCharPhrases } from '@/data/builtinPhrases';
 import { useLocalStorage } from '@/hooks/use-local-storage';
+import { keyboardRows } from '@/data/roots';
 import {
   Play, RotateCcw, Trophy, CheckCircle2, XCircle,
-  Zap, Keyboard, BookOpen, ArrowLeft,
+  Zap, Keyboard, BookOpen, ArrowLeft, Delete,
 } from 'lucide-react';
 
 // ============================================
@@ -141,6 +142,8 @@ export default function PhrasePracticePage() {
   const [currentPhrase, setCurrentPhrase] = useState<PhraseItem | null>(null);
   const [inputCode, setInputCode] = useState('');
   const [feedbackType, setFeedbackType] = useState<'correct' | 'wrong' | null>(null);
+  const [keyFeedback, setKeyFeedback] = useState<string | null>(null);
+  const keyFeedbackTimer = useRef<ReturnType<typeof setTimeout>>();
   const [stats, setStats] = useState<PhraseStats>({
     totalAttempts: 0, correctAttempts: 0, streak: 0, maxStreak: 0,
   });
@@ -229,6 +232,20 @@ export default function PhrasePracticePage() {
     feedbackTimer.current = setTimeout(advancePhrase, 1200);
   }, [isPlaying, feedbackType, inputCode, currentPhrase, advancePhrase]);
 
+  /** 虚拟键盘按键 - 带视觉反馈 */
+  const handleVirtualKeyPress = useCallback((key: string) => {
+    handleKeyPress(key);
+    setKeyFeedback(key);
+    if (keyFeedbackTimer.current) clearTimeout(keyFeedbackTimer.current);
+    keyFeedbackTimer.current = setTimeout(() => setKeyFeedback(null), 150);
+  }, [handleKeyPress]);
+
+  /** 虚拟键盘退格 */
+  const handleBackspace = useCallback(() => {
+    if (!isPlaying || feedbackType) return;
+    setInputCode(prev => prev.slice(0, -1));
+  }, [isPlaying, feedbackType]);
+
   // 全局键盘监听
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -251,7 +268,10 @@ export default function PhrasePracticePage() {
   }, [isPlaying, feedbackType, handleKeyPress]);
 
   useEffect(() => {
-    return () => { if (feedbackTimer.current) clearTimeout(feedbackTimer.current); };
+    return () => {
+      if (feedbackTimer.current) clearTimeout(feedbackTimer.current);
+      if (keyFeedbackTimer.current) clearTimeout(keyFeedbackTimer.current);
+    };
   }, []);
 
   const startPractice = useCallback(() => {
@@ -287,7 +307,7 @@ export default function PhrasePracticePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* 标题区 */}
-      <section className="py-12 sm:py-16 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-6 sm:py-12 lg:py-16 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <Keyboard className="h-4 w-4 mr-1.5" />
@@ -299,7 +319,7 @@ export default function PhrasePracticePage() {
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             直接按键输入四码词组编码，自动判定对错
           </p>
-          <div className="mt-6 flex items-center justify-center gap-8 text-sm text-muted-foreground">
+          <div className="mt-4 sm:mt-6 flex flex-wrap items-center justify-center gap-2 sm:gap-8 text-xs sm:text-sm text-muted-foreground">
             <span>词组库: <span className="font-bold text-foreground">{poolCount.toLocaleString()}</span> 个</span>
             <span>四码一组 · 按键即输入 · 满码自动判定</span>
           </div>
@@ -349,8 +369,8 @@ export default function PhrasePracticePage() {
 
       {/* ===== 练习区 ===== */}
       {isPlaying && currentPhrase && (
-        <section className="py-8 sm:py-12">
-          <div className="container-page max-w-3xl mx-auto">
+        <section className="py-4 sm:py-12">
+          <div className="max-w-3xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
             {/* 进度条 + 退出 */}
             <div className="mb-6">
               <div className="flex justify-between text-sm items-center mb-2">
@@ -377,7 +397,7 @@ export default function PhrasePracticePage() {
 
             {/* 词组显示 */}
             <div className="text-center py-6 mb-6">
-              <div className="text-5xl sm:text-6xl font-bold tracking-wider mb-4 root-char">
+              <div className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-wider mb-4 root-char">
                 {currentPhrase.phrase}
               </div>
 
@@ -447,14 +467,49 @@ export default function PhrasePracticePage() {
               )}
             </div>
 
-            {/* 快捷键提示 */}
+            {/* 快捷键提示 - 仅桌面端显示 */}
             {!feedbackType && (
-              <div className="flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
+              <div className="hidden sm:flex items-center justify-center gap-4 text-[11px] text-muted-foreground">
                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">A-Z</kbd>输入编码</span>
                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Esc</kbd>退出</span>
                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Backspace</kbd>删除</span>
               </div>
             )}
+
+            {/* 虚拟键盘 */}
+            <div className="sm:card-base p-1 sm:p-4 mt-2 sm:mt-4 mobile-keyboard">
+              <div className="flex items-center justify-between mb-1 sm:mb-2">
+                <span className="text-xs font-medium text-muted-foreground">编码键盘</span>
+              </div>
+              <div className="flex flex-col items-center gap-[3px] sm:gap-1.5">
+                {keyboardRows.map((row, ri) => (
+                  <div key={ri} className="flex gap-[3px] sm:gap-1.5 w-full" style={{ paddingLeft: `${ri * 4}px` }}>
+                    {row.map((key) => {
+                      const isActive = keyFeedback === key;
+                      return (
+                        <button key={key} onClick={() => handleVirtualKeyPress(key)}
+                          className={cn(
+                            'flex-1 min-w-0 h-12 sm:flex-none sm:h-11 sm:w-10 rounded-lg font-mono text-sm font-semibold transition-colors duration-150 border-2',
+                            isActive && feedbackType === 'correct' && 'bg-emerald-500 text-white border-emerald-600',
+                            isActive && feedbackType === 'wrong' && 'bg-red-500 text-white border-red-600',
+                            !isActive && 'bg-card hover:bg-accent/10 border-border'
+                          )}>
+                          {key.toUpperCase()}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+                {/* 退格键行 */}
+                <div className="flex gap-[3px] sm:gap-1.5 w-full" style={{ paddingLeft: '12px' }}>
+                  <button onClick={handleBackspace}
+                    className="flex-[2] min-w-0 h-12 sm:flex-none sm:h-11 sm:w-20 rounded-lg font-mono text-xs font-semibold transition-colors duration-150 border-2 bg-card hover:bg-accent/10 border-border flex items-center justify-center gap-1">
+                    <Delete className="h-3.5 w-3.5" />
+                    <span className="text-[11px]">删除</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       )}

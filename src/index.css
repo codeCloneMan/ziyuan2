@@ -343,6 +343,18 @@
 }
 
 /* ========================================
+   移动端虚拟键盘适配 - flex 自适应撑满宽度
+   ======================================== */
+@media (max-width: 640px) {
+  .mobile-keyboard {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    /* 去掉 transform: scale()，改用 flex-1 让按键自适应撑满 */
+  }
+}
+
+/* ========================================
    打印样式
    ======================================== */
 @media print {

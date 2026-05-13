@@ -471,7 +471,7 @@ export default function WholeCharPracticePage() {
     return (
       <div className="min-h-screen bg-background">
         {/* Hero区 */}
-        <section className="py-16 sm:py-20">
+        <section className="py-8 sm:py-16 lg:py-20">
           <div className="container-page text-center max-w-4xl">
             <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
               <Info className="h-4 w-4 mr-1.5" />整字编码练习系统
@@ -737,13 +737,13 @@ export default function WholeCharPracticePage() {
       </div>
 
       {/* 主练习区 */}
-      <div className="container-page max-w-5xl py-6 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* 左侧：练习区域（3列） */}
-          <div className="lg:col-span-3 space-y-4">
+      <div className="max-w-5xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
+          {/* 左侧：练习区域（3列，手机端全宽） */}
+          <div className="lg:col-span-3 space-y-3 sm:space-y-4">
             {/* 汉字展示卡片 */}
             <div className={cn(
-              "card-base p-6 sm:p-8 transition-all duration-300",
+              "card-base p-6 sm:p-8 transition-[border-color,background-color] duration-300",
               feedbackType === 'correct' && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20",
               feedbackType === 'wrong' && "border-red-400 bg-red-50/50 dark:bg-red-950/20"
             )}>
@@ -759,9 +759,9 @@ export default function WholeCharPracticePage() {
                 {/* 汉字展示 */}
                 <div className="text-center">
                   <div className={cn(
-                    "text-7xl sm:text-8xl font-bold mb-4 select-none transition-all duration-300",
-                    feedbackType === 'correct' && "text-emerald-600 dark:text-emerald-400 scale-110",
-                    feedbackType === 'wrong' && "text-red-600 dark:text-red-400 scale-95"
+                    "text-5xl sm:text-7xl lg:text-8xl font-bold mb-4 select-none transition-colors duration-300",
+                    feedbackType === 'correct' && "text-emerald-600 dark:text-emerald-400",
+                    feedbackType === 'wrong' && "text-red-600 dark:text-red-400"
                   )}>
                     {currentItem.char}
                   </div>
@@ -773,7 +773,7 @@ export default function WholeCharPracticePage() {
                         <span className="text-muted-foreground text-sm mr-1">{currentItem.char} →</span>
                         {splitParts.map((part, i) => (
                           <span key={i} className={cn(
-                            "inline-flex items-center justify-center px-2 py-1 rounded-lg transition-all duration-300",
+                            "inline-flex items-center justify-center px-2 py-1 rounded-lg transition-[opacity,transform] duration-300",
                             i < splitAnimationStep
                               ? "bg-primary/10 text-primary font-bold scale-100 opacity-100"
                               : "scale-75 opacity-0",
@@ -799,7 +799,7 @@ export default function WholeCharPracticePage() {
                     <div className="relative">
                       <input ref={inputRef} type="text" readOnly placeholder="输入编码"
                         className={cn(
-                          "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-xl focus:outline-none transition-all",
+                          "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-xl focus:outline-none transition-[border-color,background-color,color] duration-200",
                           keyFeedback && feedbackType === 'correct' && "border-emerald-400 bg-emerald-50 text-emerald-600",
                           keyFeedback && feedbackType === 'wrong' && "border-red-400 bg-red-50 text-red-600",
                           !keyFeedback && "border-primary/30"
@@ -855,8 +855,8 @@ export default function WholeCharPracticePage() {
             </div>
 
             {/* 虚拟键盘 */}
-            <div className="card-base p-4">
-              <div className="flex items-center justify-between mb-2">
+            <div className="sm:card-base p-1 sm:p-4 mobile-keyboard">
+              <div className="flex items-center justify-between mb-1 sm:mb-2">
                 <span className="text-xs font-medium text-muted-foreground">编码键盘</span>
                 {isMustSplitChar(currentItem.char) && (
                   <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-amber-500/30 text-amber-600">
@@ -864,17 +864,17 @@ export default function WholeCharPracticePage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex flex-col items-center gap-1.5">
+              <div className="flex flex-col items-center gap-[3px] sm:gap-1.5">
                 {keyboardRows.map((row, ri) => (
-                  <div key={ri} className="flex gap-1 sm:gap-1.5" style={{ paddingLeft: `${ri * 12}px` }}>
+                  <div key={ri} className="flex gap-[3px] sm:gap-1.5 w-full" style={{ paddingLeft: `${ri * 4}px` }}>
                     {row.map((key) => {
                       const isActive = keyFeedback === key;
                       return (
                         <button key={key} onClick={() => handleKeyPress(key)}
                           className={cn(
-                            'h-10 w-9 sm:h-11 sm:w-10 rounded-lg font-mono text-sm font-semibold transition-all border-2',
-                            isActive && feedbackType === 'correct' && 'bg-emerald-500 text-white border-emerald-600 scale-110',
-                            isActive && feedbackType === 'wrong' && 'bg-red-500 text-white border-red-600 scale-110',
+                            'flex-1 min-w-0 h-12 sm:flex-none sm:h-11 sm:w-10 rounded-lg font-mono text-sm font-semibold transition-colors duration-150 border-2',
+                            isActive && feedbackType === 'correct' && 'bg-emerald-500 text-white border-emerald-600',
+                            isActive && feedbackType === 'wrong' && 'bg-red-500 text-white border-red-600',
                             !isActive && 'bg-card hover:bg-accent/10 border-border'
                           )}>
                           {key.toUpperCase()}

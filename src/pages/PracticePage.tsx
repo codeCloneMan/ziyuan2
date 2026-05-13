@@ -454,7 +454,7 @@ export default function PracticePage() {
     return (
       <div className="min-h-screen bg-background">
         {/* Hero区 */}
-        <section className="py-16 sm:py-20">
+        <section className="py-8 sm:py-16 lg:py-20">
           <div className="container-page text-center">
             <div className="max-w-2xl mx-auto">
               <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
@@ -766,14 +766,14 @@ export default function PracticePage() {
       </div>
 
       {/* 主练习区 */}
-      <div className="container-page max-w-5xl py-6 sm:py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* 左侧：字根展示 + 输入区（占3列） */}
-          <div className="lg:col-span-3 space-y-4">
+      <div className="max-w-5xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
+          {/* 左侧：字根展示 + 输入区（占3列，手机端全宽） */}
+          <div className="lg:col-span-3 space-y-3 sm:space-y-4">
             {/* 字根展示卡片 */}
             <div className={cn(
-              "card-base p-6 sm:p-8 transition-all duration-300",
-              feedbackType === 'correct' && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20 scale-[1.01]",
+              "card-base p-4 sm:p-8 transition-[border-color,background-color] duration-300",
+              feedbackType === 'correct' && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20",
               feedbackType === 'wrong' && "border-red-400 bg-red-50/50 dark:bg-red-950/20"
             )}>
               <div className="flex flex-col items-center">
@@ -866,9 +866,9 @@ export default function PracticePage() {
             </div>
 
             {/* ====== 交互式字根键盘 ====== */}
-            <div className="card-base p-4 sm:p-6">
+            <div className="sm:card-base p-1 sm:p-6">
               {/* 键盘顶部控制栏 */}
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-1 sm:mb-3">
                 <div className="flex items-center gap-2">
                   <Keyboard className="h-4 w-4 text-muted-foreground" />
                   <span className="text-xs font-medium text-muted-foreground">字根键盘</span>
@@ -884,10 +884,10 @@ export default function PracticePage() {
                   ))}
                 </div>
               </div>
-              {/* 键盘布局 */}
-              <div className="flex flex-col items-center gap-1.5">
+              {/* 键盘布局 - 手机端 flex 撑满宽度 */}
+              <div className="mobile-keyboard flex flex-col items-center gap-[3px] sm:gap-1.5">
                 {keyboardRows.map((row, rowIndex) => (
-                  <div key={rowIndex} className="flex gap-1 sm:gap-1.5" style={{ paddingLeft: `${rowIndex * 12}px` }}>
+                  <div key={rowIndex} className="flex gap-[3px] sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 4}px` }}>
                     {row.map((key) => {
                       const isFeedback = keyFeedback === key;
                       const isCorrectKey = key === currentRoot.key;
@@ -913,27 +913,27 @@ export default function PracticePage() {
                             else setSelectedKeyInfo(selectedKeyInfo === key ? null : key);
                           }}
                           className={cn(
-                            "flex flex-col items-center justify-center rounded-lg border-2 transition-all duration-150 cursor-pointer select-none relative",
-                            "hover:shadow-md active:scale-95",
-                            "h-14 w-10 sm:h-16 sm:w-12",
+                            "flex-1 min-w-0 flex flex-col items-center justify-center rounded-lg border-2 transition-colors duration-150 cursor-pointer select-none relative",
+                            "sm:flex-none sm:hover:shadow-md sm:active:scale-95 sm:transition-all",
+                            "h-[52px] sm:h-16 sm:w-12",
                             colorClass,
                             keyMastered && !isCurrentRootKey && !isFeedback && 'opacity-60',
                           )}>
-                          <span className="text-xs sm:text-sm font-bold leading-none">{key.toUpperCase()}</span>
+                          <span className="text-[11px] sm:text-sm font-bold leading-none">{key.toUpperCase()}</span>
                           {keyboardDisplayMode === 'roots' && (
-                            <span className="text-[7px] sm:text-[8px] leading-tight text-center mt-0.5 line-clamp-2 max-w-[2rem] sm:max-w-[2.5rem] text-muted-foreground">
+                            <span className="text-[8px] sm:text-[10px] leading-tight text-center mt-0.5 line-clamp-2 text-muted-foreground">
                               {rootsOnKey.slice(0, 3).map(r => r.char).join('')}
                               {rootsOnKey.length > 3 && '…'}
                             </span>
                           )}
                           {keyboardDisplayMode === 'codes' && (
-                            <span className="text-[7px] sm:text-[8px] font-mono text-muted-foreground mt-0.5">
+                            <span className="text-[8px] sm:text-[10px] font-mono text-muted-foreground mt-0.5">
                               {rootsOnKey.length}根
                             </span>
                           )}
                           {/* 点击键位展开详情 */}
                           {selectedKeyInfo === key && (
-                            <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-48 p-2 rounded-lg bg-popover border border-border shadow-xl animate-fadeIn">
+                            <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-40 sm:w-48 p-2 rounded-lg bg-popover border border-border shadow-xl animate-fadeIn">
                               <div className="text-xs font-semibold text-foreground mb-1">{key.toUpperCase()} 键字根</div>
                               <div className="flex flex-wrap gap-1">
                                 {rootsOnKey.map(r => (

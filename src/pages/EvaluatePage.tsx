@@ -2019,32 +2019,27 @@ export default function EvaluatePage() {
             </CardContent>
           </Card>
 
-          {/* 8个核心评分卡片 */}
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
+          {/* 8个核心评分卡片 - 单行展示 */}
+          <div className="grid gap-2 sm:gap-3 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
             {/* 平均码长 */}
             <ScoreCard
-              icon={<Target className="h-5 w-5" />}
+              icon={<Target className="h-4 w-4" />}
               title="字频加权码长"
               value={result.weightedAvgCodeLen.toFixed(3)}
               unit=""
-              reference="< 3.5 优秀"
-              progress={Math.max(0, Math.min(100, (1 - (result.weightedAvgCodeLen - 2) / 4) * 100))}
               score={(() => {
                 if (result.weightedAvgCodeLen < 2.5) return 100;
                 if (result.weightedAvgCodeLen < 3.5) return 80;
                 if (result.weightedAvgCodeLen < 4.5) return 60;
                 return 40;
               })()}
-              colorScheme="blue"
             />
             {/* 全码重码率 */}
             <ScoreCard
-              icon={<AlertTriangle className="h-5 w-5" />}
+              icon={<AlertTriangle className="h-4 w-4" />}
               title="全码重码率"
               value={result.fullDupRate.toFixed(2)}
               unit="%"
-              reference="< 5% 优秀"
-              progress={Math.max(0, Math.min(100, (1 - result.fullDupRate / 20) * 100))}
               score={(() => {
                 if (result.fullDupRate < 3) return 100;
                 if (result.fullDupRate < 5) return 85;
@@ -2052,98 +2047,79 @@ export default function EvaluatePage() {
                 if (result.fullDupRate < 15) return 45;
                 return 25;
               })()}
-              colorScheme="orange"
             />
             {/* 出简重码率 */}
             <ScoreCard
-              icon={<Flame className="h-5 w-5" />}
+              icon={<Flame className="h-4 w-4" />}
               title="出简重码率"
               value={result.simplifiedDupRate.toFixed(2)}
               unit="%"
-              reference="越低越好"
-              progress={Math.max(0, Math.min(100, (1 - result.simplifiedDupRate / 20) * 100))}
               score={(() => {
                 if (result.simplifiedDupRate < 2) return 100;
                 if (result.simplifiedDupRate < 5) return 80;
                 if (result.simplifiedDupRate < 10) return 55;
                 return 30;
               })()}
-              colorScheme="rose"
             />
             {/* 选重率 */}
             <ScoreCard
-              icon={<Gauge className="h-5 w-5" />}
+              icon={<Gauge className="h-4 w-4" />}
               title="动态选重率"
               value={(result.dynamicSelectionRate * 100).toFixed(2)}
               unit="%"
-              reference="< 0.05% 优秀"
-              progress={Math.max(0, Math.min(100, (1 - result.dynamicSelectionRate / 0.005) * 100))}
               score={(() => {
                 if (result.dynamicSelectionRate < 0.0005) return 100;
                 if (result.dynamicSelectionRate < 0.002) return 85;
                 if (result.dynamicSelectionRate < 0.005) return 65;
                 return 35;
               })()}
-              colorScheme="amber"
             />
             {/* 当量 */}
             <ScoreCard
-              icon={<Activity className="h-5 w-5" />}
+              icon={<Activity className="h-4 w-4" />}
               title="当量"
               value={result.equivalent.toFixed(3)}
               unit=""
-              reference="< 1.5 优秀"
-              progress={Math.max(0, Math.min(100, (1 - (result.equivalent - 1) / 5) * 100))}
               score={(() => {
                 if (result.equivalent < 1.5) return 100;
                 if (result.equivalent < 2.5) return 80;
                 if (result.equivalent < 3.5) return 55;
                 return 30;
               })()}
-              colorScheme="violet"
             />
             {/* GB2312静态重码数 */}
             <ScoreCard
-              icon={<AlertTriangle className="h-5 w-5" />}
+              icon={<AlertTriangle className="h-4 w-4" />}
               title="GB2312重码"
               value={result.gb2312StaticDup.toString()}
               unit="字"
-              reference="越少越好"
-              progress={Math.max(0, Math.min(100, (1 - result.gb2312StaticDup / 1000) * 100))}
               score={(() => {
                 if (result.gb2312StaticDup < 200) return 100;
                 if (result.gb2312StaticDup < 500) return 85;
                 if (result.gb2312StaticDup < 1000) return 65;
                 return 35;
               })()}
-              colorScheme="cyan"
             />
             {/* 速度当量 */}
             <ScoreCard
-              icon={<Zap className="h-5 w-5" />}
+              icon={<Zap className="h-4 w-4" />}
               title="速度当量"
               value={result.speedEquivalent.toFixed(3)}
               unit=""
-              reference="< 1.2 优秀"
-              progress={Math.max(0, Math.min(100, (1 - (result.speedEquivalent - 0.8) / 1.2) * 100))}
               score={(() => {
                 if (result.speedEquivalent < 1.1) return 100;
                 if (result.speedEquivalent < 1.2) return 85;
                 if (result.speedEquivalent < 1.4) return 65;
                 return 35;
               })()}
-              colorScheme="indigo"
             />
             {/* 综合评分 */}
             <ScoreCard
-              icon={<Award className="h-5 w-5" />}
+              icon={<Award className="h-4 w-4" />}
               title="综合评分"
               value={result.compositeScore.toFixed(1)}
               unit="/100"
-              reference="参考GB/T18031"
-              progress={result.compositeScore}
               score={result.compositeScore}
-              colorScheme="emerald"
               highlight
             />
           </div>
@@ -2396,9 +2372,9 @@ export default function EvaluatePage() {
                   </button>
                 )}
               </h3>
-              <div className={cn("flex flex-col items-center", expandedSection === 'heatmap' ? 'gap-3' : 'gap-2')}>
+              <div className={cn("flex flex-col items-center", expandedSection === 'heatmap' ? 'gap-3' : 'gap-1 sm:gap-2')}>
                 {KEYBOARD_ROWS.map((row, ri) => (
-                  <div key={ri} className={cn("flex", expandedSection === 'heatmap' ? 'gap-2.5' : 'gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'heatmap' ? '40px' : '24px') : ri === 2 ? (expandedSection === 'heatmap' ? '80px' : '48px') : '0' }}>
+                  <div key={ri} className={cn("flex w-full", expandedSection === 'heatmap' ? 'gap-2.5' : 'gap-1 sm:gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'heatmap' ? '40px' : '12px sm:24px') : ri === 2 ? (expandedSection === 'heatmap' ? '80px' : '24px sm:48px') : '0' }}>
                     {row.map((key) => {
                       const rate = result.keyUsageRate[key] || 0;
                       const freq = result.keyFreq[key] || 0;
@@ -2415,15 +2391,17 @@ export default function EvaluatePage() {
                         <div
                           key={key}
                           className={cn(
-                            'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-all shadow-sm',
-                            expandedSection === 'heatmap' ? 'h-20 w-20' : 'h-14 w-14',
+                            'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-colors shadow-sm',
+                            expandedSection === 'heatmap'
+                              ? 'h-20 w-20'
+                              : 'flex-1 min-w-0 aspect-square sm:flex-none sm:w-14 sm:h-14',
                             bgColor,
                           )}
                           title={`${key.toUpperCase()}: ${freq.toLocaleString()}次 (${rate.toFixed(1)}%)`}
                         >
-                          <span className={cn('font-bold leading-none', expandedSection === 'heatmap' ? 'text-xl' : 'text-base')}>{key.toUpperCase()}</span>
+                          <span className={cn('font-bold leading-none', expandedSection === 'heatmap' ? 'text-xl' : 'text-sm sm:text-base')}>{key.toUpperCase()}</span>
                           {freq > 0 && (
-                            <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'heatmap' ? 'text-sm' : 'text-[10px]')}>
+                            <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'heatmap' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
                               {rate.toFixed(2)}
                             </span>
                           )}
@@ -2687,11 +2665,11 @@ export default function EvaluatePage() {
               {/* 词组键盘热力图 */}
               <div className="mt-5">
                 <h4 className="text-sm font-semibold text-foreground mb-3">词组键位热力图（%）</h4>
-                <div className={cn("flex flex-col items-center", expandedSection === 'phrase' ? 'gap-3' : 'gap-2')}>
+                <div className={cn("flex flex-col items-center", expandedSection === 'phrase' ? 'gap-3' : 'gap-1 sm:gap-2')}>
                   {(() => {
                     const totalPhraseKeys = Object.values(result.phraseEval.overall.keyFreq).reduce((s, f) => s + f, 0);
                     return KEYBOARD_ROWS.map((row, ri) => (
-                    <div key={ri} className={cn("flex", expandedSection === 'phrase' ? 'gap-2.5' : 'gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'phrase' ? '40px' : '24px') : ri === 2 ? (expandedSection === 'phrase' ? '80px' : '48px') : '0' }}>
+                    <div key={ri} className={cn("flex w-full", expandedSection === 'phrase' ? 'gap-2.5' : 'gap-1 sm:gap-1.5')} style={{ paddingLeft: ri === 1 ? (expandedSection === 'phrase' ? '40px' : '12px sm:24px') : ri === 2 ? (expandedSection === 'phrase' ? '80px' : '24px sm:48px') : '0' }}>
                       {row.map((key) => {
                         const freq = result.phraseEval.overall.keyFreq[key] || 0;
                         const rate = totalPhraseKeys > 0 ? (freq / totalPhraseKeys * 100) : 0;
@@ -2707,15 +2685,17 @@ export default function EvaluatePage() {
                           <div
                             key={key}
                             className={cn(
-                              'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-all shadow-sm',
-                              expandedSection === 'phrase' ? 'h-20 w-20' : 'h-14 w-14',
+                              'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-colors shadow-sm',
+                              expandedSection === 'phrase'
+                                ? 'h-20 w-20'
+                                : 'flex-1 min-w-0 aspect-square sm:flex-none sm:w-14 sm:h-14',
                               bgColor,
                             )}
                             title={`${key.toUpperCase()}: ${freq.toLocaleString()}次 (${rate.toFixed(1)}%)`}
                           >
-                            <span className={cn('font-bold leading-none', expandedSection === 'phrase' ? 'text-xl' : 'text-base')}>{key.toUpperCase()}</span>
+                            <span className={cn('font-bold leading-none', expandedSection === 'phrase' ? 'text-xl' : 'text-sm sm:text-base')}>{key.toUpperCase()}</span>
                             {freq > 0 && (
-                              <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'phrase' ? 'text-sm' : 'text-[10px]')}>
+                              <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'phrase' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
                                 {rate.toFixed(1)}
                               </span>
                             )}
@@ -2933,40 +2913,28 @@ export default function EvaluatePage() {
 // 子组件
 // ========================================
 
-function ScoreCard({ icon, title, value, unit, reference, progress, score, colorScheme, highlight }: {
+function ScoreCard({ icon, title, value, unit, score, highlight }: {
   icon: React.ReactNode;
   title: string;
   value: string;
   unit: string;
-  reference: string;
-  progress: number;
   score: number;
-  colorScheme: string;
   highlight?: boolean;
 }) {
-  // 统一使用更克制的色彩系统：仅区分好坏状态，不使用 8 种颜色
-  const barColor = highlight
-    ? 'bg-emerald-500'
-    : score >= 80 ? 'bg-emerald-500' : score >= 60 ? 'bg-amber-500' : 'bg-red-400';
-
   return (
     <div className={cn(
-      'rounded-xl border border-border bg-card p-4 transition-all duration-200 hover:shadow-md hover:border-primary/20',
-      highlight && 'ring-2 ring-emerald-500/30 border-emerald-200 dark:border-emerald-800'
+      'rounded-xl border border-border bg-card px-2.5 py-2 transition-colors duration-200',
+      highlight && 'ring-1 ring-emerald-500/30 border-emerald-200 dark:border-emerald-800'
     )}>
-      <div className="flex items-center gap-2 mb-3">
-        <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center bg-muted', highlight && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400')}>{icon}</div>
-        <span className="text-xs font-medium text-muted-foreground leading-tight">{title}</span>
+      <div className="flex items-center gap-1 mb-1.5">
+        <div className={cn('w-5 h-5 rounded flex items-center justify-center shrink-0', highlight ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-muted')}>{icon}</div>
+        <span className="text-[10px] sm:text-[11px] font-medium text-muted-foreground truncate">{title}</span>
       </div>
-      <div className="flex items-baseline gap-1 mb-3">
-        <span className={cn('text-2xl font-bold tabular-nums tracking-tight', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
-        {unit && <span className="text-sm text-muted-foreground">{unit}</span>}
-      </div>
-      <div className="w-full h-1.5 rounded-full overflow-hidden mb-2 bg-muted">
-        <div className={cn('h-full rounded-full transition-all duration-500', barColor)} style={{ width: `${Math.max(0, Math.min(100, progress))}%` }} />
-      </div>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-muted-foreground">{reference}</span>
+      <div className="flex items-baseline justify-between gap-1">
+        <div className="flex items-baseline gap-0.5 min-w-0">
+          <span className={cn('text-base sm:text-lg font-bold tabular-nums truncate', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
+          {unit && <span className="text-[10px] text-muted-foreground shrink-0">{unit}</span>}
+        </div>
         {getGradeBadge(score)}
       </div>
     </div>
