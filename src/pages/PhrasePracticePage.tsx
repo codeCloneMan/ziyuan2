@@ -1,10 +1,9 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { charCodeData } from '@/data/charCodeData';
-import { twoCharPhrases, threeCharPhrases, fourCharPhrases } from '@/data/builtinPhrases';
+import { useCharCodeData, useBuiltinPhrases, type CharCodeItem } from '@/lib/data-loader';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { keyboardRows } from '@/data/roots';
 import {
@@ -13,22 +12,23 @@ import {
 } from 'lucide-react';
 
 // ============================================
-// 模块级缓存（只构建一次）
+// 字符编码映射（延迟构建）
 // ============================================
 
-const charToFullCodes = new Map<string, string[]>();
-{
+function buildCharToFullCodes(charCodeData: CharCodeItem[]): Map<string, string[]> {
+  const map = new Map<string, string[]>();
   for (const item of charCodeData) {
-    const existing = charToFullCodes.get(item.char);
+    const existing = map.get(item.char);
     if (existing) {
       if (!existing.includes(item.code)) existing.push(item.code);
     } else {
-      charToFullCodes.set(item.char, [item.code]);
+      map.set(item.char, [item.code]);
     }
   }
+  return map;
 }
 
-function getFullCode(ch: string): string | null {
+function getFullCode(ch: string, charToFullCodes: Map<string, string[]>): string | null {
   const codes = charToFullCodes.get(ch);
   if (!codes || codes.length === 0) return null;
   return codes.reduce((a, b) => a.length >= b.length ? a : b);
@@ -36,13 +36,13 @@ function getFullCode(ch: string): string | null {
 
 const phraseCodeCache = new Map<string, string | null>();
 
-function getPhraseCode(phrase: string): string | null {
+function getPhraseCode(phrase: string, charToFullCodes: Map<string, string[]>): string | null {
   const cached = phraseCodeCache.get(phrase);
   if (cached !== undefined) return cached;
   const phraseLen = phrase.length;
   const fullCodes: string[] = [];
   for (const ch of phrase) {
-    const fc = getFullCode(ch);
+    const fc = getFullCode(ch, charToFullCodes);
     if (!fc) { phraseCodeCache.set(phrase, null); return null; }
     fullCodes.push(fc);
   }
@@ -89,18 +89,19 @@ const commonShortSentences: string[] = [
   '改革开放', '科学发展', '和谐社会', '美好家园', '共同努力',
 ];
 
-function buildPhraseList(mode: PhraseMode): PhraseItem[] {
+function buildPhraseList(mode: PhraseMode, charToFullCodes: Map<string, string[]>, phrasesData: import('@/lib/data-loader').BuiltinPhrasesData): PhraseItem[] {
   const phrases: PhraseItem[] = [];
   const seen = new Set<string>();
   const addPhrase = (phrase: string) => {
     if (seen.has(phrase)) return;
     seen.add(phrase);
-    const fullCode = getPhraseCode(phrase);
+    const fullCode = getPhraseCode(phrase, charToFullCodes);
     if (!fullCode) return;
-    const codes = phrase.split('').map(ch => getFullCode(ch) || '?');
+    const codes = phrase.split('').map(ch => getFullCode(ch, charToFullCodes) || '?');
     if (codes.includes('?')) return;
     phrases.push({ phrase, codes, fullCode });
   };
+  const { twoCharPhrases, threeCharPhrases, fourCharPhrases } = phrasesData;
   if (mode === 'twoChar' || mode === 'mixed') {
     for (const p of twoCharPhrases) { if (p.length === 2) addPhrase(p); }
   }
@@ -137,6 +138,10 @@ interface PhraseStats {
 }
 
 export default function PhrasePracticePage() {
+  const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+  const { data: phrasesData } = useBuiltinPhrases();
+  const charToFullCodes = useMemo(() => charCodeData ? buildCharToFullCodes(charCodeData) : new Map(), [charCodeData]);
+
   const [mode, setMode] = useLocalStorage<PhraseMode>('phrase-mode', 'twoChar');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentPhrase, setCurrentPhrase] = useState<PhraseItem | null>(null);
@@ -163,15 +168,16 @@ export default function PhrasePracticePage() {
   const [poolCount, setPoolCount] = useState(0);
 
   useEffect(() => {
+    if (!charCodeData || !phrasesData) return;
     setPoolReady(false);
     const timer = setTimeout(() => {
-      const pool = buildPhraseList(mode);
+      const pool = buildPhraseList(mode, charToFullCodes, phrasesData);
       phrasePoolRef.current = pool;
       setPoolCount(pool.length);
       setPoolReady(true);
     }, 0);
     return () => clearTimeout(timer);
-  }, [mode]);
+  }, [mode, charCodeData, phrasesData, charToFullCodes]);
 
   const advancePhrase = useCallback(() => {
     const nextIndex = currentIndex + 1;
@@ -433,7 +439,7 @@ export default function PhrasePracticePage() {
                         isWrongChar && i < inputCode.length && char !== currentPhrase.fullCode[i]
                           && 'border-red-500 bg-red-50 text-red-700',
                         !feedbackType && isFilled && 'border-primary bg-primary/5',
-                        !feedbackType && !isFilled && 'border-border animate-pulse',
+                        !feedbackType && !isFilled && 'border-border/60',
                         feedbackType === 'correct' && !isFilled && 'border-emerald-300 bg-emerald-50/50',
                         feedbackType === 'wrong' && !isFilled && 'border-red-200 bg-red-50/30',
                       )}

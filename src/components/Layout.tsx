@@ -9,7 +9,7 @@ import {
   HelpCircle, PenTool, BarChart3, TextQuote,
 } from 'lucide-react';
 import { rootMappings } from '@/data/roots';
-import { charCodeData } from '@/data/charCodeData';
+import { useCharCodeData } from '@/lib/data-loader';
 import { flatFAQs } from '@/data/faqData';
 
 const navItems = [
@@ -78,6 +78,8 @@ export default function Layout() {
     category?: string;  // FAQ分类
   }
 
+  const { data: charCodeData } = useCharCodeData();
+
   const q = searchQuery.trim().toLowerCase();
 
   const searchResults: SearchResult[] = useMemo(() => q
@@ -86,7 +88,7 @@ export default function Layout() {
           .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
           .slice(0, 3)
           .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA })),
-        ...charCodeData
+        ...(charCodeData ?? [])
           .filter(d => d.char.includes(q) || d.code.toLowerCase().includes(q))
           .slice(0, 3)
           .map(d => ({ type: 'char' as const, char: d.char, code: d.code })),
@@ -387,7 +389,7 @@ export default function Layout() {
                   <div className="text-center p-3 rounded-lg bg-muted/50">
                     <PenTool className="h-5 w-5 mx-auto mb-1.5 text-emerald-600" />
                     <div className="text-xs font-medium text-foreground">汉字</div>
-                    <div className="text-[10px] text-muted-foreground">{charCodeData.length}个</div>
+                    <div className="text-[10px] text-muted-foreground">{charCodeData ? `${charCodeData.length}个` : '...'}</div>
                   </div>
                   <div className="text-center p-3 rounded-lg bg-muted/50">
                     <HelpCircle className="h-5 w-5 mx-auto mb-1.5 text-amber-500" />

@@ -2,10 +2,9 @@ import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { charCodeData } from '@/data/charCodeData';
+import { useCharCodeData, useBuiltinPhrases, type CharCodeItem } from '@/lib/data-loader';
 import { rootMappings } from '@/data/roots';
 import { getCharSplit, getPhraseSplits } from '@/data/splitData';
-import { twoCharPhrases, threeCharPhrases, fourCharPhrases, longCharPhrases, twoCharFreqs, threeCharFreqs, fourCharFreqs, longCharFreqs } from '@/data/builtinPhrases';
 import {
   Search, SplitSquareHorizontal, X, Keyboard, BookOpen, Hash,
   Layers, Type,
@@ -27,8 +26,11 @@ interface PhraseEntry {
   type: '2' | '3' | '4' | '5';
 }
 
-/** 高频词组（按频率排序，全部词组） */
-const TOP_PHRASES: PhraseEntry[] = (() => {
+/** 高频词组（延迟初始化） */
+let _topPhrases: PhraseEntry[] | null = null;
+function getTopPhrases(phrasesData: import('@/lib/data-loader').BuiltinPhrasesData): PhraseEntry[] {
+  if (_topPhrases) return _topPhrases;
+  const { twoCharPhrases, twoCharFreqs, threeCharPhrases, threeCharFreqs, fourCharPhrases, fourCharFreqs, longCharPhrases, longCharFreqs } = phrasesData;
   const items: PhraseEntry[] = [];
   let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
   while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
@@ -46,22 +48,23 @@ const TOP_PHRASES: PhraseEntry[] = (() => {
       items.push({ phrase: longCharPhrases[i5], freq: f5, type: '5' }); i5++;
     } else break;
   }
+  _topPhrases = items;
   return items;
-})();
+}
 
 /** 按短语查找单字全码（最长编码） */
-function getFullCode(ch: string): string | null {
+function getFullCode(ch: string, charCodeData: import('@/lib/data-loader').CharCodeItem[]): string | null {
   const codes = charCodeData.filter(c => c.char === ch).map(c => c.code);
   if (codes.length === 0) return null;
   return codes.reduce((a, b) => a.length >= b.length ? a : b);
 }
 
 /** 四码词组码（与 EvaluatePage 一致） */
-function getPhraseCode(phrase: string): string | null {
+function getPhraseCode(phrase: string, charCodeData: import('@/lib/data-loader').CharCodeItem[]): string | null {
   const phraseLen = phrase.length;
   const fullCodes: string[] = [];
   for (const ch of phrase) {
-    const fc = getFullCode(ch);
+    const fc = getFullCode(ch, charCodeData);
     if (!fc) return null;
     fullCodes.push(fc);
   }
@@ -84,6 +87,9 @@ function getPhraseCode(phrase: string): string | null {
 // ============================================
 
 export default function SplitSearchPage() {
+  const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+  const { data: phrasesData } = useBuiltinPhrases();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searchMode, setSearchMode] = useState<SearchMode>('char');
   const [selectedChar, setSelectedChar] = useState<string | null>(null);
@@ -92,7 +98,7 @@ export default function SplitSearchPage() {
 
   // ========== 单字搜索 ==========
   const charResults = useMemo(() => {
-    if (!query || searchMode !== 'char') return [];
+    if (!charCodeData || !query || searchMode !== 'char') return [];
     const results: { char: string; code: string; split: string | null }[] = [];
     const seen = new Set<string>();
     for (const item of charCodeData) {
@@ -114,7 +120,8 @@ export default function SplitSearchPage() {
 
   // ========== 词组搜索 ==========
   const phraseResults = useMemo(() => {
-    if (!query || searchMode !== 'phrase') return [];
+    if (!charCodeData || !phrasesData || !query || searchMode !== 'phrase') return [];
+    const TOP_PHRASES = getTopPhrases(phrasesData);
     const results: {
       phrase: string; code: string | null;
       charSplits: (string | null)[]; charCodes: (string | null)[];
@@ -125,31 +132,31 @@ export default function SplitSearchPage() {
       if (entry.phrase.includes(query)) {
         results.push({
           phrase: entry.phrase,
-          code: getPhraseCode(entry.phrase),
+          code: getPhraseCode(entry.phrase, charCodeData),
           charSplits: getPhraseSplits(entry.phrase),
-          charCodes: entry.phrase.split('').map(ch => getFullCode(ch)),
+          charCodes: entry.phrase.split('').map(ch => getFullCode(ch, charCodeData)),
         });
       }
     }
     return results;
-  }, [query, searchMode]);
+  }, [query, searchMode, charCodeData, phrasesData]);
 
   // 选中单字的详情
   const selectedDetail = useMemo(() => {
-    if (!selectedChar) return null;
+    if (!selectedChar || !charCodeData) return null;
     const codes = charCodeData.filter(c => c.char === selectedChar).map(c => c.code);
     const split = getCharSplit(selectedChar);
     return { char: selectedChar, codes, split };
-  }, [selectedChar]);
+  }, [selectedChar, charCodeData]);
 
   // 同编码汉字（避免在 JSX 中重复 filter 128K 数据）
   const sameCodeChars = useMemo(() => {
-    if (!selectedDetail?.codes[0]) return [];
+    if (!charCodeData || !selectedDetail?.codes[0]) return [];
     return charCodeData.filter(d => d.code === selectedDetail.codes[0] && d.char !== selectedDetail.char).slice(0, 8);
-  }, [selectedDetail]);
+  }, [selectedDetail, charCodeData]);
 
-  const totalChars = charCodeData.length;
-  const uniqueChars = useMemo(() => new Set(charCodeData.map(d => d.char)).size, []);
+  const totalChars = charCodeData?.length ?? 0;
+  const uniqueChars = useMemo(() => charCodeData ? new Set(charCodeData.map(d => d.char)).size : 0, [charCodeData]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -180,7 +187,7 @@ export default function SplitSearchPage() {
               <div className="text-[11px] sm:text-xs text-muted-foreground">字根数</div>
             </div>
             <div className="text-center">
-              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600">{TOP_PHRASES.length.toLocaleString()}</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600">{phrasesData ? (phrasesData.PHRASE_COUNTS.total ?? 0).toLocaleString() : '...'}</div>
               <div className="text-[11px] sm:text-xs text-muted-foreground">词组数</div>
             </div>
           </div>
@@ -387,7 +394,7 @@ export default function SplitSearchPage() {
                 {searchMode === 'char' ? '输入汉字或编码开始查询' : '输入词组查询编码和拆分'}
               </p>
               <p className="text-sm">
-                {searchMode === 'char' ? '支持按汉字、编码、字根进行搜索' : `共收录 ${TOP_PHRASES.length.toLocaleString()} 个高频词组`}
+                {searchMode === 'char' ? '支持按汉字、编码、字根进行搜索' : `共收录 ${phrasesData ? (phrasesData.PHRASE_COUNTS.total ?? 0).toLocaleString() : '...'} 个高频词组`}
               </p>
             </div>
           )}

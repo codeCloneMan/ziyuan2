@@ -11,12 +11,8 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import html2canvas from 'html2canvas';
+import { useCharCodeData, useBuiltinPhrases, type CharCodeItem, type BuiltinPhrasesData } from '@/lib/data-loader';
 import { calculateCoverage } from '@/data/builtinCharSets';
-import {
-  twoCharPhrases, threeCharPhrases, fourCharPhrases, longCharPhrases,
-  twoCharFreqs, threeCharFreqs, fourCharFreqs, longCharFreqs,
-  PHRASE_FREQ_TOTAL,
-} from '@/data/builtinPhrases';
 import { charFrequency } from '@/data/charFrequency';
 import { calcWeightedSpeedEquivalent, getSpeedEquivalent } from '@/data/speedEquivalent';
 import { GB2312_CHARS, GBK_CHARS } from '@/data/standardCharsets';
@@ -355,7 +351,12 @@ function parseCodeTable(content: string): CodeEntry[] {
 // ========================================
 // 模块级常量：全部词组四路归并（只算一次，所有组件共享）
 // ========================================
-const ALL_PHRASES_MERGED: Array<{ phrase: string; freq: number }> = (() => {
+let _phrasesData: BuiltinPhrasesData | null = null;
+let _allPhrasesMerged: Array<{ phrase: string; freq: number }> | null = null;
+function getAllPhrasesMerged(phrasesData: BuiltinPhrasesData): Array<{ phrase: string; freq: number }> {
+  if (_allPhrasesMerged) return _allPhrasesMerged;
+  _phrasesData = phrasesData;
+  const { twoCharPhrases, twoCharFreqs, threeCharPhrases, threeCharFreqs, fourCharPhrases, fourCharFreqs, longCharPhrases, longCharFreqs } = phrasesData;
   const items: Array<{ phrase: string; freq: number }> = [];
   let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
   while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
@@ -368,14 +369,26 @@ const ALL_PHRASES_MERGED: Array<{ phrase: string; freq: number }> = (() => {
     else if (f4 >= f5) { items.push({ phrase: fourCharPhrases[i4], freq: f4 }); i4++; }
     else { items.push({ phrase: longCharPhrases[i5], freq: f5 }); i5++; }
   }
+  _allPhrasesMerged = items;
   return items;
-})();
+}
 
 // ========================================
 // 核心评码算法
 // ========================================
 
-function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResult?: EvaluateResult | null): EvaluateResult {
+function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', allPhrasesMerged: Array<{ phrase: string; freq: number }> = [], prevResult?: EvaluateResult | null): EvaluateResult {
+  // 安全检查：词组数据未加载时返回空结果
+  if (!_phrasesData) {
+    return {
+      weightedCodeLength: 0, fullCodeDupRate: 0, selectRate: 0, simplifiedDupRate: 0,
+      speedEquivalent: 0, weightedSpeedEquivalent: 0, totalScore: 0, fullCodeScore: 0,
+      simplifiedScore: 0, keyFrequency: {}, fingerLoad: {}, sameFingerPairs: {},
+      handBalance: { left: 0, right: 0 }, rowUsage: {}, coveragePercent: 0,
+      totalChars: 0, noCodeChars: [], missingChars: [], keyCount: 0, totalKeystrokes: 0,
+      phraseEval: null, phraseFreqTierStats: null, topPhraseCount: 0, phraseDupGroups: null,
+    } as EvaluateResult;
+  }
   // ★ 固定字集：始终以前6000高频字为评估基准
   // charset 参数只控制哪些字参与评估（如 gb2312 只评估6000字中的GB2312子集），
   // 不影响码表条目的查找范围（编码始终从完整码表中查找）
@@ -984,7 +997,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     let totalCodeLen = 0;
 
     const getWeight = (phrase: string, idx: number): number => {
-      if (freqArr && idx >= 0 && idx < freqArr.length) return freqArr[idx] / PHRASE_FREQ_TOTAL;
+      if (freqArr && idx >= 0 && idx < freqArr.length) return freqArr[idx] / (_phrasesData?.PHRASE_FREQ_TOTAL ?? 1);
       let w = 0;
       for (const ch of phrase) w += getCharFrequencyWeight(ch);
       return w;
@@ -1085,23 +1098,24 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     phraseDupGroups = prevResult.phraseDupGroups;
   } else {
     // 全量计算：四路归并 + 60K 词组编码
+    const pd = _phrasesData;
     type PhraseSource = { phrase: string; freq: number; type: '2' | '3' | '4' | '5' };
     const topItems: PhraseSource[] = [];
     {
       let i2 = 0, i3 = 0, i4 = 0, i5 = 0;
-      while (i2 < twoCharPhrases.length || i3 < threeCharPhrases.length || i4 < fourCharPhrases.length || i5 < longCharPhrases.length) {
-        const f2 = i2 < twoCharFreqs.length ? twoCharFreqs[i2] : -1;
-        const f3 = i3 < threeCharFreqs.length ? threeCharFreqs[i3] : -1;
-        const f4 = i4 < fourCharFreqs.length ? fourCharFreqs[i4] : -1;
-        const f5 = i5 < longCharFreqs.length ? longCharFreqs[i5] : -1;
+      while (i2 < pd.twoCharPhrases.length || i3 < pd.threeCharPhrases.length || i4 < pd.fourCharPhrases.length || i5 < pd.longCharPhrases.length) {
+        const f2 = i2 < pd.twoCharFreqs.length ? pd.twoCharFreqs[i2] : -1;
+        const f3 = i3 < pd.threeCharFreqs.length ? pd.threeCharFreqs[i3] : -1;
+        const f4 = i4 < pd.fourCharFreqs.length ? pd.fourCharFreqs[i4] : -1;
+        const f5 = i5 < pd.longCharFreqs.length ? pd.longCharFreqs[i5] : -1;
         let maxF = f2, maxType: PhraseSource['type'] = '2';
         if (f3 > maxF) { maxF = f3; maxType = '3'; }
         if (f4 > maxF) { maxF = f4; maxType = '4'; }
         if (f5 > maxF) { maxF = f5; maxType = '5'; }
-        if (maxType === '2') { topItems.push({ phrase: twoCharPhrases[i2], freq: f2, type: '2' }); i2++; }
-        else if (maxType === '3') { topItems.push({ phrase: threeCharPhrases[i3], freq: f3, type: '3' }); i3++; }
-        else if (maxType === '4') { topItems.push({ phrase: fourCharPhrases[i4], freq: f4, type: '4' }); i4++; }
-        else { topItems.push({ phrase: longCharPhrases[i5], freq: f5, type: '5' }); i5++; }
+        if (maxType === '2') { topItems.push({ phrase: pd.twoCharPhrases[i2], freq: f2, type: '2' }); i2++; }
+        else if (maxType === '3') { topItems.push({ phrase: pd.threeCharPhrases[i3], freq: f3, type: '3' }); i3++; }
+        else if (maxType === '4') { topItems.push({ phrase: pd.fourCharPhrases[i4], freq: f4, type: '4' }); i4++; }
+        else { topItems.push({ phrase: pd.longCharPhrases[i5], freq: f5, type: '5' }); i5++; }
       }
     }
 
@@ -1131,7 +1145,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
       const phrase = topAll[pi];
       const code = getCachedPhraseCode(phrase);
       if (code === null) continue;
-      const weight = topAllF[pi] / PHRASE_FREQ_TOTAL;
+      const weight = topAllF[pi] / (_phrasesData?.PHRASE_FREQ_TOTAL ?? 1);
       coveredPhraseList.push({ phrase, code, weight, idx: pi });
       const existing = phraseCodeMapOverall.get(code);
       if (existing) { if (!existing.includes(phrase)) existing.push(phrase); }
@@ -1249,7 +1263,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', prevResu
     const fullCharCodes = new Map<string, boolean>();
     for (const entry of entries) fullCharCodes.set(entry.char, true);
     const allPhraseChars = new Set<string>();
-    for (const item of [...twoCharPhrases, ...threeCharPhrases, ...fourCharPhrases, ...longCharPhrases]) {
+    for (const item of [...(_phrasesData?.twoCharPhrases ?? []), ...(_phrasesData?.threeCharPhrases ?? []), ...(_phrasesData?.fourCharPhrases ?? []), ...(_phrasesData?.longCharPhrases ?? [])]) {
       for (const ch of item) allPhraseChars.add(ch);
     }
     for (const ch of allPhraseChars) {
@@ -1600,6 +1614,9 @@ const CharFreqPanel = ({
 };
 
 export default function EvaluatePage() {
+  const { data: charCodeData, loading: charDataLoading } = useCharCodeData();
+  const { data: phrasesData, loading: phrasesLoading } = useBuiltinPhrases();
+
   const [fileName, setFileName] = useState('');
   const [parsing, setParsing] = useState(false);
   const [parseProgress, setParseProgress] = useState(0);
@@ -1617,7 +1634,8 @@ export default function EvaluatePage() {
   const [countSpace, setCountSpace] = useState(false); // 计算空格模式
   const resultRef = useRef<HTMLDivElement>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
-  const [selectedDupCode, setSelectedDupCode] = useState<string | null>(null); // 重码弹窗
+  const [selectedDupCode, setSelectedDupCode] = useState<string | null>(null); // 词组重码弹窗
+  const [showSingleCharDup, setShowSingleCharDup] = useState(false); // 单字重码弹窗
   const [showPhraseList, setShowPhraseList] = useState(false); // 词频一览面板
   const [phraseSearch, setPhraseSearch] = useState(''); // 词频搜索
   const [showCharList, setShowCharList] = useState(false); // 单字一览面板
@@ -1628,11 +1646,12 @@ export default function EvaluatePage() {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (selectedDupCode) setSelectedDupCode(null);
+        if (showSingleCharDup) setShowSingleCharDup(false);
         else if (expandedSection) setExpandedSection(null);
       }
     };
     // 任一弹层打开时锁定背景滚动并注册 Esc
-    if (expandedSection || selectedDupCode) {
+    if (expandedSection || selectedDupCode || showSingleCharDup) {
       document.addEventListener('keydown', handleEsc);
       document.body.style.overflow = 'hidden';
     }
@@ -1641,7 +1660,7 @@ export default function EvaluatePage() {
       document.removeEventListener('keydown', handleEsc);
       document.body.style.overflow = '';
     };
-  }, [expandedSection, selectedDupCode]);
+  }, [expandedSection, selectedDupCode, showSingleCharDup]);
 
   // ★ 当字集过滤器或原始条目变化时，重新计算测评结果和覆盖率
   const prevResultRef = useRef<EvaluateResult | null>(null);
@@ -1678,7 +1697,8 @@ export default function EvaluatePage() {
     }
 
     // 全量计算
-    const res = evaluate(entries, charset, forceFull ? undefined : prevResultRef.current);
+    const allPhrasesMerged = phrasesData ? getAllPhrasesMerged(phrasesData) : [];
+    const res = evaluate(entries, charset, allPhrasesMerged, forceFull ? undefined : prevResultRef.current);
     prevResultRef.current = res;
 
     // 计算单字覆盖率（仅统计单字符条目，不包含多字编码）
@@ -1846,10 +1866,22 @@ export default function EvaluatePage() {
   // ========================================
   // 词频一览：合并全部词组（模块级常量，避免每次渲染重算 60K 条目）
   // ========================================
-  const allPhrasesMerged = ALL_PHRASES_MERGED;
+  const allPhrasesMerged = phrasesData ? getAllPhrasesMerged(phrasesData) : [];
 
   // 渲染
   // ========================================
+
+  // 数据加载中
+  if (charDataLoading || phrasesLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          <span className="text-sm text-muted-foreground">加载数据中...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -2354,6 +2386,60 @@ export default function EvaluatePage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* 单字核心统计（覆盖率 / 平均码长 / 重码率 / 选重率） */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {/* 覆盖率 */}
+            {(() => {
+              const cov = charCoverage
+                ? (charsetFilter === 'gbk' ? charCoverage.gbk
+                  : charsetFilter === 'tonggui' ? charCoverage.tonggui
+                  : charCoverage.gb2312) ?? null
+                : null;
+              const pct = cov?.percentage ?? 0;
+              return (
+                <div className="rounded-lg border border-border p-3 text-center">
+                  <div className={cn('text-2xl font-bold tabular-nums',
+                    pct >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
+                    pct >= 70 ? 'text-amber-600 dark:text-amber-400' :
+                    'text-red-600 dark:text-red-400'
+                  )}>{pct.toFixed(1)}%</div>
+                  <div className="text-xs text-muted-foreground mt-1">覆盖率</div>
+                  <div className="text-[10px] text-muted-foreground/60 mt-0.5">单字可编码比例</div>
+                </div>
+              );
+            })()}
+            {/* 平均码长（字频加权） */}
+            <div className="rounded-lg border border-border p-3 text-center">
+              <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                {result.weightedAvgCodeLen.toFixed(2)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">平均码长</div>
+              <div className="text-[10px] text-muted-foreground/60 mt-0.5">每字平均按键数</div>
+            </div>
+            {/* 重码率（全码重码率） */}
+            <div
+              className="rounded-lg border border-border p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors"
+              title="点击查看重码单字"
+              onClick={() => setShowSingleCharDup(true)}
+            >
+              <div className={cn('text-2xl font-bold tabular-nums',
+                result.fullDupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
+                result.fullDupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
+                'text-red-600 dark:text-red-400'
+              )}>{result.fullDupRate.toFixed(2)}%</div>
+              <div className="text-xs text-muted-foreground mt-1">重码率 <span className="text-[10px] text-primary">点击查看</span></div>
+              <div className="text-[10px] text-muted-foreground/60 mt-0.5">重码编码占比</div>
+            </div>
+            {/* 选重率（字频加权） */}
+            <div className="rounded-lg border border-border p-3 text-center">
+              <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
+                {(result.dynamicSelectionRate * 100).toFixed(2)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">选重率（%）</div>
+              <div className="text-[10px] text-muted-foreground/60 mt-0.5">字频加权重码占比</div>
+            </div>
+          </div>
 
           {/* ===== 键盘热力图 ===== */}
           <Card className={cn(expandedSection === 'heatmap' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
@@ -2900,6 +2986,61 @@ export default function EvaluatePage() {
               </div>
               <div className="px-5 py-3 border-t border-border/60 text-xs text-muted-foreground text-center">
                 按重码词组数降序排列 · 按 Esc 关闭
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ===== 单字重码弹窗 ===== */}
+      {showSingleCharDup && result && (() => {
+        const dupes = result.topDupes;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowSingleCharDup(false)}>
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-gradient-to-r from-primary/5 to-accent/5">
+                <div>
+                  <h3 className="font-bold text-foreground">单字重码</h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    共 {result.staticDupCount} 个重码字（{dupes.length} 组），全码重码率 {result.fullDupRate.toFixed(2)}%
+                  </p>
+                </div>
+                <button onClick={() => setShowSingleCharDup(false)} className="p-2 rounded-full hover:bg-muted transition-colors">
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+              <div className="overflow-y-auto flex-1 p-4 space-y-3">
+                {dupes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">无重码数据</p>
+                ) : dupes.map((g, gi) => (
+                  <div key={g.code} className="rounded-lg border border-border/50 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground">#{gi + 1}</span>
+                        <span className="font-mono text-sm font-semibold text-primary">{g.code}</span>
+                        <span className="text-xs text-muted-foreground">({g.count}个字)</span>
+                      </div>
+                    </div>
+                    <div className="px-3 py-2">
+                      <div className="flex flex-wrap gap-2">
+                        {g.chars.map((ch, idx) => (
+                          <div key={idx} className={cn(
+                            'flex items-center gap-1.5 px-2 py-1 rounded-lg border text-sm',
+                            idx === 0 ? 'border-primary/30 bg-primary/5 font-medium' : 'border-border bg-card text-muted-foreground'
+                          )}>
+                            <span className="text-base">{ch}</span>
+                            <span className="text-[10px] font-mono text-muted-foreground">
+                              {(charFrequency[ch] ?? 0).toFixed(4)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="px-5 py-3 border-t border-border/60 text-xs text-muted-foreground text-center">
+                按重码字数降序排列 · 高频字在前 · 按 Esc 关闭
               </div>
             </div>
           </div>

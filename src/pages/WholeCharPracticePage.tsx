@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { charCodeData, type CharCodeItem } from '@/data/charCodeData';
+import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars, top1000Chars, top1500Chars } from '@/data/commonChars';
 import { practiceRootMappings, keyboardRows } from '@/data/roots';
 import type { WholeCharMode } from '@/types';
@@ -107,13 +107,12 @@ function isMustSplitChar(char: string): boolean {
   return mustSplitChars.has(char);
 }
 
-// ====== 获取必拆字列表 ======
-function getMustSplitChars(): string[] {
+// ====== 获取必拆字列表（延迟计算） ======
+function getMustSplitChars(charCodeData: CharCodeItem[]): string[] {
   return charCodeData.filter(d => isMustSplitChar(d.char)).map(d => d.char);
 }
 
-// ====== 生成字频段数据 ======
-const allCharIds = charCodeData.map(d => d.char);
+// allCharIds moved into component (requires charCodeData)
 
 interface WholeCharPersistData {
   isPlaying: boolean;
@@ -137,8 +136,8 @@ interface WholeCharPersistData {
 
 const defaultPersist: WholeCharPersistData = {
   isPlaying: false,
-  currentChar: charCodeData[0].char,
-  currentCode: charCodeData[0].code,
+  currentChar: '',
+  currentCode: '',
   inputCode: '',
   stats: { totalAttempts: 0, correctAttempts: 0, streak: 0, maxStreak: 0, score: 0 },
   wrongCountMap: {},
@@ -157,6 +156,9 @@ function getTodayKey(): string {
 }
 
 export default function WholeCharPracticePage() {
+  const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+  const allCharIds = useMemo(() => charCodeData?.map(d => d.char) ?? [], [charCodeData]);
+
   const [mode, setMode] = useState<WholeCharMode>(() => {
     const saved = localStorage.getItem(CURRENT_MODE_KEY);
     if (saved === 'progressive' || saved === 'progressive500') return saved;
@@ -177,8 +179,9 @@ export default function WholeCharPracticePage() {
 
   // ====== 根据字频模式和必拆字模式决定学习池 ======
   const learningPool = useMemo(() => {
+    if (!charCodeData) return [];
     if (currentData.mustSplitMode) {
-      const mustSplit = getMustSplitChars();
+      const mustSplit = getMustSplitChars(charCodeData);
       return mustSplit.length > 0 ? mustSplit : allCharIds;
     }
     switch (currentData.freqMode) {
@@ -187,7 +190,7 @@ export default function WholeCharPracticePage() {
       case 'top1500': return top1500Chars;
       default: return allCharIds;
     }
-  }, [currentData.freqMode, currentData.mustSplitMode]);
+  }, [currentData.freqMode, currentData.mustSplitMode, charCodeData, allCharIds]);
 
   const progressiveLearning = useSpacedLearning({
     allItemIds: learningPool, newItemsPerRound: 5, masteryThreshold: 3,
@@ -249,12 +252,13 @@ export default function WholeCharPracticePage() {
 
   // ====== 最弱字 TOP10 ======
   const weakestChars = useMemo(() => {
+    if (!charCodeData) return [];
     return charCodeData
       .filter(d => (currentData.wrongCountMap[d.char] || 0) > 0)
       .map(d => ({ char: d.char, code: d.code, wrong: currentData.wrongCountMap[d.char] || 0 }))
       .sort((a, b) => b.wrong - a.wrong)
       .slice(0, 10);
-  }, [currentData.wrongCountMap]);
+  }, [currentData.wrongCountMap, charCodeData]);
 
   // ====== 今日统计 ======
   const todayStats = useMemo(() => {
@@ -268,6 +272,7 @@ export default function WholeCharPracticePage() {
   }, [currentData.firstSeenMap]);
 
   const generateNext = useCallback(() => {
+    if (!charCodeData) return;
     const learning = getLearning();
     const nextId = learning.getNextItem();
     if (nextId) {
@@ -282,7 +287,7 @@ export default function WholeCharPracticePage() {
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [getLearning, updateData]);
+  }, [getLearning, updateData, charCodeData]);
 
   const startPractice = useCallback(() => {
     updateData(prev => ({
@@ -293,10 +298,11 @@ export default function WholeCharPracticePage() {
   }, [generateNext, updateData]);
 
   const continuePractice = useCallback(() => {
+    if (!charCodeData) return;
     const found = charCodeData.find(d => d.char === currentData.currentChar) ?? charCodeData[0];
     setCurrentItem(found);
     setInputCode(currentData.inputCode);
-  }, [currentData.currentChar, currentData.inputCode]);
+  }, [currentData.currentChar, currentData.inputCode, charCodeData]);
 
   const stopPractice = useCallback(() => {
     updateData(prev => ({
@@ -465,6 +471,18 @@ export default function WholeCharPracticePage() {
       return <span key={i} className={cn('font-mono text-lg', colorClass)}>{c.toUpperCase()}</span>;
     });
   };
+
+  // ====== 数据加载中 ======
+  if (dataLoading || !charCodeData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <span className="text-sm text-muted-foreground">加载码表数据...</span>
+        </div>
+      </div>
+    );
+  }
 
   // ====== 未开始：模式选择界面 ======
   if (!isPlaying) {

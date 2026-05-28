@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { renderableKeyGroups, keyboardRows } from '@/data/roots';
 import { getExamplesByRoot } from '@/data/rootExamples';
-import { charCodeData } from '@/data/charCodeData';
+import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import RootCharDisplay from '@/components/RootCharDisplay';
 import { Search, Keyboard, X, BookOpen, LayoutGrid, List, Hash } from 'lucide-react';
 import type { RootMapping } from '@/data/roots';
@@ -12,15 +12,13 @@ import type { RootMapping } from '@/data/roots';
 type DisplayMode = 'compact' | 'detailed';
 
 /** 从 charCodeData 中提取包含指定字根的汉字 */
-function findCharsContainingRoot(rootChar: string, maxCount: number = 12): { char: string; code: string }[] {
+function findCharsContainingRoot(rootChar: string, charCodeData: CharCodeItem[], maxCount: number = 12): { char: string; code: string }[] {
   const results: { char: string; code: string }[] = [];
   const seen = new Set<string>();
   for (const item of charCodeData) {
     if (results.length >= maxCount) break;
-    // 检查编码中是否包含该字根对应的键位
     if (!seen.has(item.char)) {
       seen.add(item.char);
-      // 简单匹配：如果汉字包含该字根字符
       if (item.char.includes(rootChar)) {
         results.push({ char: item.char, code: item.code });
       }
@@ -30,6 +28,8 @@ function findCharsContainingRoot(rootChar: string, maxCount: number = 12): { cha
 }
 
 export default function TablePage() {
+  const { data: charCodeData } = useCharCodeData();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [selectedRoot, setSelectedRoot] = useState<RootMapping | null>(null);
@@ -73,14 +73,14 @@ export default function TablePage() {
     [selectedRoot]
   );
   const matchingChars = useMemo(
-    () => selectedRoot ? findCharsContainingRoot(selectedRoot.char) : [],
-    [selectedRoot]
+    () => selectedRoot && charCodeData ? findCharsContainingRoot(selectedRoot.char, charCodeData) : [],
+    [selectedRoot, charCodeData]
   );
 
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
-      <section className="py-8 sm:py-16 lg:py-20 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-6 sm:py-12 lg:py-16 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
             <BookOpen className="h-4 w-4 mr-1.5" />
@@ -118,11 +118,11 @@ export default function TablePage() {
       </section>
 
       {/* 搜索与筛选区 */}
-      <section className="py-4 sm:py-8 lg:py-12 sticky top-16 z-40 bg-background/80 backdrop-blur-md border-b border-border">
-        <div className="max-w-4xl mx-auto px-2 sm:px-4 lg:px-8">
-          {/* 搜索栏 */}
-          <div className="max-w-lg mx-auto mb-6">
-            <div className="input-search">
+      <section className="z-40 bg-background border-b border-border">
+        <div className="max-w-4xl mx-auto px-3 sm:px-4 lg:px-8 py-2 sm:py-4">
+          {/* 搜索栏 + 工具栏 同行 */}
+          <div className="flex items-center gap-2 mb-2 sm:mb-3">
+            <div className="input-search flex-1">
               <Search className="icon" />
               <input
                 type="text"
@@ -135,43 +135,39 @@ export default function TablePage() {
                 className="w-full"
               />
             </div>
-          </div>
-
-          {/* 工具栏：显示模式切换 */}
-          <div className="flex items-center justify-center gap-2 mb-4">
-            <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-1">
+            <div className="inline-flex items-center rounded-lg border border-border bg-muted/30 p-1 shrink-0">
               <button
                 onClick={() => setDisplayMode('compact')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all',
                   displayMode === 'compact'
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
                 <LayoutGrid className="h-3.5 w-3.5" />
-                紧凑
+                <span className="hidden sm:inline">紧凑</span>
               </button>
               <button
                 onClick={() => setDisplayMode('detailed')}
                 className={cn(
-                  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all',
+                  'inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-all',
                   displayMode === 'detailed'
                     ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
                 )}
               >
                 <List className="h-3.5 w-3.5" />
-                详细
+                <span className="hidden sm:inline">详细</span>
               </button>
             </div>
           </div>
 
           {/* 虚拟键盘选择器 */}
           <div className="flex justify-center">
-            <div className="flex flex-col items-center gap-1 p-2 sm:p-4 rounded-2xl bg-muted/30 border border-border/60 w-full max-w-lg">
+            <div className="flex flex-col items-center gap-0.5 p-1 sm:p-2 rounded-lg sm:rounded-xl bg-muted/30 border border-border/60 w-full max-w-lg">
               {keyboardRows.map((row, rowIndex) => (
-                <div key={rowIndex} className="flex gap-1 sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 6}px` }}>
+                <div key={rowIndex} className="flex gap-0.5 sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 4}px` }}>
                   {row.map((key) => {
                     const rootCount = renderableRootCountBykey[key] || 0;
                     const isSelected = selectedKey === key;
@@ -183,20 +179,20 @@ export default function TablePage() {
                           setSearchQuery('');
                         }}
                         className={cn(
-                          'group relative flex flex-1 min-w-0 h-11 sm:h-10 sm:w-10 sm:flex-none flex-col items-center justify-center rounded-lg sm:rounded-xl border-2 text-xs font-semibold transition-colors cursor-pointer select-none',
+                          'group relative flex flex-1 min-w-0 h-8 sm:h-10 sm:w-10 sm:flex-none flex-col items-center justify-center rounded-md sm:rounded-xl border-2 text-xs font-semibold transition-colors cursor-pointer select-none',
                           isSelected
                             ? 'border-primary bg-primary shadow-md sm:scale-105'
                             : 'border-border bg-card hover:border-primary/40 hover:bg-card/80 hover:shadow-sm'
                         )}
                       >
                         <span className={cn(
-                          'text-sm font-bold',
+                          'text-xs sm:text-sm font-bold',
                           isSelected ? 'text-primary-foreground' : 'text-foreground group-hover:text-primary'
                         )}>
                           {key.toUpperCase()}
                         </span>
                         <span className={cn(
-                          'text-[9px] sm:text-[10px]',
+                          'text-[8px] sm:text-[10px]',
                           isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'
                         )}>
                           {rootCount}

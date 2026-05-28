@@ -8,7 +8,7 @@ import type { RootMapping } from '@/data/roots';
 import type { PracticeMode, PracticeStats } from '@/types';
 import { useLocalStorage } from '@/hooks/use-local-storage';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
-import { charCodeData } from '@/data/charCodeData';
+import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import RootCharDisplay from '@/components/RootCharDisplay';
 import { Play, RotateCcw, Zap, BookOpen, Trophy, CheckCircle2, XCircle, Trash2, GraduationCap, Target, AlertTriangle, Lightbulb, Eye, EyeOff, BarChart3, Timer, ChevronDown, ChevronUp, Keyboard, Star, Flame, Sparkles } from 'lucide-react';
 
@@ -53,15 +53,13 @@ const phoneticHintMap: Record<string, string> = {
   '言': 'Yán → y', '羊': 'Yáng → y', '走': 'Zǒu → z', '足': 'Zú → z',
 };
 
-// ====== 从 charCodeData 中提取字根例字 ======
-function getExampleCharsForRoot(rootChar: string, maxCount: number = 3): { char: string; code: string }[] {
+// ====== 从 charCodeData 中提取字根例字（延迟计算） ======
+function getExampleCharsForRoot(rootChar: string, charCodeData: CharCodeItem[], maxCount: number = 3): { char: string; code: string }[] {
   const results: { char: string; code: string }[] = [];
   const seen = new Set<string>();
-  // 从charCodeData中找包含该字根的汉字
   for (const item of charCodeData) {
     if (results.length >= maxCount) break;
     if (seen.has(item.char)) continue;
-    // 检查汉字是否包含该字根字符
     if (item.char.includes(rootChar) || item.code.includes(rootChar)) {
       seen.add(item.char);
       results.push(item);
@@ -132,6 +130,8 @@ function getTodayKey(): string {
 }
 
 export default function PracticePage() {
+  const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+
   const [mode, setMode] = useState<PracticeMode>(() => {
     const saved = localStorage.getItem(CURRENT_MODE_KEY);
     if (saved === 'progressive' || saved === 'weak' || saved === 'common') return saved;
@@ -222,8 +222,9 @@ export default function PracticePage() {
 
   // ====== 例字计算 ======
   const exampleChars = useMemo(() => {
-    return getExampleCharsForRoot(currentRoot.char, 3);
-  }, [currentRoot.char]);
+    if (!charCodeData) return [];
+    return getExampleCharsForRoot(currentRoot.char, charCodeData, 3);
+  }, [currentRoot.char, charCodeData]);
 
   // ====== 首次出现检测与提示 ======
   useEffect(() => {
@@ -448,6 +449,18 @@ export default function PracticePage() {
     }
     return map;
   }, []);
+
+  // ====== 数据加载中 ======
+  if (dataLoading || !charCodeData) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+          <span className="text-sm text-muted-foreground">加载码表数据...</span>
+        </div>
+      </div>
+    );
+  }
 
   // ====== 未开始：模式选择界面 ======
   if (!isPlaying) {
