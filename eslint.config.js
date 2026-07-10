@@ -20,4 +20,12 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  // shadcn/ui 组件按标准模式导出 variants 工具函数；router.tsx 只导出 router 实例
+  // 这两类文件不适用 react-refresh/only-export-components 规则
+  {
+    files: ['src/components/ui/**/*.{ts,tsx}', 'src/router.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
 ])

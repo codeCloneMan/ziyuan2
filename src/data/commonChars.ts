@@ -32,6 +32,7 @@ function isHanChar(char: string): boolean {
 }
 
 /** 清理字集：去重 + 过滤非汉字 */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function cleanCharSet(chars: string[], _name: string): string[] {
   const hanChars = chars.filter(isHanChar);
 

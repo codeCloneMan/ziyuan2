@@ -38,7 +38,7 @@ export default function ChartPage() {
           
           <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
             字根
-            <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 图</span>
+            <span className="text-gradient-primary"> 图</span>
           </h1>
           
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
@@ -71,14 +71,14 @@ export default function ChartPage() {
           {/* 图片容器 */}
           <div
             className={cn(
-              "relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm",
+              "relative overflow-hidden rounded-lg border border-border bg-card shadow-sm",
               "hover:shadow-xl transition-all duration-300 group cursor-zoom-in"
             )}
             onClick={toggleFullscreen}
           >
             {/* 悬浮提示 */}
             <div className="absolute top-4 right-4 z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-background/90 backdrop-blur-sm border border-border shadow-md">
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-card border border-border shadow-md">
                 <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="text-xs font-medium text-muted-foreground">点击放大</span>
               </div>
@@ -202,7 +202,7 @@ export default function ChartPage() {
       {/* 全屏遮罩 */}
       {fullscreen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-md cursor-zoom-out animate-fadeIn"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm cursor-zoom-out animate-fadeIn"
           onClick={toggleFullscreen}
         >
           {/* 关闭按钮 */}

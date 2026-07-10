@@ -1,0 +1,106 @@
+import { cn } from '@/lib/utils';
+import RootCharDisplay from '@/components/RootCharDisplay';
+import { CheckCircle2, XCircle, Lightbulb } from 'lucide-react';
+import type { RootMapping } from '@/data/roots';
+
+interface RootDisplayCardProps {
+  currentRoot: RootMapping;
+  keyFeedback: string | null;
+  feedbackType: 'correct' | 'wrong' | null;
+  showHint: boolean;
+  firstTimeHint: string | null;
+  phoneticHint: string | null;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+export default function RootDisplayCard({
+  currentRoot,
+  keyFeedback,
+  feedbackType,
+  showHint,
+  firstTimeHint,
+  phoneticHint,
+  inputRef,
+}: RootDisplayCardProps) {
+  return (
+    <div className={cn(
+      "card-base p-5 sm:p-8 transition-[border-color,background-color] duration-300",
+      feedbackType === 'correct' && "border-emerald-300/60 bg-emerald-50/30 dark:border-emerald-700/50 dark:bg-emerald-950/15",
+      feedbackType === 'wrong' && "border-red-300/60 bg-red-50/30 dark:border-red-700/50 dark:bg-red-950/15"
+    )}>
+      <div className="flex flex-col items-center">
+        {/* 首次提示 */}
+        {showHint && firstTimeHint && !feedbackType && (
+          <div className="mb-4 px-3.5 py-2 rounded-lg bg-primary/8 border-l-2 border-primary/30 text-primary dark:text-primary-foreground text-sm font-medium animate-fadeIn"
+            style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            <Lightbulb className="h-3.5 w-3.5 inline mr-1.5" />{firstTimeHint}
+          </div>
+        )}
+
+        {/* 当前字根 - 印章/宣纸感 */}
+        <div className={cn(
+          "relative flex items-center justify-center h-28 w-28 sm:h-36 sm:w-36 rounded-xl border-2 transition-all duration-300 mb-4",
+          feedbackType === 'correct'
+            ? "border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 scale-105"
+            : feedbackType === 'wrong'
+            ? "border-red-300 bg-red-50/50 dark:bg-red-950/20 scale-95"
+            : "border-border/50 bg-gradient-to-b from-amber-50/20 to-transparent dark:from-amber-950/10"
+        )}>
+          <RootCharDisplay root={currentRoot} size="xl" showDesc={true}
+            className={cn("border-0 bg-transparent",
+              feedbackType === 'correct' && "text-emerald-600 dark:text-emerald-400",
+              feedbackType === 'wrong' && "text-red-600 dark:text-red-400")} />
+          {feedbackType === 'correct' && (
+            <div className="absolute -top-1.5 -right-1.5 animate-bounce-in"><CheckCircle2 className="h-6 w-6 text-emerald-500" /></div>
+          )}
+          {feedbackType === 'wrong' && (
+            <div className="absolute -top-1.5 -right-1.5 animate-shake"><XCircle className="h-6 w-6 text-red-500" /></div>
+          )}
+        </div>
+
+        {/* 输入框 - 更精致 */}
+        <div className="relative w-full max-w-xs">
+          <input ref={inputRef} type="text" readOnly placeholder="输入键位"
+            className={cn(
+              "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold",
+              "bg-muted/50 border rounded-lg focus:outline-none transition-all duration-200",
+              keyFeedback
+                ? (feedbackType === 'correct' ? "border-emerald-300 bg-emerald-50/50 text-emerald-600 dark:text-emerald-400" : "border-red-300 bg-red-50/50 text-red-600 dark:text-red-400")
+                : "border-border/50"
+            )}
+            value={keyFeedback?.toUpperCase() || ''} />
+          {!keyFeedback && (
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none animate-pulse text-lg">▎</span>
+          )}
+        </div>
+
+        {/* 反馈文字 - 更克制 */}
+        {feedbackType && (
+          <div className={cn("mt-3 flex items-center justify-center gap-2 text-sm font-medium",
+            feedbackType === 'correct' ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400")}
+            style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            {feedbackType === 'correct' ? (
+              <><CheckCircle2 className="h-4 w-4" /><span>正确</span></>
+            ) : (
+              <>
+                <XCircle className="h-4 w-4" />
+                <span>正确键位：</span>
+                <span className="inline-flex items-center justify-center h-6 w-6 rounded bg-red-100/60 dark:bg-red-900/30 font-mono text-xs font-bold text-red-600 dark:text-red-400">
+                  {currentRoot.key.toUpperCase()}
+                </span>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* 音托提示 */}
+        {phoneticHint && feedbackType === 'wrong' && showHint && (
+          <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/8 border-l-2 border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs"
+            style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            <Lightbulb className="h-3 w-3 inline mr-1" />音托提示：{currentRoot.char} ({phoneticHint})
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

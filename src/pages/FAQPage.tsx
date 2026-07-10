@@ -7,7 +7,6 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Search, MessageCircle, HelpCircle, ExternalLink } from 'lucide-react';
-import { Link } from 'react-router-dom';
 import { faqCategories } from '@/data/faqData';
 
 const externalResources = [
@@ -45,7 +44,7 @@ export default function FAQPage() {
           
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
             常见
-            <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 问题</span>
+            <span className="text-gradient-primary"> 问题</span>
           </h1>
           
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
@@ -110,7 +109,7 @@ export default function FAQPage() {
           const Icon = category.icon;
           return (
             <div key={category.name} className="card-base mb-6 stagger-item">
-              <div className="flex items-center gap-3 pb-4 border-b border-border/60">
+              <div className="flex items-center gap-3 pb-4 border-b border-border">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
                   <Icon className="h-5 w-5 text-primary" />
                 </div>

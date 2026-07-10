@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { useCharCodeData, useBuiltinPhrases, type CharCodeItem } from '@/lib/data-loader';
+import { useCharCodeData, useBuiltinPhrases } from '@/lib/data-loader';
 import { rootMappings } from '@/data/roots';
 import { getCharSplit, getPhraseSplits } from '@/data/splitData';
 import {
@@ -87,7 +87,7 @@ function getPhraseCode(phrase: string, charCodeData: import('@/lib/data-loader')
 // ============================================
 
 export default function SplitSearchPage() {
-  const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+  const { data: charCodeData } = useCharCodeData();
   const { data: phrasesData } = useBuiltinPhrases();
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -116,7 +116,7 @@ export default function SplitSearchPage() {
       }
     }
     return results;
-  }, [query, searchMode]);
+  }, [charCodeData, query, searchMode]);
 
   // ========== 词组搜索 ==========
   const phraseResults = useMemo(() => {
@@ -168,26 +168,26 @@ export default function SplitSearchPage() {
             拆分查询
           </Badge>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4">
-            拆分<span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent">查询</span>
+            拆分<span className="text-gradient-primary">查询</span>
           </h1>
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
             查询单字拆分、词组编码，支持高频词组检索
           </p>
           <div className="mt-4 sm:mt-8 grid grid-cols-2 gap-4 sm:gap-6 sm:flex sm:items-center sm:justify-center sm:gap-8 lg:gap-12">
             <div className="text-center">
-              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-primary">{uniqueChars}</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-primary font-mono-stat">{uniqueChars}</div>
               <div className="text-[11px] sm:text-xs text-muted-foreground">汉字数</div>
             </div>
             <div className="text-center">
-              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-accent">{totalChars}</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-accent font-mono-stat">{totalChars}</div>
               <div className="text-[11px] sm:text-xs text-muted-foreground">编码数</div>
             </div>
             <div className="text-center">
-              <div className="text-xl sm:text-2xl lg:text-3xl font-bold">{rootMappings.length}</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono-stat">{rootMappings.length}</div>
               <div className="text-[11px] sm:text-xs text-muted-foreground">字根数</div>
             </div>
             <div className="text-center">
-              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600">{phrasesData ? (phrasesData.PHRASE_COUNTS.total ?? 0).toLocaleString() : '...'}</div>
+              <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600 font-mono-stat">{phrasesData ? (phrasesData.PHRASE_COUNTS.total ?? 0).toLocaleString() : '...'}</div>
               <div className="text-[11px] sm:text-xs text-muted-foreground">词组数</div>
             </div>
           </div>
@@ -195,8 +195,8 @@ export default function SplitSearchPage() {
       </section>
 
       {/* 搜索区 */}
-      <section className="py-8 sm:py-12 sticky top-16 z-40 bg-background/80 backdrop-blur-md border-b border-border">
-        <div className="container-page max-w-3xl">
+      <section className="sticky top-16 z-40 bg-background border-b border-border">
+        <div className="container-page max-w-3xl py-4 sm:py-6">
           {/* 模式切换 */}
           <div className="flex gap-2 justify-center mb-4">
             <Button
@@ -246,30 +246,30 @@ export default function SplitSearchPage() {
             <div className="mt-6 grid grid-cols-3 gap-3 max-w-lg mx-auto">
               {searchMode === 'char' ? (
                 <>
-                  <button onClick={() => setSearchQuery('好')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('好')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-2xl mb-1 root-char">好</div>
                     <div className="text-xs text-muted-foreground">按汉字查</div>
                   </button>
-                  <button onClick={() => setSearchQuery('a')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('a')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-2xl mb-1 font-mono font-bold">a</div>
                     <div className="text-xs text-muted-foreground">按编码查</div>
                   </button>
-                  <button onClick={() => setSearchQuery('大')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('大')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-2xl mb-1 root-char">大</div>
                     <div className="text-xs text-muted-foreground">按字根查</div>
                   </button>
                 </>
               ) : (
                 <>
-                  <button onClick={() => setSearchQuery('我们')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('我们')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-lg mb-1 root-char">我们</div>
                     <div className="text-xs text-muted-foreground">常用词</div>
                   </button>
-                  <button onClick={() => setSearchQuery('中国')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('中国')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-lg mb-1 root-char">中国</div>
                     <div className="text-xs text-muted-foreground">双字词</div>
                   </button>
-                  <button onClick={() => setSearchQuery('一')} className="p-3 rounded-xl bg-muted/50 hover:bg-muted transition-colors text-center">
+                  <button onClick={() => setSearchQuery('一')} className="p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors text-center">
                     <div className="text-lg mb-1 font-mono font-bold">一</div>
                     <div className="text-xs text-muted-foreground">高频字</div>
                   </button>
@@ -281,7 +281,7 @@ export default function SplitSearchPage() {
       </section>
 
       {/* 搜索结果 */}
-      <section className="py-12 sm:py-16">
+      <section className="py-6 sm:py-8">
         <div className="container-page max-w-5xl">
 
           {/* ===== 单字结果 ===== */}
@@ -408,11 +408,11 @@ export default function SplitSearchPage() {
           onClick={() => setSelectedChar(null)}
         >
           <div
-            className="w-full max-w-lg bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden animate-slideInUp"
+            className="w-full max-w-lg bg-card rounded-lg shadow-2xl border border-border overflow-hidden animate-slideInUp"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 头部 */}
-            <div className="relative p-6 pb-4 bg-gradient-to-br from-primary/5 to-accent/5 border-b border-border/40">
+            <div className="relative p-6 pb-4 bg-card border-b border-border">
               <button
                 onClick={() => setSelectedChar(null)}
                 className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary transition-colors"
@@ -420,7 +420,7 @@ export default function SplitSearchPage() {
                 <X className="h-5 w-5" />
               </button>
               <div className="flex items-center gap-4">
-                <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-4xl font-bold text-primary-foreground shadow-lg root-char">
+                <div className="flex h-20 w-20 items-center justify-center rounded-lg bg-primary text-4xl font-bold text-primary-foreground shadow-lg root-char">
                   {selectedDetail.char}
                 </div>
                 <div>
@@ -450,7 +450,7 @@ export default function SplitSearchPage() {
                     <SplitSquareHorizontal className="h-4 w-4" />
                     字源拆分
                   </div>
-                  <div className="flex items-center gap-2 flex-wrap p-3 rounded-xl bg-muted/50 border border-border/60">
+                  <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-muted/50 border border-border">
                     {selectedDetail.split.split('').map((component, i) => (
                       <div key={i} className="flex items-center gap-1">
                         {i > 0 && <span className="text-muted-foreground/50">+</span>}
@@ -467,7 +467,7 @@ export default function SplitSearchPage() {
                   <Keyboard className="h-4 w-4" />
                   编码路径
                 </div>
-                <div className="flex items-center gap-1.5 p-3 rounded-xl bg-muted/50 border border-border/60 font-mono text-lg">
+                <div className="flex items-center gap-1.5 p-3 rounded-lg bg-muted/50 border border-border font-mono text-lg">
                   {selectedDetail.codes[0]?.split('').map((letter, i) => (
                     <span key={i} className="flex items-center gap-1.5">
                       {i > 0 && <span className="text-muted-foreground/40 text-sm">+</span>}

@@ -45,13 +45,16 @@ export interface BuiltinPhrasesData {
 // ========================================
 // 预定义加载器
 // ========================================
-const DATA_BASE = '/data';
+function getDataUrl(name: string): string {
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  return `${base}/data/${name}`;
+}
 
 export const loadCharCodeData = () =>
-  fetchJSON<CharCodeItem[]>(`${DATA_BASE}/charCodeData.json`);
+  fetchJSON<CharCodeItem[]>(getDataUrl('charCodeData.json'));
 
 export const loadBuiltinPhrases = () =>
-  fetchJSON<BuiltinPhrasesData>(`${DATA_BASE}/builtinPhrases.json`);
+  fetchJSON<BuiltinPhrasesData>(getDataUrl('builtinPhrases.json'));
 
 // ========================================
 // React Hook
@@ -81,6 +84,8 @@ export function useData<T>(loader: () => Promise<T>): UseDataResult<T> {
     return () => { cancelled = true; };
   }, [loader]);
 
+  // 数据获取标准模式：loader 变化时重新加载
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => load(), [load]);
 
   return { data, loading, error, refetch: () => load() };
@@ -95,6 +100,65 @@ export function useCharCodeData() {
 
 export function useBuiltinPhrases() {
   return useData(loadBuiltinPhrases);
+}
+
+// ========================================
+// 搜索索引（避免每次搜索全量遍历 6763 条数据）
+// ========================================
+
+/** 字符索引：char → CharCodeItem[]（一个字可能有多个编码） */
+export type CharCodeIndex = Map<string, CharCodeItem[]>;
+
+/** 为 charCodeData 构建搜索索引 */
+export function buildCharCodeIndex(data: CharCodeItem[]): CharCodeIndex {
+  const index = new Map<string, CharCodeItem[]>();
+  for (const item of data) {
+    const existing = index.get(item.char);
+    if (existing) {
+      existing.push(item);
+    } else {
+      index.set(item.char, [item]);
+    }
+  }
+  return index;
+}
+
+/**
+ * 在索引中快速搜索
+ * @param index 搜索索引
+ * @param query 搜索词（单字或编码前缀）
+ * @param maxResults 最大结果数
+ */
+export function searchCharCodeIndex(
+  index: CharCodeIndex,
+  query: string,
+  maxResults: number = 10,
+): CharCodeItem[] {
+  const results: CharCodeItem[] = [];
+  const q = query.toLowerCase();
+
+  // 精确字符匹配（O(1)）
+  const exact = index.get(q);
+  if (exact) {
+    for (const item of exact) {
+      if (results.length >= maxResults) return results;
+      results.push(item);
+    }
+  }
+
+  // 编码前缀匹配（遍历索引值，但比全量遍历快，因为只在有数据时才检查）
+  if (results.length < maxResults) {
+    for (const items of index.values()) {
+      for (const item of items) {
+        if (results.length >= maxResults) return results;
+        if (item.code.toLowerCase().startsWith(q) && !results.some(r => r.char === item.char && r.code === item.code)) {
+          results.push(item);
+        }
+      }
+    }
+  }
+
+  return results;
 }
 
 // ========================================

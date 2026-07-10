@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { RootMapping } from '@/data/roots';
+import { getRootImagePath } from '@/data/roots';
 
 interface RootCharDisplayProps {
   root: RootMapping;
@@ -22,6 +24,9 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
   // 使用 displayChar：正常字符直接显示，不可渲染字符显示描述（如"食变"、"U+3404"）
   const isFallback = root.displayChar !== root.char;
   const hex = root.codePoint.toString(16).toUpperCase().padStart(4, '0');
+  const [imgFailed, setImgFailed] = useState(false);
+  const imagePath = !imgFailed ? getRootImagePath(root) : null;
+  const imageUrl = imagePath ? `${import.meta.env.BASE_URL}${imagePath}` : null;
 
   if (!isFallback) {
     // 正常可渲染字符
@@ -42,7 +47,7 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
     );
   }
 
-  // 不可渲染字符：显示描述标签
+  // 不可渲染字符：优先使用字根图，加载失败再回退到描述文本
   return (
     <span
       className={cn(
@@ -56,12 +61,21 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
     >
-      <span className={cn(
-        'font-semibold text-amber-700 dark:text-amber-300 leading-tight',
-        size === 'xl' ? 'text-base sm:text-lg' : s.desc
-      )}>
-        {root.displayChar}
-      </span>
+      {imageUrl ? (
+        <img
+          src={imageUrl}
+          alt={root.desc || root.char}
+          className="max-h-full max-w-full object-contain p-0.5"
+          onError={() => setImgFailed(true)}
+        />
+      ) : (
+        <span className={cn(
+          'font-semibold text-amber-700 dark:text-amber-300 leading-tight',
+          size === 'xl' ? 'text-base sm:text-lg' : s.desc
+        )}>
+          {root.displayChar}
+        </span>
+      )}
       {showDesc && size !== 'sm' && (
         <span className="text-[10px] text-amber-500 dark:text-amber-400 mt-0.5">
           U+{hex}

@@ -1,174 +1,142 @@
 /**
- * 渐进式学习系统 Hook
- * 基于艾宾浩斯记忆曲线和虎码/宇浩的练习方式
- * 
+ * 渐进式学习系统 Hook (v2 - 基于统一 Store)
+ * 基于艾宾浩斯记忆曲线
+ *
  * 核心原理：
  * 1. 每次新增少量字根进入练习池（默认5个）
  * 2. 连续答对N次视为"掌握"（默认3次）
  * 3. 掌握的字根降低出现频率，但偶尔复习
  * 4. 未掌握的字根高频重复出现
+ * 5. 时间维度：基于遗忘曲线预测记忆强度，到期自动安排复习
  */
 
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
+import { useSpacedPool } from '@/store/progress-store';
 
-// 学习项状态
+/** 最小稳定性：5秒 */
+const MIN_STABILITY = 5;
+/** 已掌握项目的复习阈值 */
+const REVIEW_RETENTION_THRESHOLD = 0.6;
+/**
+ * 最小冷却期（毫秒）：同一项两次出现之间至少间隔 5 秒。
+ * 防止答错后权重暴增导致"立刻复现"——那起不到练习作用，
+ * 练习者还没消化正确答案就又遇到了同一题。
+ */
+const MIN_COOLDOWN_MS = 5000;
+
+// 学习项状态（从 store 导出，保持兼容）
 export interface LearningItem {
-  id: string;           // 唯一标识
-  consecutiveCorrect: number;  // 连续正确次数
-  isMastered: boolean;  // 是否已掌握
-  lastPracticeTime: number; // 最后练习时间
-  totalAttempts: number; // 总尝试次数
-  wrongCount: number;   // 错误次数
+  id: string;
+  consecutiveCorrect: number;
+  isMastered: boolean;
+  lastPracticeTime: number;
+  totalAttempts: number;
+  wrongCount: number;
+  stability: number;
 }
 
-// 学习池状态
+// 学习池状态（从 store 导出，保持兼容）
 export interface LearningPool {
   items: Record<string, LearningItem>;
-  activePool: string[];      // 当前活跃池（未掌握+新加入）
-  masteredPool: string[];    // 已掌握池
-  pendingPool: string[];     // 待加入池（未学习）
-  newItemsPerRound: number;  // 每轮新增数量
-  masteryThreshold: number;  // 掌握阈值（连续正确次数）
-  reviewProbability: number; // 复习概率
+  activePool: string[];
+  masteredPool: string[];
+  pendingPool: string[];
+  newItemsPerRound: number;
+  masteryThreshold: number;
+  reviewProbability: number;
 }
 
-const DEFAULT_POOL: LearningPool = {
-  items: {},
-  activePool: [],
-  masteredPool: [],
-  pendingPool: [],
-  newItemsPerRound: 5,
-  masteryThreshold: 3,
-  reviewProbability: 0.1, // 10%概率出现已掌握的
-};
-
 interface UseSpacedLearningOptions {
-  allItemIds: string[];       // 所有可学习的项目ID
-  newItemsPerRound?: number;  // 每轮新增数量
-  masteryThreshold?: number;  // 掌握阈值
-  reviewProbability?: number; // 复习概率
-  storageKey?: string;        // 本地存储键
+  allItemIds: string[];
+  newItemsPerRound?: number;
+  masteryThreshold?: number;
+  reviewProbability?: number;
+  storageKey: string; // pool key in store
+}
+
+/** 基于遗忘曲线计算当前记忆强度 R = e^(-t/S) */
+function calcRetention(lastPracticeTime: number, stability: number): number {
+  if (lastPracticeTime <= 0) return 0;
+  const elapsed = (Date.now() - lastPracticeTime) / 1000;
+  return Math.exp(-elapsed / Math.max(stability, MIN_STABILITY));
 }
 
 export function useSpacedLearning(options: UseSpacedLearningOptions) {
   const {
     allItemIds,
-    newItemsPerRound = 5,
-    masteryThreshold = 3,
-    reviewProbability = 0.1,
     storageKey,
   } = options;
 
-  const [pool, setPool] = useState<LearningPool>(() => {
-    // 尝试从本地存储恢复
-    if (storageKey) {
-      const stored = localStorage.getItem(storageKey);
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored) as LearningPool;
-          // 验证数据有效性
-          if (parsed.items && parsed.activePool && parsed.masteredPool) {
-            return parsed;
-          }
-        } catch {
-          // 解析失败，使用默认值
-        }
-      }
-    }
+  const { pool, recordResult: storeRecordResult, reset } = useSpacedPool(storageKey, allItemIds);
 
-    // 初始化：前N个进入活跃池，其余进入待加入池
-    const initialActive = allItemIds.slice(0, newItemsPerRound);
-    const initialPending = allItemIds.slice(newItemsPerRound);
-    
-    const items: Record<string, LearningItem> = {};
-    initialActive.forEach(id => {
-      items[id] = {
-        id,
-        consecutiveCorrect: 0,
-        isMastered: false,
-        lastPracticeTime: 0,
-        totalAttempts: 0,
-        wrongCount: 0,
-      };
-    });
-
-    return {
-      items,
-      activePool: initialActive,
-      masteredPool: [],
-      pendingPool: initialPending,
-      newItemsPerRound,
-      masteryThreshold,
-      reviewProbability,
-    };
-  });
-
-  // 保存到本地存储
-  useEffect(() => {
-    if (storageKey) {
-      localStorage.setItem(storageKey, JSON.stringify(pool));
-    }
-  }, [pool, storageKey]);
+  // 确保 pool 中的参数与 options 一致（首次初始化时）
+  // 注意：store 中的 pool 参数在创建后固定，这里只做读取
 
   // 获取下一个要练习的项目
   const getNextItem = useCallback((): string | null => {
-    // 先检查是否有活跃池中的项目
+    // 活跃池空了，补充新项目
     if (pool.activePool.length === 0 && pool.pendingPool.length > 0) {
-      // 活跃池空了，补充新项目
       const toAdd = pool.pendingPool.slice(0, pool.newItemsPerRound);
-      const remaining = pool.pendingPool.slice(pool.newItemsPerRound);
-      
-      const newItems: Record<string, LearningItem> = { ...pool.items };
-      toAdd.forEach(id => {
-        newItems[id] = {
-          id,
-          consecutiveCorrect: 0,
-          isMastered: false,
-          lastPracticeTime: 0,
-          totalAttempts: 0,
-          wrongCount: 0,
-        };
-      });
-
-      setPool(prev => ({
-        ...prev,
-        items: newItems,
-        activePool: toAdd,
-        pendingPool: remaining,
-      }));
-
-      return toAdd[0] || null;
+      if (toAdd.length > 0) return toAdd[0];
     }
 
-    // 决定是否复习已掌握的项目
-    if (pool.masteredPool.length > 0 && Math.random() < pool.reviewProbability) {
-      // 随机选一个已掌握的复习
-      const randomIndex = Math.floor(Math.random() * pool.masteredPool.length);
-      return pool.masteredPool[randomIndex];
-    }
-
-    // 从活跃池中选择（优先选择错误次数多的）
-    if (pool.activePool.length > 0) {
-      // 加权随机：错误次数越多，被选中概率越高
-      const weights = pool.activePool.map(id => {
+    // 检查已掌握池中是否有需要复习的
+    if (pool.masteredPool.length > 0) {
+      const dueForReview: string[] = [];
+      for (const id of pool.masteredPool) {
         const item = pool.items[id];
-        return 1 + (item?.wrongCount || 0) * 2;
-      });
-      
-      const totalWeight = weights.reduce((a, b) => a + b, 0);
-      let random = Math.random() * totalWeight;
-      
-      for (let i = 0; i < pool.activePool.length; i++) {
-        random -= weights[i];
-        if (random <= 0) {
-          return pool.activePool[i];
+        if (item && calcRetention(item.lastPracticeTime, item.stability) < REVIEW_RETENTION_THRESHOLD) {
+          dueForReview.push(id);
         }
       }
-      
-      return pool.activePool[0];
+      if (dueForReview.length > 0) {
+        dueForReview.sort((a, b) => {
+          const retA = calcRetention(pool.items[a].lastPracticeTime, pool.items[a].stability);
+          const retB = calcRetention(pool.items[b].lastPracticeTime, pool.items[b].stability);
+          return retA - retB;
+        });
+        return dueForReview[0];
+      }
+
+      if (Math.random() < pool.reviewProbability) {
+        const randomIndex = Math.floor(Math.random() * pool.masteredPool.length);
+        return pool.masteredPool[randomIndex];
+      }
     }
 
-    // 如果所有项目都掌握了，随机复习
+    // 从活跃池中选择（加权随机）
+    if (pool.activePool.length > 0) {
+      const now = Date.now();
+
+      // 冷却过滤：排除刚练过的项（除非所有项都在冷却中）
+      const eligibleItems = pool.activePool.filter(id => {
+        const item = pool.items[id];
+        if (!item || item.lastPracticeTime <= 0) return true;
+        return (now - item.lastPracticeTime) > MIN_COOLDOWN_MS;
+      });
+      const itemsToUse = eligibleItems.length > 0 ? eligibleItems : pool.activePool;
+
+      const weights = itemsToUse.map(id => {
+        const item = pool.items[id];
+        if (!item) return 1;
+        const wrongBoost = 1 + item.wrongCount * 2;
+        const retention = calcRetention(item.lastPracticeTime, item.stability);
+        const timeBoost = item.lastPracticeTime > 0 ? (2 - retention) : 1;
+        return wrongBoost * timeBoost;
+      });
+
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+      let random = Math.random() * totalWeight;
+
+      for (let i = 0; i < itemsToUse.length; i++) {
+        random -= weights[i];
+        if (random <= 0) {
+          return itemsToUse[i];
+        }
+      }
+      return itemsToUse[0];
+    }
+
     if (pool.masteredPool.length > 0) {
       const randomIndex = Math.floor(Math.random() * pool.masteredPool.length);
       return pool.masteredPool[randomIndex];
@@ -177,104 +145,29 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
     return null;
   }, [pool]);
 
-  // 记录答题结果
+  // 记录答题结果 - 委托给 store
   const recordResult = useCallback((itemId: string, isCorrect: boolean) => {
-    setPool(prev => {
-      const item = prev.items[itemId];
-      if (!item) return prev;
+    storeRecordResult(itemId, isCorrect);
+  }, [storeRecordResult]);
 
-      const newItems = { ...prev.items };
-      let newActivePool = [...prev.activePool];
-      let newMasteredPool = [...prev.masteredPool];
-
-      if (isCorrect) {
-        // 答对
-        const newConsecutiveCorrect = item.consecutiveCorrect + 1;
-        const isNowMastered = newConsecutiveCorrect >= prev.masteryThreshold && !item.isMastered;
-
-        newItems[itemId] = {
-          ...item,
-          consecutiveCorrect: newConsecutiveCorrect,
-          isMastered: item.isMastered || isNowMastered,
-          lastPracticeTime: Date.now(),
-          totalAttempts: item.totalAttempts + 1,
-        };
-
-        // 如果刚掌握，从活跃池移到已掌握池
-        if (isNowMastered) {
-          newActivePool = newActivePool.filter(id => id !== itemId);
-          newMasteredPool.push(itemId);
-        }
-      } else {
-        // 答错：重置连续正确次数，增加错误计数
-        newItems[itemId] = {
-          ...item,
-          consecutiveCorrect: 0,
-          lastPracticeTime: Date.now(),
-          totalAttempts: item.totalAttempts + 1,
-          wrongCount: item.wrongCount + 1,
-        };
-
-        // 如果已掌握的项目答错了，移回活跃池
-        if (item.isMastered) {
-          newMasteredPool = newMasteredPool.filter(id => id !== itemId);
-          if (!newActivePool.includes(itemId)) {
-            newActivePool.push(itemId);
-          }
-          newItems[itemId].isMastered = false;
-        }
-      }
-
-      return {
-        ...prev,
-        items: newItems,
-        activePool: newActivePool,
-        masteredPool: newMasteredPool,
-      };
-    });
-  }, []);
-
-  // 重置进度
+  // 重置进度 - 委托给 store
   const resetProgress = useCallback(() => {
-    const initialActive = allItemIds.slice(0, newItemsPerRound);
-    const initialPending = allItemIds.slice(newItemsPerRound);
-    
-    const items: Record<string, LearningItem> = {};
-    initialActive.forEach(id => {
-      items[id] = {
-        id,
-        consecutiveCorrect: 0,
-        isMastered: false,
-        lastPracticeTime: 0,
-        totalAttempts: 0,
-        wrongCount: 0,
-      };
-    });
-
-    setPool({
-      items,
-      activePool: initialActive,
-      masteredPool: [],
-      pendingPool: initialPending,
-      newItemsPerRound,
-      masteryThreshold,
-      reviewProbability,
-    });
-  }, [allItemIds, newItemsPerRound, masteryThreshold, reviewProbability]);
+    reset();
+  }, [reset]);
 
   // 统计信息
-  const stats = {
+  const stats = useMemo(() => ({
     total: allItemIds.length,
     mastered: pool.masteredPool.length,
     active: pool.activePool.length,
     pending: pool.pendingPool.length,
-    progress: allItemIds.length > 0 
-      ? Math.round((pool.masteredPool.length / allItemIds.length) * 100) 
+    progress: allItemIds.length > 0
+      ? Math.round((pool.masteredPool.length / allItemIds.length) * 100)
       : 0,
-    completion: allItemIds.length > 0 
-      ? (pool.masteredPool.length / allItemIds.length) * 100 
+    completion: allItemIds.length > 0
+      ? (pool.masteredPool.length / allItemIds.length) * 100
       : 0,
-  };
+  }), [pool, allItemIds.length]);
 
   return {
     pool,

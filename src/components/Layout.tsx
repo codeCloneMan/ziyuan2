@@ -7,20 +7,27 @@ import {
   Sun, Moon, Menu, X, Search,
   ExternalLink, MessageCircle, HardDrive,
   HelpCircle, PenTool, BarChart3, TextQuote,
+  Download, Upload, ChevronDown,
 } from 'lucide-react';
 import { rootMappings } from '@/data/roots';
-import { useCharCodeData } from '@/lib/data-loader';
+import { useCharCodeData, buildCharCodeIndex, type CharCodeIndex } from '@/lib/data-loader';
 import { flatFAQs } from '@/data/faqData';
+import { downloadProgress, importProgressFromFile } from '@/lib/progress-io';
+import UserLevelBadge from '@/components/UserLevelBadge';
+import AchievementToast from '@/components/AchievementToast';
 
 const navItems = [
   { path: '/', label: '首页', icon: Home },
   { path: '/practice', label: '字根练习', icon: Keyboard },
   { path: '/whole-char', label: '整字练习', icon: PenTool },
   { path: '/phrase', label: '词组练习', icon: TextQuote },
+];
+
+const toolItems = [
   { path: '/table', label: '字根表', icon: BookOpen },
   { path: '/chart', label: '字根图', icon: Image },
-  { path: '/evaluate', label: '码表测评', icon: BarChart3 },
   { path: '/split-search', label: '拆分查询', icon: Search },
+  { path: '/evaluate', label: '码表测评', icon: BarChart3 },
   { path: '/faq', label: '常见问题', icon: HelpCircle },
 ];
 
@@ -61,11 +68,12 @@ export default function Layout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
-  
+  const [navToolsOpen, setNavToolsOpen] = useState(false);
+
   const searchRef = useRef<HTMLDivElement>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  const navToolsRef = useRef<HTMLDivElement>(null);
 
-  // 搜索结果：字根、汉字和FAQ
   interface SearchResult {
     type: 'root' | 'char' | 'faq';
     char?: string;
@@ -73,38 +81,66 @@ export default function Layout() {
     code?: string;
     desc?: string;
     isPUA?: boolean;
-    q?: string;  // FAQ问题
-    a?: string;  // FAQ答案
-    category?: string;  // FAQ分类
+    q?: string;
+    a?: string;
+    category?: string;
   }
 
   const { data: charCodeData } = useCharCodeData();
 
+  const charCodeIndex = useMemo<CharCodeIndex | null>(
+    () => charCodeData ? buildCharCodeIndex(charCodeData) : null,
+    [charCodeData],
+  );
+
   const q = searchQuery.trim().toLowerCase();
 
-  const searchResults: SearchResult[] = useMemo(() => q
-    ? [
-        ...rootMappings
-          .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
-          .slice(0, 3)
-          .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA })),
-        ...(charCodeData ?? [])
-          .filter(d => d.char.includes(q) || d.code.toLowerCase().includes(q))
-          .slice(0, 3)
-          .map(d => ({ type: 'char' as const, char: d.char, code: d.code })),
-        ...flatFAQs
-          .filter(faq => faq.q.toLowerCase().includes(q) || faq.a.toLowerCase().includes(q))
-          .slice(0, 4)
-          .map(faq => ({ type: 'faq' as const, q: faq.q, a: faq.a, category: faq.category })),
-      ]
-    : [], [q]);
+  const searchResults: SearchResult[] = useMemo(() => {
+    if (!q) return [];
+    const charResults = charCodeIndex
+      ? (() => {
+          const results: SearchResult[] = [];
+          const exact = charCodeIndex.get(q);
+          if (exact) {
+            for (const item of exact) {
+              if (results.length >= 3) break;
+              results.push({ type: 'char' as const, char: item.char, code: item.code });
+            }
+          }
+          if (results.length < 3) {
+            for (const items of charCodeIndex.values()) {
+              for (const item of items) {
+                if (results.length >= 3) break;
+                if (item.code.toLowerCase().startsWith(q) && !results.some(r => r.char === item.char)) {
+                  results.push({ type: 'char' as const, char: item.char, code: item.code });
+                }
+              }
+              if (results.length >= 3) break;
+            }
+          }
+          return results;
+        })()
+      : [];
+
+    return [
+      ...rootMappings
+        .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
+        .slice(0, 3)
+        .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA })),
+      ...charResults,
+      ...flatFAQs
+        .filter(faq => faq.q.toLowerCase().includes(q) || faq.a.toLowerCase().includes(q))
+        .slice(0, 4)
+        .map(faq => ({ type: 'faq' as const, q: faq.q, a: faq.a, category: faq.category })),
+    ];
+  }, [q, charCodeIndex]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMobileMenuOpen(false);
     setSearchOpen(false);
   }, [location.pathname]);
 
-  // 点击外部关闭下拉菜单
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
@@ -113,15 +149,17 @@ export default function Layout() {
       if (toolsRef.current && !toolsRef.current.contains(e.target as Node)) {
         setToolsOpen(false);
       }
+      if (navToolsRef.current && !navToolsRef.current.contains(e.target as Node)) {
+        setNavToolsOpen(false);
+      }
     }
 
-    if (searchOpen || toolsOpen) {
+    if (searchOpen || toolsOpen || navToolsOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
     }
-  }, [searchOpen, toolsOpen]);
+  }, [searchOpen, toolsOpen, navToolsOpen]);
 
-  // ESC键关闭所有弹窗
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -137,29 +175,28 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* 导航栏 */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-md transition-all duration-200">
-        <div className="mx-auto flex h-16 items-center justify-between px-4 sm:px-6 max-w-[1600px]">
-          {/* Logo */}
-          <Link 
-            to="/" 
+      {/* 导航栏 - 毛玻璃质感 */}
+      <header className="sticky top-0 z-50 border-b border-border/60 glass-nav bg-background/80">
+        <div className="mx-auto flex h-14 items-center justify-between px-4 sm:px-6 max-w-[1600px]">
+          {/* Logo - 更精致 */}
+          <Link
+            to="/"
             className="flex items-center gap-2.5 group"
             onClick={() => {
               setMobileMenuOpen(false);
               setSearchOpen(false);
             }}
           >
-            <div className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-emerald-500 text-white shadow-md group-hover:shadow-lg transition-shadow duration-300">
-              <span className="text-base font-bold">字</span>
-              <div className="absolute inset-0 rounded-xl bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white transition-all duration-300 shadow-sm">
+              <span className="text-sm font-bold root-char">字</span>
             </div>
             <div className="hidden sm:block">
-              <span className="text-lg font-bold tracking-tight">字源形码</span>
+              <span className="text-base font-bold tracking-tight" style={{ fontFamily: "'Noto Serif SC', serif" }}>字源形码</span>
             </div>
           </Link>
 
-          {/* 桌面导航 */}
-          <nav className="hidden lg:flex items-center gap-1 ml-8">
+          {/* 桌面导航 - 更克制 */}
+          <nav className="hidden lg:flex items-center gap-0.5 ml-6">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
@@ -167,58 +204,93 @@ export default function Layout() {
                 <Link key={item.path} to={item.path}>
                   <button
                     className={cn(
-                      'relative px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200',
+                      'relative px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200',
                       isActive
-                        ? 'text-primary bg-primary/10'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                        ? 'text-primary bg-primary/8'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                     )}
                   >
-                    <span className="flex items-center gap-2">
-                      <Icon className="h-4 w-4" />
+                    <span className="flex items-center gap-1.5">
+                      <Icon className="h-3.5 w-3.5" />
                       {item.label}
                     </span>
-                    
-                    {/* 活动指示器 */}
+
                     {isActive && (
-                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-4 h-0.5 rounded-full bg-primary" />
+                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-primary/70" />
                     )}
                   </button>
                 </Link>
               );
             })}
+
+            {/* 工具下拉 */}
+            <div className="relative" ref={navToolsRef}>
+              <button
+                onClick={() => setNavToolsOpen(!navToolsOpen)}
+                className={cn(
+                  'px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1',
+                  toolItems.some(t => t.path === location.pathname)
+                    ? 'text-primary bg-primary/8'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                工具
+                <ChevronDown className={cn('h-3 w-3 transition-transform', navToolsOpen && 'rotate-180')} />
+              </button>
+              {navToolsOpen && (
+                <div className="absolute top-full left-0 mt-1.5 w-40 py-1 bg-popover border border-border/70 rounded-lg shadow-xl animate-fadeIn z-50">
+                  {toolItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = location.pathname === item.path;
+                    return (
+                      <Link key={item.path} to={item.path} onClick={() => setNavToolsOpen(false)}>
+                        <div className={cn(
+                          'flex items-center gap-2 px-3 py-2 text-sm transition-colors',
+                          isActive ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                        )}>
+                          <Icon className="h-3.5 w-3.5" />
+                          {item.label}
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </nav>
 
-          {/* 右侧操作区 */}
-          <div className="flex items-center gap-1 sm:gap-2">
-            {/* 搜索按钮 */}
+          {/* 右侧操作区 - 更紧凑 */}
+          <div className="flex items-center gap-0.5 sm:gap-1">
+            <UserLevelBadge />
+
             <button
               onClick={() => {
                 setSearchOpen(!searchOpen);
                 setToolsOpen(false);
               }}
               className={cn(
-                'h-9 w-9 flex items-center justify-center rounded-xl transition-colors',
+                'h-8 w-8 flex items-center justify-center rounded-md transition-colors',
                 searchOpen
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                  ? 'bg-secondary text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
               )}
             >
-              <Search className="h-4 w-4" />
+              <Search className="h-3.5 w-3.5" />
             </button>
 
-            {/* 主题切换 */}
             <button
               onClick={toggle}
-              className="h-9 w-9 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+              className="h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
             >
               {theme === 'dark' ? (
-                <Sun className="h-4 w-4" />
+                <Sun className="h-3.5 w-3.5 transition-transform duration-500 hover:rotate-90" />
               ) : (
-                <Moon className="h-4 w-4" />
+                <Moon className="h-3.5 w-3.5 transition-transform duration-500 hover:-rotate-12" />
               )}
             </button>
 
-            {/* 更多链接 - 仅桌面端显示 */}
+            {/* 更多链接 - 仅桌面端 */}
             <div className="hidden md:block relative" ref={toolsRef}>
               <button
                 onClick={() => {
@@ -226,21 +298,20 @@ export default function Layout() {
                   setSearchOpen(false);
                 }}
                 className={cn(
-                  'flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-colors',
+                  'flex items-center gap-1 px-2.5 py-1.5 rounded-md text-sm font-medium transition-colors',
                   toolsOpen
-                    ? 'bg-accent text-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                    ? 'bg-secondary text-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                 )}
               >
-                <ExternalLink className="h-4 w-4" />
+                <ExternalLink className="h-3.5 w-3.5" />
                 <span>更多</span>
               </button>
 
-              {/* 下拉菜单 */}
               {toolsOpen && (
-                <div className="absolute right-0 top-full mt-2 z-50 w-64 rounded-xl border border-border bg-popover shadow-xl animate-fadeIn overflow-hidden">
-                  <div className="p-2 max-h-[400px] overflow-y-auto">
-                    <div className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-60 rounded-lg border border-border/70 bg-popover shadow-xl animate-fadeIn overflow-hidden">
+                  <div className="p-1.5 max-h-[400px] overflow-y-auto">
+                    <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
                       外部资源
                     </div>
                     {externalLinks.map((link, idx) => {
@@ -251,12 +322,12 @@ export default function Layout() {
                           href={link.href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm text-popover-foreground hover:bg-accent/10 transition-colors stagger-item"
+                          className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm text-popover-foreground hover:bg-secondary/40 transition-colors stagger-item"
                           style={{ animationDelay: `${idx * 30}ms` }}
                         >
-                          <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                           <span className="truncate">{link.label}</span>
-                          <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground/50 shrink-0" />
+                          <ExternalLink className="h-3 w-3 ml-auto text-muted-foreground/40 shrink-0" />
                         </a>
                       );
                     })}
@@ -268,18 +339,17 @@ export default function Layout() {
             {/* 移动端菜单按钮 */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="lg:hidden h-9 w-9 flex items-center justify-center rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors"
+              className="lg:hidden h-8 w-8 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
             >
-              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
             </button>
           </div>
         </div>
 
-        {/* 搜索栏展开区域 */}
+        {/* 搜索栏 */}
         {searchOpen && (
-          <div className="border-t border-border bg-background/95 backdrop-blur-md animate-fadeIn">
+          <div className="border-t border-border/50 bg-background/90 glass animate-fadeIn">
             <div className="mx-auto max-w-2xl px-4 py-4" ref={searchRef}>
-              {/* 搜索输入框 */}
               <div className="input-search mb-3">
                 <Search className="icon" />
                 <input
@@ -292,16 +362,15 @@ export default function Layout() {
                 />
               </div>
 
-              {/* 搜索结果 */}
               {searchResults.length > 0 && (
-                <div className="rounded-xl border border-border bg-popover shadow-lg overflow-hidden">
-                  <div className="max-h-[400px] overflow-y-auto p-2 space-y-1">
+                <div className="rounded-lg border border-border/70 bg-popover shadow-lg overflow-hidden">
+                  <div className="max-h-[400px] overflow-y-auto p-1.5 space-y-0.5">
                     {searchResults.map((r, idx) =>
                       r.type === 'root' ? (
                         <Link
                           key={`root-${r.char}-${r.key}-${idx}`}
                           to="/table"
-                          className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm hover:bg-accent/10 transition-colors stagger-item"
+                          className="flex items-center justify-between rounded-md px-3 py-2.5 text-sm hover:bg-secondary/40 transition-colors stagger-item"
                           style={{ animationDelay: `${idx * 30}ms` }}
                           onClick={() => {
                             setSearchOpen(false);
@@ -312,11 +381,11 @@ export default function Layout() {
                             <span className="font-medium text-popover-foreground root-char text-base">
                               {r.isPUA && r.desc ? r.desc : r.char}
                             </span>
-                            <Badge variant="secondary" className="shrink-0 text-xs bg-primary/10 text-primary">
+                            <Badge variant="secondary" className="shrink-0 text-xs bg-primary/8 text-primary">
                               字根
                             </Badge>
                           </div>
-                          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/10 text-primary text-xs font-bold shrink-0">
+                          <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/8 text-primary text-xs font-bold shrink-0">
                             {r.key?.toUpperCase()}
                           </span>
                         </Link>
@@ -324,7 +393,7 @@ export default function Layout() {
                         <Link
                           key={`char-${r.char}-${r.code}-${idx}`}
                           to="/whole-char"
-                          className="flex items-center justify-between rounded-lg px-3 py-2.5 text-sm hover:bg-accent/10 transition-colors stagger-item"
+                          className="flex items-center justify-between rounded-md px-3 py-2.5 text-sm hover:bg-secondary/40 transition-colors stagger-item"
                           style={{ animationDelay: `${idx * 30}ms` }}
                           onClick={() => {
                             setSearchOpen(false);
@@ -332,14 +401,14 @@ export default function Layout() {
                           }}
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="font-medium text-popover-foreground text-base">
+                            <span className="font-medium text-popover-foreground text-base root-char">
                               {r.char}
                             </span>
-                            <Badge variant="secondary" className="shrink-0 text-xs bg-emerald-500/10 text-emerald-600">
+                            <Badge variant="secondary" className="shrink-0 text-xs bg-accent/10 text-accent">
                               汉字
                             </Badge>
                           </div>
-                          <span className="flex items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 text-xs font-bold px-2 py-1 shrink-0">
+                          <span className="flex items-center justify-center rounded bg-accent/8 text-accent text-xs font-bold px-2 py-0.5 shrink-0">
                             {r.code?.toUpperCase()}
                           </span>
                         </Link>
@@ -347,7 +416,7 @@ export default function Layout() {
                         <Link
                           key={`faq-${idx}`}
                           to="/faq"
-                          className="flex flex-col rounded-lg px-3 py-2.5 text-sm hover:bg-accent/10 transition-colors stagger-item"
+                          className="flex flex-col rounded-md px-3 py-2.5 text-sm hover:bg-secondary/40 transition-colors stagger-item"
                           style={{ animationDelay: `${idx * 30}ms` }}
                           onClick={() => {
                             setSearchOpen(false);
@@ -355,11 +424,11 @@ export default function Layout() {
                           }}
                         >
                           <div className="flex items-center gap-2 min-w-0">
-                            <HelpCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                            <HelpCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
                             <span className="font-medium text-popover-foreground truncate">
                               {r.q}
                             </span>
-                            <Badge variant="outline" className="shrink-0 text-xs border-amber-500/30 text-amber-600">
+                            <Badge variant="outline" className="shrink-0 text-xs border-amber-500/25 text-amber-600">
                               {r.category}
                             </Badge>
                           </div>
@@ -381,20 +450,20 @@ export default function Layout() {
 
               {!q && (
                 <div className="grid grid-cols-3 gap-3 py-2">
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <Keyboard className="h-5 w-5 mx-auto mb-1.5 text-primary" />
+                  <div className="text-center p-3 rounded-lg bg-muted/40">
+                    <Keyboard className="h-4 w-4 mx-auto mb-1.5 text-primary" />
                     <div className="text-xs font-medium text-foreground">字根</div>
-                    <div className="text-[10px] text-muted-foreground">{rootMappings.length}个</div>
+                    <div className="text-[10px] text-muted-foreground"><span className="font-mono-stat">{rootMappings.length}</span>个</div>
                   </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <PenTool className="h-5 w-5 mx-auto mb-1.5 text-emerald-600" />
+                  <div className="text-center p-3 rounded-lg bg-muted/40">
+                    <PenTool className="h-4 w-4 mx-auto mb-1.5 text-accent" />
                     <div className="text-xs font-medium text-foreground">汉字</div>
-                    <div className="text-[10px] text-muted-foreground">{charCodeData ? `${charCodeData.length}个` : '...'}</div>
+                    <div className="text-[10px] text-muted-foreground">{charCodeData ? <><span className="font-mono-stat">{charCodeData.length}</span>个</> : '...'}</div>
                   </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <HelpCircle className="h-5 w-5 mx-auto mb-1.5 text-amber-500" />
+                  <div className="text-center p-3 rounded-lg bg-muted/40">
+                    <HelpCircle className="h-4 w-4 mx-auto mb-1.5 text-amber-500" />
                     <div className="text-xs font-medium text-foreground">问答</div>
-                    <div className="text-[10px] text-muted-foreground">{flatFAQs.length}条</div>
+                    <div className="text-[10px] text-muted-foreground"><span className="font-mono-stat">{flatFAQs.length}</span>条</div>
                   </div>
                 </div>
               )}
@@ -404,10 +473,9 @@ export default function Layout() {
 
         {/* 移动端菜单 */}
         {mobileMenuOpen && (
-          <div className="border-t border-border lg:hidden bg-background/95 backdrop-blur-md animate-slideInUp">
-            <nav className="max-h-[60vh] overflow-y-auto p-4 space-y-1">
-              {/* 导航链接 */}
-              <div className="space-y-1 mb-4">
+          <div className="border-t border-border/50 lg:hidden bg-background/90 glass animate-slideInUp">
+            <nav className="max-h-[60vh] overflow-y-auto p-3 space-y-1">
+              <div className="space-y-0.5 mb-3">
                 {navItems.map((item, idx) => {
                   const Icon = item.icon;
                   const isActive = location.pathname === item.path;
@@ -415,18 +483,18 @@ export default function Layout() {
                     <Link key={item.path} to={item.path}>
                       <button
                         className={cn(
-                          'w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left text-sm font-medium transition-colors stagger-item',
+                          'w-full flex items-center gap-3 px-3 py-2.5 rounded-md text-left text-sm font-medium transition-colors stagger-item',
                           isActive
                             ? 'bg-primary text-primary-foreground shadow-sm'
-                            : 'text-muted-foreground hover:text-foreground hover:bg-accent/10'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                         )}
                         style={{ animationDelay: `${idx * 30}ms` }}
                       >
-                        <Icon className="h-5 w-5 shrink-0" />
+                        <Icon className="h-4 w-4 shrink-0" />
                         <span>{item.label}</span>
-                        
+
                         {isActive && (
-                          <span className="ml-auto h-2 w-2 rounded-full bg-primary-foreground" />
+                          <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary-foreground" />
                         )}
                       </button>
                     </Link>
@@ -434,14 +502,40 @@ export default function Layout() {
                 })}
               </div>
 
-              {/* 分隔线 */}
-              <div className="border-t border-border pt-4 space-y-1">
-                <div className="px-4 pb-2">
-                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <div className="border-t border-border/40 pt-3 space-y-0.5">
+                <div className="px-3 pb-1.5">
+                  <span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">
+                    工具
+                  </span>
+                </div>
+                {toolItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = location.pathname === item.path;
+                  return (
+                    <Link key={item.path} to={item.path}>
+                      <button
+                        className={cn(
+                          'w-full flex items-center gap-3 px-3 py-2 rounded-md text-left text-sm transition-colors',
+                          isActive
+                            ? 'text-primary bg-primary/5'
+                            : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        <span>{item.label}</span>
+                      </button>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              <div className="border-t border-border/40 pt-3 space-y-0.5">
+                <div className="px-3 pb-1.5">
+                  <span className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider">
                     外部资源
                   </span>
                 </div>
-                
+
                 {externalLinks.slice(0, 6).map((link, idx) => {
                   const Icon = link.icon;
                   return (
@@ -450,12 +544,12 @@ export default function Layout() {
                       href={link.href}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm text-muted-foreground hover:text-foreground hover:bg-accent/10 transition-colors stagger-item"
+                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary/40 transition-colors stagger-item"
                       style={{ animationDelay: `${(idx + navItems.length) * 30}ms` }}
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
                       <span>{link.label}</span>
-                      <ExternalLink className="h-3 w-3 ml-auto opacity-40" />
+                      <ExternalLink className="h-3 w-3 ml-auto opacity-30" />
                     </a>
                   );
                 })}
@@ -465,9 +559,9 @@ export default function Layout() {
                     setMobileMenuOpen(false);
                     setSearchOpen(true);
                   }}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-medium text-primary bg-primary/10 hover:bg-primary/20 transition-colors mt-2"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-md text-sm font-medium text-primary bg-primary/8 hover:bg-primary/15 transition-colors mt-1"
                 >
-                  <Search className="h-4 w-4" />
+                  <Search className="h-3.5 w-3.5" />
                   <span>搜索</span>
                 </button>
               </div>
@@ -481,27 +575,30 @@ export default function Layout() {
         <Outlet />
       </main>
 
-      {/* 页脚 */}
-      <footer className="border-t border-border bg-muted/30 mt-16">
+      {/* 页脚 - 文化感 */}
+      <footer className="relative border-t border-border/60 bg-muted/20 mt-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {/* 品牌信息 */}
+            {/* 品牌信息 - 增加文化感 */}
             <div className="sm:col-span-2 lg:col-span-1">
-              <Link to="/" className="inline-flex items-center gap-2 mb-4">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-emerald-500 text-white text-sm font-bold">
+              <Link to="/" className="inline-flex items-center gap-2 mb-4 group">
+                <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-white text-xs font-bold shadow-sm">
                   字
                 </div>
-                <span className="text-lg font-bold">字源形码</span>
+                <span className="text-base font-bold" style={{ fontFamily: "'Noto Serif SC', serif" }}>字源形码</span>
               </Link>
-              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-xs" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+                字源为基，形码入道
+              </p>
+              <p className="text-xs text-muted-foreground/60 mt-2 leading-relaxed">
                 基于「字源1.32版字根」的专业字根记忆训练平台
               </p>
             </div>
 
             {/* 快速链接 */}
             <div>
-              <h3 className="font-semibold text-foreground mb-4">快速链接</h3>
-              <ul className="space-y-2.5">
+              <h3 className="font-semibold text-foreground mb-4 text-sm" style={{ fontFamily: "'Noto Serif SC', serif" }}>快速链接</h3>
+              <ul className="space-y-2">
                 {[
                   { label: '首页', path: '/' },
                   { label: '字根练习', path: '/practice' },
@@ -509,7 +606,7 @@ export default function Layout() {
                   { label: '字根表', path: '/table' },
                 ].map(item => (
                   <li key={item.label}>
-                    <Link to={item.path} className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+                    <Link to={item.path} className="text-sm text-muted-foreground hover:text-foreground transition-all inline-block">
                       {item.label}
                     </Link>
                   </li>
@@ -519,8 +616,8 @@ export default function Layout() {
 
             {/* 外部资源 */}
             <div>
-              <h3 className="font-semibold text-foreground mb-4">外部资源</h3>
-              <ul className="space-y-2.5">
+              <h3 className="font-semibold text-foreground mb-4 text-sm" style={{ fontFamily: "'Noto Serif SC', serif" }}>外部资源</h3>
+              <ul className="space-y-2">
                 {[
                   { label: 'QQ群', href: 'https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0' },
                   { label: '网盘下载', href: 'http://ziyuan.ysepan.com/' },
@@ -528,46 +625,81 @@ export default function Layout() {
                   { label: '汉典', href: 'https://www.zdic.net/' },
                 ].map(link => (
                   <li key={link.label}>
-                    <a 
-                      href={link.href} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1"
+                    <a
+                      href={link.href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-muted-foreground hover:text-foreground transition-all inline-flex items-center gap-1 group"
                     >
                       {link.label}
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-50 transition-opacity" />
                     </a>
                   </li>
                 ))}
               </ul>
             </div>
 
-            {/* 联系方式 */}
+            {/* 联系方式与备份 */}
             <div>
-              <h3 className="font-semibold text-foreground mb-4">联系我们</h3>
-              <ul className="space-y-2.5">
+              <h3 className="font-semibold text-foreground mb-4 text-sm" style={{ fontFamily: "'Noto Serif SC', serif" }}>联系方式</h3>
+              <ul className="space-y-2">
                 <li>
-                  <a 
-                    href="https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0" 
-                    target="_blank" 
+                  <a
+                    href="https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-muted-foreground hover:text-foreground transition-colors inline-flex items-center gap-1.5"
                   >
-                    <MessageCircle className="h-4 w-4" />
+                    <MessageCircle className="h-3.5 w-3.5" />
                     QQ群：261418302
                   </a>
                 </li>
               </ul>
-              
-              <div className="mt-4 pt-4 border-t border-border/60">
-                <p className="text-xs text-muted-foreground">
-                  © {new Date().getFullYear()} 字源形码 · 用心打造
+
+              <div className="mt-4 pt-4 border-t border-border/30">
+                <h4 className="text-xs font-medium text-muted-foreground/70 mb-2">进度备份</h4>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => downloadProgress()}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40 transition-colors"
+                  >
+                    <Download className="h-3 w-3" />导出
+                  </button>
+                  <label className="flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted border border-border/40 transition-colors cursor-pointer">
+                    <Upload className="h-3 w-3" />导入
+                    <input
+                      type="file"
+                      accept=".json"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        const result = await importProgressFromFile(file);
+                        if (result.success > 0) {
+                          alert(`成功导入 ${result.success} 项进度数据，页面将刷新`);
+                          window.location.reload();
+                        } else {
+                          alert(`导入失败：${result.errors.join(', ')}`);
+                        }
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-border/30">
+                <p className="text-xs text-muted-foreground/50">
+                  © {new Date().getFullYear()} 字源形码
                 </p>
               </div>
             </div>
           </div>
         </div>
       </footer>
+
+      {/* 成就解锁提示 */}
+      <AchievementToast />
     </div>
   );
 }

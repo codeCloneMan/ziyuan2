@@ -14,7 +14,6 @@ export const PUA_ROOTS: Record<number, { key: string; desc: string }> = {
   0x342B: { key: 'j', desc: 'U+342B' },
   0x353E: { key: 'j', desc: 'U+353E' },
   0x382F: { key: 'b', desc: 'U+382F' },
-  0x382F: { key: 'j', desc: 'U+382F' },
   0x3840: { key: 'y', desc: 'U+3840' },
   0x39AE: { key: 'z', desc: 'U+39AE' },
   0x4DB9: { key: 'r', desc: 'U+4DB9' },
@@ -264,3 +263,44 @@ export const keyboardRows: string[][] = [
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
+
+/** 按键位索引的字根映射表（预计算，避免页面内重复构建） */
+export const keyRootsMap: Record<string, RootMapping[]> = (() => {
+  const map: Record<string, RootMapping[]> = {};
+  for (const r of practiceRootMappings) {
+    if (!map[r.key]) map[r.key] = [];
+    map[r.key].push(r);
+  }
+  return map;
+})();
+
+/** 按键位索引的全部字根映射表（含 PUA 不可渲染字根） */
+export const allKeyRootsMap: Record<string, RootMapping[]> = (() => {
+  const map: Record<string, RootMapping[]> = {};
+  for (const r of rootMappings) {
+    if (!map[r.key]) map[r.key] = [];
+    map[r.key].push(r);
+  }
+  return map;
+})();
+
+/** 字根图所在目录（public/roots/），用于渲染浏览器无法显示的 PUA/扩展区字根 */
+export const ROOT_IMAGE_DIR = 'roots';
+
+/**
+ * 获取不可渲染字根对应的字根图路径（相对站点根，如 "roots/a (7).png"）。
+ *
+ * 映射规则（与"字源1.32字根图"一致）：同一键位下按字根表顺序排列，
+ * 第 idx 个字根 → `<key>.png`（idx=0）或 `<key> (<idx>).png`。
+ *
+ * 注意：字根图只绘制了部分字根，若某位置没有对应图片文件，
+ * 调用方应通过 <img onError> 回退到文本描述。
+ */
+export function getRootImagePath(root: RootMapping): string | null {
+  const list = allKeyRootsMap[root.key];
+  if (!list || list.length === 0) return null;
+  const idx = list.findIndex(r => r.codePoint === root.codePoint && r.key === root.key);
+  if (idx < 0) return null;
+  const fileName = idx === 0 ? `${root.key}.png` : `${root.key} (${idx}).png`;
+  return `${ROOT_IMAGE_DIR}/${fileName}`;
+}

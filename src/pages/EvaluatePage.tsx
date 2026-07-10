@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import html2canvas from 'html2canvas';
-import { useCharCodeData, useBuiltinPhrases, type CharCodeItem, type BuiltinPhrasesData } from '@/lib/data-loader';
+import { useCharCodeData, useBuiltinPhrases, type BuiltinPhrasesData } from '@/lib/data-loader';
 import { calculateCoverage } from '@/data/builtinCharSets';
 import { charFrequency } from '@/data/charFrequency';
 import { calcWeightedSpeedEquivalent, getSpeedEquivalent } from '@/data/speedEquivalent';
@@ -298,7 +298,7 @@ function parseCodeTable(content: string): CodeEntry[] {
     if (!trimmed) continue;
     if (trimmed.startsWith('...') && !formatDetected) { formatDetected = 'rime'; continue; }
     if (trimmed.startsWith('---') || trimmed.startsWith('...')) continue;
-    if (formatDetected !== 'rime' && /^[;\/#]/.test(trimmed)) continue;
+    if (formatDetected !== 'rime' && /^[;/#]/.test(trimmed)) continue;
 
     let match: RegExpMatchArray | null = null;
 
@@ -377,6 +377,7 @@ function getAllPhrasesMerged(phrasesData: BuiltinPhrasesData): Array<{ phrase: s
 // 核心评码算法
 // ========================================
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', allPhrasesMerged: Array<{ phrase: string; freq: number }> = [], prevResult?: EvaluateResult | null): EvaluateResult {
   // 安全检查：词组数据未加载时返回空结果
   if (!_phrasesData) {
@@ -1444,9 +1445,9 @@ const PhraseFreqPanel = ({
                   )}
                   style={{ top: idx * ROW_H, height: ROW_H }}
                 >
-                  <span className="text-muted-foreground w-8 text-right mr-2 tabular-nums">{idx + 1}</span>
+                  <span className="text-muted-foreground font-mono-stat w-8 text-right mr-2 tabular-nums">{idx + 1}</span>
                   <span className="flex-1 text-foreground truncate">{renderPhrase(item.phrase)}</span>
-                  <span className="text-muted-foreground tabular-nums ml-2">{item.freq.toLocaleString()}</span>
+                  <span className="text-muted-foreground font-mono-stat tabular-nums ml-2">{item.freq.toLocaleString()}</span>
                 </div>
               );
             })}
@@ -1594,7 +1595,7 @@ const CharFreqPanel = ({
                 >
                   <span className="text-foreground font-bold text-sm w-7 text-center shrink-0">{renderText(item.char)}</span>
                   <span className="flex-1 text-muted-foreground truncate">{renderText(item.fullCode)}</span>
-                  <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">{item.fullCode.length}码</span>
+                  <span className="text-[10px] text-muted-foreground font-mono-stat tabular-nums shrink-0">{item.fullCode.length}码</span>
                   {item.codes.length > 1 && (
                     <span className="text-[10px] text-amber-600 dark:text-amber-400 shrink-0" title={`共 ${item.codes.length} 码: ${item.codes.join(', ')}`}>
                       ×{item.codes.length}
@@ -1614,7 +1615,7 @@ const CharFreqPanel = ({
 };
 
 export default function EvaluatePage() {
-  const { data: charCodeData, loading: charDataLoading } = useCharCodeData();
+  const { loading: charDataLoading } = useCharCodeData();
   const { data: phrasesData, loading: phrasesLoading } = useBuiltinPhrases();
 
   const [fileName, setFileName] = useState('');
@@ -1722,7 +1723,7 @@ export default function EvaluatePage() {
       setResult(res);
       setCharCoverage(covResult);
     });
-  }, []);
+  }, [phrasesData]);
 
   // ★ 版本号计数器：每次上传新文件递增，确保同长度不同数据也能正确触发全量重算
   const entriesVersionRef = useRef(0);
@@ -1938,9 +1939,9 @@ export default function EvaluatePage() {
               </Card>
 
               {/* 预置方案快速测评 */}
-              <Card className="bg-gradient-to-br from-primary/5 to-emerald-500/5 border-primary/20">
+              <Card className="bg-card border-primary/20">
                 <CardContent className="p-6 flex flex-col items-center justify-center text-center">
-                  <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center mb-3">
+                  <div className="w-14 h-14 rounded-xl bg-primary/10 flex items-center justify-center mb-3">
                     <Zap className="h-7 w-7 text-primary" />
                   </div>
                   <h3 className="font-bold text-foreground mb-1">预置方案测评</h3>
@@ -2180,7 +2181,7 @@ export default function EvaluatePage() {
                           style={{ width: `${Math.min(data.percentage, 100)}%` }}
                         />
                       </div>
-                      <span className="text-xs font-semibold tabular-nums w-14 text-right">{data.percentage.toFixed(1)}%</span>
+                      <span className="text-xs font-semibold font-mono-stat tabular-nums w-14 text-right">{data.percentage.toFixed(1)}%</span>
                       <span className="text-[10px] text-muted-foreground">{data.covered}/{data.total}</span>
                     </div>
                   ))}
@@ -2193,7 +2194,7 @@ export default function EvaluatePage() {
           <Card className={cn(expandedSection === 'single-char' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardContent className="p-4 sm:p-6">
               {expandedSection === 'single-char' && (
-                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
                   <span className="font-bold text-foreground text-base">单字测评 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
                   <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5 focus-visible:ring-2 focus-visible:ring-primary">收起</Button>
                 </div>
@@ -2309,7 +2310,7 @@ export default function EvaluatePage() {
 
                       /** 数值单元格 */
                       const nc = (v: number) => (
-                        <td className="px-2 py-1.5 text-center tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
+                        <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
                       );
                       // 计算空格模式下，加权键长 +1
                       const wcl = (v: number) => countSpace ? v + 1 : v;
@@ -2319,8 +2320,8 @@ export default function EvaluatePage() {
                         <tr key={s.tier} className="border-b border-border hover:bg-muted/20">
                           <td className="px-2 py-1.5 font-medium text-foreground whitespace-nowrap sticky left-0 bg-background z-10">{s.tier}</td>
                           {nc(s.charCount)}{nc(s.oneCode)}{nc(s.twoCode)}{nc(s.threeCode)}{nc(s.fourCode)}
-                          <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.shortDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.shortDupCount}</td>
-                          <td className={cn('px-2 py-1.5 text-center tabular-nums font-semibold', s.fullDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.fullDupCount}</td>
+                          <td className={cn('px-2 py-1.5 text-center font-mono-stat tabular-nums font-semibold', s.shortDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.shortDupCount}</td>
+                          <td className={cn('px-2 py-1.5 text-center font-mono-stat tabular-nums font-semibold', s.fullDupCount > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{s.fullDupCount}</td>
                           {nc(s.theoreticalTwoShort)}{nc(wcl(s.weightedCodeLen))}{nc(s.weightedCharEquiv)}{nc(s.weightedKeyEquiv)}
                           {nc(s.handAltCount)}{nc(s.sameFingerBigCross)}{nc(s.sameFingerSmallCross)}
                           {nc(s.sameKeyTriple)}{nc(s.sameKeyQuad)}{nc(s.sameFingerTriple)}{nc(s.sameFingerQuad)}
@@ -2333,8 +2334,8 @@ export default function EvaluatePage() {
                         <tr key={label} className="bg-emerald-50/50 dark:bg-emerald-950/10 border-b border-border font-semibold">
                           <td className="px-2 py-1.5 text-foreground sticky left-0 bg-emerald-50/50 dark:bg-emerald-950/10 z-10">{label}</td>
                           {nc(sum.charCount)}{nc(sum.oneCode)}{nc(sum.twoCode)}{nc(sum.threeCode)}{nc(sum.fourCode)}
-                          <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.shortDupCount}</td>
-                          <td className="px-2 py-1.5 text-center tabular-nums text-amber-600 dark:text-amber-400">{sum.fullDupCount}</td>
+                          <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums text-amber-600 dark:text-amber-400">{sum.shortDupCount}</td>
+                          <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums text-amber-600 dark:text-amber-400">{sum.fullDupCount}</td>
                           {nc(sum.theoreticalTwoShort)}{nc(wcl(sum.weightedCodeLen))}{nc(sum.weightedCharEquiv)}{nc(sum.weightedKeyEquiv)}
                           {nc(sum.handAltCount)}{nc(sum.sameFingerBigCross)}{nc(sum.sameFingerSmallCross)}
                           {nc(sum.sameKeyTriple)}{nc(sum.sameKeyQuad)}{nc(sum.sameFingerTriple)}{nc(sum.sameFingerQuad)}
@@ -2350,24 +2351,24 @@ export default function EvaluatePage() {
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-2 py-1.5 font-medium sticky left-0 bg-blue-50/50 dark:bg-blue-950/10 z-10">{label}</td>
-                            <td colSpan={2} className="px-2 py-1.5 text-center tabular-nums">{pct(sum.oneCodeFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.twoCodeFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.threeCodeFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fourCodeFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.shortDupFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.fullDupFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pct(sum.theoreticalTwoShortFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.handAltFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfbFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfsFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sktFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.skqFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sftFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.sfqFreq)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyFreq)}</td>
+                            <td colSpan={2} className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.oneCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.twoCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.threeCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.fourCodeFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.shortDupFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.fullDupFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.theoreticalTwoShortFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">/</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.handAltFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfbFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfsFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sktFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.skqFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sftFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfqFreq)}</td>
+                            <td className="px-2 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.pinkyFreq)}</td>
                           </tr>
                         );
                       };
@@ -2399,7 +2400,7 @@ export default function EvaluatePage() {
               const pct = cov?.percentage ?? 0;
               return (
                 <div className="rounded-lg border border-border p-3 text-center">
-                  <div className={cn('text-2xl font-bold tabular-nums',
+                  <div className={cn('text-2xl font-bold font-mono-stat tabular-nums',
                     pct >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
                     pct >= 70 ? 'text-amber-600 dark:text-amber-400' :
                     'text-red-600 dark:text-red-400'
@@ -2411,7 +2412,7 @@ export default function EvaluatePage() {
             })()}
             {/* 平均码长（字频加权） */}
             <div className="rounded-lg border border-border p-3 text-center">
-              <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+              <div className="text-2xl font-bold font-mono-stat tabular-nums text-blue-600 dark:text-blue-400">
                 {result.weightedAvgCodeLen.toFixed(2)}
               </div>
               <div className="text-xs text-muted-foreground mt-1">平均码长</div>
@@ -2423,7 +2424,7 @@ export default function EvaluatePage() {
               title="点击查看重码单字"
               onClick={() => setShowSingleCharDup(true)}
             >
-              <div className={cn('text-2xl font-bold tabular-nums',
+              <div className={cn('text-2xl font-bold font-mono-stat tabular-nums',
                 result.fullDupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
                 result.fullDupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
                 'text-red-600 dark:text-red-400'
@@ -2433,7 +2434,7 @@ export default function EvaluatePage() {
             </div>
             {/* 选重率（字频加权） */}
             <div className="rounded-lg border border-border p-3 text-center">
-              <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
+              <div className="text-2xl font-bold font-mono-stat tabular-nums text-purple-600 dark:text-purple-400">
                 {(result.dynamicSelectionRate * 100).toFixed(2)}
               </div>
               <div className="text-xs text-muted-foreground mt-1">选重率（%）</div>
@@ -2445,7 +2446,7 @@ export default function EvaluatePage() {
           <Card className={cn(expandedSection === 'heatmap' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardContent className="p-4 sm:p-6">
               {expandedSection === 'heatmap' && (
-                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
                   <span className="font-bold text-foreground text-base">键位热力图 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
                   <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
                 </div>
@@ -2477,7 +2478,7 @@ export default function EvaluatePage() {
                         <div
                           key={key}
                           className={cn(
-                            'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-colors shadow-sm',
+                            'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border transition-colors shadow-sm',
                             expandedSection === 'heatmap'
                               ? 'h-20 w-20'
                               : 'flex-1 min-w-0 aspect-square sm:flex-none sm:w-14 sm:h-14',
@@ -2487,7 +2488,7 @@ export default function EvaluatePage() {
                         >
                           <span className={cn('font-bold leading-none', expandedSection === 'heatmap' ? 'text-xl' : 'text-sm sm:text-base')}>{key.toUpperCase()}</span>
                           {freq > 0 && (
-                            <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'heatmap' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
+                            <span className={cn('leading-tight font-sans font-mono-stat tabular-nums mt-0.5 opacity-80', expandedSection === 'heatmap' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
                               {rate.toFixed(2)}
                             </span>
                           )}
@@ -2500,12 +2501,12 @@ export default function EvaluatePage() {
               {/* 左右手比例 */}
               <div className="mt-5 flex items-center justify-center gap-6">
                 <div className="text-center">
-                  <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{result.leftHandRate.toFixed(2)}%</div>
+                  <div className="text-2xl font-bold font-mono-stat tabular-nums text-blue-600 dark:text-blue-400">{result.leftHandRate.toFixed(2)}%</div>
                   <div className="text-sm text-muted-foreground">左手</div>
                 </div>
                 <span className="text-2xl font-bold text-muted-foreground">:</span>
                 <div className="text-center">
-                  <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">{result.rightHandRate.toFixed(2)}%</div>
+                  <div className="text-2xl font-bold font-mono-stat tabular-nums text-purple-600 dark:text-purple-400">{result.rightHandRate.toFixed(2)}%</div>
                   <div className="text-sm text-muted-foreground">右手</div>
                 </div>
               </div>
@@ -2535,7 +2536,7 @@ export default function EvaluatePage() {
           <Card className={cn(expandedSection === 'phrase' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardContent className="p-4 sm:p-6">
               {expandedSection === 'phrase' && (
-                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                <div className="-mx-6 -mt-6 mb-4 px-6 py-3 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
                   <span className="font-bold text-foreground text-base">词组测评 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
                   <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
                 </div>
@@ -2649,7 +2650,7 @@ export default function EvaluatePage() {
 
                       /** 数值单元格 */
                       const nc = (v: number) => (
-                        <td className="px-3 py-1.5 text-center tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
+                        <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{typeof v === 'number' ? (Number.isInteger(v) ? v : v.toFixed(4)) : v}</td>
                       );
 
                       /** 渲染单个 tier 行 */
@@ -2682,16 +2683,16 @@ export default function EvaluatePage() {
                         return (
                           <tr key={`pct-${keySuffix}`} className="bg-blue-50/50 dark:bg-blue-950/10 border-b border-border text-muted-foreground">
                             <td className="px-3 py-1.5 font-medium">{label}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pct(sum.selFreqSum)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">/</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.handAltFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfbFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfsFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sktFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.skqFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sftFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.sfqFreq)}</td>
-                            <td className="px-3 py-1.5 text-center tabular-nums">{pctPair(sum.pinkyFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pct(sum.selFreqSum)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">/</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.handAltFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfbFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfsFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sktFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.skqFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sftFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.sfqFreq)}</td>
+                            <td className="px-3 py-1.5 text-center font-mono-stat tabular-nums">{pctPair(sum.pinkyFreq)}</td>
                           </tr>
                         );
                       };
@@ -2712,7 +2713,7 @@ export default function EvaluatePage() {
               {/* 词组测评汇总统计 */}
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="rounded-lg border border-border p-3 text-center" title="能编码的词组数 / 总词组数 × 100%">
-                  <div className={cn('text-2xl font-bold tabular-nums',
+                  <div className={cn('text-2xl font-bold font-mono-stat tabular-nums',
                     result.phraseEval.overall.coverageRate >= 90 ? 'text-emerald-600 dark:text-emerald-400' :
                     result.phraseEval.overall.coverageRate >= 70 ? 'text-amber-600 dark:text-amber-400' :
                     'text-red-600 dark:text-red-400'
@@ -2721,7 +2722,7 @@ export default function EvaluatePage() {
                   <div className="text-[10px] text-muted-foreground/60 mt-0.5">词组可编码比例</div>
                 </div>
                 <div className="rounded-lg border border-border p-3 text-center" title="所有词组编码的平均键数（词频加权）">
-                  <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                  <div className="text-2xl font-bold font-mono-stat tabular-nums text-blue-600 dark:text-blue-400">
                     {countSpace ? (result.phraseEval.overall.avgCodeLen + 1).toFixed(2) : result.phraseEval.overall.avgCodeLen.toFixed(2)}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">平均码长</div>
@@ -2731,7 +2732,7 @@ export default function EvaluatePage() {
                   className="rounded-lg border border-border p-3 text-center cursor-pointer hover:bg-muted/30 transition-colors" title="存在重码的词组占比（按编码数计）—— 点击查看重码词组"
                   onClick={() => (result?.phraseDupGroups?.length ?? 0) > 0 && setSelectedDupCode(result!.phraseDupGroups![0].code)}
                 >
-                  <div className={cn('text-2xl font-bold tabular-nums',
+                  <div className={cn('text-2xl font-bold font-mono-stat tabular-nums',
                     result.phraseEval.overall.dupRate < 5 ? 'text-emerald-600 dark:text-emerald-400' :
                     result.phraseEval.overall.dupRate < 10 ? 'text-amber-600 dark:text-amber-400' :
                     'text-red-600 dark:text-red-400'
@@ -2740,7 +2741,7 @@ export default function EvaluatePage() {
                   <div className="text-[10px] text-muted-foreground/60 mt-0.5">重码编码占比</div>
                 </div>
                 <div className="rounded-lg border border-border p-3 text-center" title="因重码需按数字键选重的比例（词频加权）">
-                  <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">
+                  <div className="text-2xl font-bold font-mono-stat tabular-nums text-purple-600 dark:text-purple-400">
                     {(result.phraseEval.overall.selectionRate * 100).toFixed(2)}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">选重率（%）</div>
@@ -2771,7 +2772,7 @@ export default function EvaluatePage() {
                           <div
                             key={key}
                             className={cn(
-                              'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border/30 transition-colors shadow-sm',
+                              'flex flex-col items-center justify-center rounded-lg text-xs font-mono font-bold border border-border transition-colors shadow-sm',
                               expandedSection === 'phrase'
                                 ? 'h-20 w-20'
                                 : 'flex-1 min-w-0 aspect-square sm:flex-none sm:w-14 sm:h-14',
@@ -2781,7 +2782,7 @@ export default function EvaluatePage() {
                           >
                             <span className={cn('font-bold leading-none', expandedSection === 'phrase' ? 'text-xl' : 'text-sm sm:text-base')}>{key.toUpperCase()}</span>
                             {freq > 0 && (
-                              <span className={cn('leading-tight font-sans tabular-nums mt-0.5 opacity-80', expandedSection === 'phrase' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
+                              <span className={cn('leading-tight font-sans font-mono-stat tabular-nums mt-0.5 opacity-80', expandedSection === 'phrase' ? 'text-sm' : 'text-[9px] sm:text-[10px]')}>
                                 {rate.toFixed(1)}
                               </span>
                             )}
@@ -2806,12 +2807,12 @@ export default function EvaluatePage() {
                     return (
                       <>
                         <div className="text-center">
-                          <div className="text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{lRate.toFixed(2)}%</div>
+                          <div className="text-2xl font-bold font-mono-stat tabular-nums text-blue-600 dark:text-blue-400">{lRate.toFixed(2)}%</div>
                           <div className="text-sm text-muted-foreground">左手</div>
                         </div>
                         <span className="text-2xl font-bold text-muted-foreground">:</span>
                         <div className="text-center">
-                          <div className="text-2xl font-bold tabular-nums text-purple-600 dark:text-purple-400">{rRate.toFixed(2)}%</div>
+                          <div className="text-2xl font-bold font-mono-stat tabular-nums text-purple-600 dark:text-purple-400">{rRate.toFixed(2)}%</div>
                           <div className="text-sm text-muted-foreground">右手</div>
                         </div>
                       </>
@@ -2831,7 +2832,7 @@ export default function EvaluatePage() {
           <Card className={cn(expandedSection === 'summary' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
             <CardHeader className="pb-2">
               {expandedSection === 'summary' && (
-                <div className="-mx-6 -mt-6 mb-2 px-6 py-3 bg-background/95 backdrop-blur border-b border-border flex items-center justify-between sticky top-0 z-10">
+                <div className="-mx-6 -mt-6 mb-2 px-6 py-3 bg-card border-b border-border flex items-center justify-between sticky top-0 z-10">
                   <span className="font-bold text-foreground text-base">完整统计指标汇总 - 全屏查看 <span className="text-xs font-normal text-muted-foreground ml-2">按 Esc 收起</span></span>
                   <Button variant="outline" size="sm" onClick={() => setExpandedSection(null)} className="gap-1.5">收起</Button>
                 </div>
@@ -2909,7 +2910,7 @@ export default function EvaluatePage() {
                         <tr key={`${group.category}-${item.name}`} className={cn('border-b border-border hover:bg-accent/5', idx === 0 && 'border-t border-border')}>
                           {idx === 0 && <td className="px-3 py-2 font-semibold text-foreground bg-muted/20" rowSpan={group.items.length}>{group.category}</td>}
                           <td className="px-3 py-2 text-foreground">{item.name}</td>
-                          <td className="px-3 py-2 text-right tabular-nums font-medium">{item.value}</td>
+                          <td className="px-3 py-2 text-right font-mono-stat tabular-nums font-medium">{item.value}</td>
                           <td className="px-3 py-2 text-center">{item.score >= 0 ? getGradeBadge(item.score) : <span className="text-xs text-muted-foreground">-</span>}</td>
                         </tr>
                       ))
@@ -2943,13 +2944,10 @@ export default function EvaluatePage() {
       {/* ===== 重码词组弹窗 ===== */}
       {selectedDupCode && result?.phraseDupGroups && (() => {
         const dupGroups = result.phraseDupGroups!;
-        const group = dupGroups.find(g => g.code === selectedDupCode);
-        // 如果没有找到特定组，显示所有重码词组的总览
-        const showOverview = !group;
         return (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setSelectedDupCode(null)}>
-            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-gradient-to-r from-primary/5 to-accent/5">
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
                 <div>
                   <h3 className="font-bold text-foreground">重码词组</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -2962,7 +2960,7 @@ export default function EvaluatePage() {
               </div>
               <div className="overflow-y-auto flex-1 p-4 space-y-3">
                 {dupGroups.slice(0, 50).map((g, gi) => (
-                  <div key={g.code} className="rounded-lg border border-border/50 overflow-hidden">
+                  <div key={g.code} className="rounded-lg border border-border overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-muted-foreground">#{gi + 1}</span>
@@ -2974,7 +2972,7 @@ export default function EvaluatePage() {
                       {g.phrases.map((item, idx) => (
                         <div key={idx} className="flex items-center justify-between text-sm">
                           <span className={cn('font-medium', idx === 0 ? 'text-foreground' : 'text-muted-foreground')}>{item.phrase}</span>
-                          <span className="text-xs font-mono text-muted-foreground tabular-nums">{item.freq.toLocaleString()}</span>
+                          <span className="text-xs font-mono font-mono-stat text-muted-foreground tabular-nums">{item.freq.toLocaleString()}</span>
                         </div>
                       ))}
                     </div>
@@ -2984,7 +2982,7 @@ export default function EvaluatePage() {
                   <p className="text-xs text-muted-foreground text-center py-2">仅显示频次最高的 50 组</p>
                 )}
               </div>
-              <div className="px-5 py-3 border-t border-border/60 text-xs text-muted-foreground text-center">
+              <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground text-center">
                 按重码词组数降序排列 · 按 Esc 关闭
               </div>
             </div>
@@ -2997,8 +2995,8 @@ export default function EvaluatePage() {
         const dupes = result.topDupes;
         return (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowSingleCharDup(false)}>
-            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
-              <div className="flex items-center justify-between px-5 py-4 border-b border-border/60 bg-gradient-to-r from-primary/5 to-accent/5">
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
                 <div>
                   <h3 className="font-bold text-foreground">单字重码</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
@@ -3013,7 +3011,7 @@ export default function EvaluatePage() {
                 {dupes.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-8">无重码数据</p>
                 ) : dupes.map((g, gi) => (
-                  <div key={g.code} className="rounded-lg border border-border/50 overflow-hidden">
+                  <div key={g.code} className="rounded-lg border border-border overflow-hidden">
                     <div className="flex items-center justify-between px-3 py-2 bg-muted/30">
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-mono text-muted-foreground">#{gi + 1}</span>
@@ -3029,7 +3027,7 @@ export default function EvaluatePage() {
                             idx === 0 ? 'border-primary/30 bg-primary/5 font-medium' : 'border-border bg-card text-muted-foreground'
                           )}>
                             <span className="text-base">{ch}</span>
-                            <span className="text-[10px] font-mono text-muted-foreground">
+                            <span className="text-[10px] font-mono font-mono-stat text-muted-foreground">
                               {(charFrequency[ch] ?? 0).toFixed(4)}
                             </span>
                           </div>
@@ -3039,7 +3037,7 @@ export default function EvaluatePage() {
                   </div>
                 ))}
               </div>
-              <div className="px-5 py-3 border-t border-border/60 text-xs text-muted-foreground text-center">
+              <div className="px-5 py-3 border-t border-border text-xs text-muted-foreground text-center">
                 按重码字数降序排列 · 高频字在前 · 按 Esc 关闭
               </div>
             </div>
@@ -3073,7 +3071,7 @@ function ScoreCard({ icon, title, value, unit, score, highlight }: {
       </div>
       <div className="flex items-baseline justify-between gap-1">
         <div className="flex items-baseline gap-0.5 min-w-0">
-          <span className={cn('text-base sm:text-lg font-bold tabular-nums truncate', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
+          <span className={cn('text-base sm:text-lg font-bold font-mono-stat tabular-nums truncate', highlight ? 'text-emerald-600 dark:text-emerald-400' : 'text-foreground')}>{value}</span>
           {unit && <span className="text-[10px] text-muted-foreground shrink-0">{unit}</span>}
         </div>
         {getGradeBadge(score)}

@@ -80,37 +80,36 @@ export default function TablePage() {
   return (
     <div className="min-h-screen bg-background">
       {/* Hero区 */}
-      <section className="py-6 sm:py-12 lg:py-16 bg-gradient-to-br from-primary/5 via-transparent to-accent/5">
+      <section className="py-8 sm:py-14 lg:py-18 bg-gradient-to-b from-primary/[0.03] via-transparent to-transparent">
         <div className="container-page text-center">
-          <Badge variant="secondary" className="mb-4 px-4 py-1.5 text-sm font-medium">
-            <BookOpen className="h-4 w-4 mr-1.5" />
+          <Badge variant="secondary" className="mb-3 px-3 py-1 text-xs font-medium bg-primary/8 text-primary">
+            <BookOpen className="h-3.5 w-3.5 mr-1" />
             v1.32版完整字根表
           </Badge>
           
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
-            字根
-            <span className="bg-gradient-to-r from-primary to-emerald-500 bg-clip-text text-transparent"> 总表</span>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-3 animate-slideInUp" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            字根总表
           </h1>
           
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
-            共 <span className="font-bold text-foreground text-xl">{totalRoots}</span> 个字根，
-            分布在 <span className="font-bold text-primary text-xl">26</span> 个键位上
+          <p className="text-sm text-muted-foreground/70 max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s', fontFamily: "'Noto Serif SC', serif" }}>
+            共 <span className="font-mono-stat font-bold text-foreground">{totalRoots}</span> 个字根，
+            分布在 <span className="font-mono-stat font-bold text-primary">26</span> 个键位上
           </p>
 
           {/* 快速统计 */}
-          <div className="mt-4 sm:mt-8 flex items-center justify-center gap-4 sm:gap-12 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="mt-6 sm:mt-10 flex items-center justify-center gap-4 sm:gap-12 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
             <div className="text-center">
-              <div className="stat-number text-primary">{totalRoots}</div>
+              <div className="stat-number font-mono-stat text-primary">{totalRoots}</div>
               <div className="stat-label">总字根数</div>
             </div>
-            <div className="w-px h-8 sm:h-12 bg-border"></div>
+            <div className="w-px h-8 sm:h-12 bg-border/50"></div>
             <div className="text-center">
-              <div className="stat-number text-accent">26</div>
+              <div className="stat-number font-mono-stat text-accent">26</div>
               <div className="stat-label">键位数</div>
             </div>
-            <div className="w-px h-8 sm:h-12 bg-border"></div>
+            <div className="w-px h-8 sm:h-12 bg-border/50"></div>
             <div className="text-center">
-              <div className="stat-number">{Math.round(totalRoots / 26)}</div>
+              <div className="stat-number font-mono-stat">{Math.round(totalRoots / 26)}</div>
               <div className="stat-label">平均每键</div>
             </div>
           </div>
@@ -165,7 +164,7 @@ export default function TablePage() {
 
           {/* 虚拟键盘选择器 */}
           <div className="flex justify-center">
-            <div className="flex flex-col items-center gap-0.5 p-1 sm:p-2 rounded-lg sm:rounded-xl bg-muted/30 border border-border/60 w-full max-w-lg">
+            <div className="flex flex-col items-center gap-0.5 p-1 sm:p-2 rounded-lg sm:rounded-lg bg-muted/30 border border-border w-full max-w-lg">
               {keyboardRows.map((row, rowIndex) => (
                 <div key={rowIndex} className="flex gap-0.5 sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 4}px` }}>
                   {row.map((key) => {
@@ -179,7 +178,7 @@ export default function TablePage() {
                           setSearchQuery('');
                         }}
                         className={cn(
-                          'group relative flex flex-1 min-w-0 h-8 sm:h-10 sm:w-10 sm:flex-none flex-col items-center justify-center rounded-md sm:rounded-xl border-2 text-xs font-semibold transition-colors cursor-pointer select-none',
+                          'group relative flex flex-1 min-w-0 h-8 sm:h-10 sm:w-10 sm:flex-none flex-col items-center justify-center rounded-md sm:rounded-lg border-2 text-xs font-semibold transition-colors cursor-pointer select-none',
                           isSelected
                             ? 'border-primary bg-primary shadow-md sm:scale-105'
                             : 'border-border bg-card hover:border-primary/40 hover:bg-card/80 hover:shadow-sm'
@@ -227,8 +226,8 @@ export default function TablePage() {
                 style={{ animationDelay: `${idx * 50}ms` }}
               >
                 {/* 卡片头部 */}
-                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-2 sm:pb-3 border-b border-border/60">
-                  <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-xl bg-primary text-sm sm:text-base font-bold text-primary-foreground shadow-sm shrink-0">
+                <div className="flex items-center gap-2 sm:gap-3 mb-3 sm:mb-4 pb-2 sm:pb-3 border-b border-border">
+                  <div className="flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-lg sm:rounded-lg bg-primary text-sm sm:text-base font-bold text-primary-foreground shadow-sm shrink-0">
                     {group.key.toUpperCase()}
                   </div>
 
@@ -283,11 +282,11 @@ export default function TablePage() {
           onClick={() => setSelectedRoot(null)}
         >
           <div
-            className="w-full max-w-md bg-card rounded-2xl shadow-2xl border border-border/50 overflow-hidden animate-slideInUp"
+            className="w-full max-w-md bg-card rounded-lg shadow-2xl border border-border/50 overflow-hidden animate-slideInUp"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 弹窗头部 */}
-            <div className="relative p-6 pb-4 bg-gradient-to-br from-primary/5 to-accent/5 border-b border-border/40">
+            <div className="relative p-6 pb-4 bg-primary/5 border-b border-border/40">
               <button
                 onClick={() => setSelectedRoot(null)}
                 className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary transition-colors btn-icon"
@@ -296,7 +295,7 @@ export default function TablePage() {
               </button>
               
               <div className="flex items-center gap-4">
-                <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-2xl bg-primary text-3xl font-bold text-primary-foreground shadow-lg">
+                <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-lg bg-primary text-3xl font-bold text-primary-foreground shadow-lg">
                   {selectedRoot.key.toUpperCase()}
                 </div>
                 
@@ -315,7 +314,7 @@ export default function TablePage() {
             <div className="p-6 space-y-4">
               {/* 字根展示 */}
               <div className="flex items-center justify-center py-4">
-                <div className="flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-3xl border-2 border-border bg-card">
+                <div className="flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-lg border-2 border-border bg-card">
                   <RootCharDisplay
                     root={selectedRoot}
                     size="xl"
