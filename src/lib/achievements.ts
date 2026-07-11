@@ -5,6 +5,8 @@
  * 让积分系统有意义化，提供正反馈循环。
  */
 
+import { practiceRootMappings } from '@/data/roots';
+
 export interface Achievement {
   id: string;
   title: string;
@@ -68,9 +70,9 @@ export const ACHIEVEMENTS: Achievement[] = [
   {
     id: 'all_roots',
     title: '融会贯通',
-    description: '掌握全部 329 个字根',
+    description: `掌握全部 ${practiceRootMappings.length} 个字根`,
     icon: '👑',
-    condition: (d) => d.masteredRoots >= 329,
+    condition: (d) => d.masteredRoots >= practiceRootMappings.length,
   },
 
   // 连击成就

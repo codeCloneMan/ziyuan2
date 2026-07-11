@@ -61,9 +61,11 @@ export default function RootDisplayCard({
         {/* 输入框 - 更精致 */}
         <div className="relative w-full max-w-xs">
           <input ref={inputRef} type="text" readOnly placeholder="输入键位"
+            autoFocus
             className={cn(
               "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold",
-              "bg-muted/50 border rounded-lg focus:outline-none transition-all duration-200",
+              "bg-muted/50 border rounded-lg transition-all duration-200",
+              "focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary",
               keyFeedback
                 ? (feedbackType === 'correct' ? "border-emerald-300 bg-emerald-50/50 text-emerald-600 dark:text-emerald-400" : "border-red-300 bg-red-50/50 text-red-600 dark:text-red-400")
                 : "border-border/50"

@@ -6,7 +6,7 @@ import {
   ChevronUp, CheckCircle2,
 } from 'lucide-react';
 import {
-  keyboardRows, keyRootsMap,
+  keyboardRows, keyRootsMap, practiceRootMappings,
 } from '@/data/roots';
 import { useLearningProgress } from '@/hooks/use-learning-progress';
 
@@ -15,7 +15,7 @@ import { useLearningProgress } from '@/hooks/use-learning-progress';
 // ============================================
 
 const learningSteps = [
-  { num: '壹', title: '认识字根', desc: '查看字根表，了解 329 个字根的分布规律', link: '/table', time: '20 分钟' },
+  { num: '壹', title: '认识字根', desc: `查看字根表，了解 ${practiceRootMappings.length} 个字根的分布规律`, link: '/table', time: '20 分钟' },
   { num: '贰', title: '记忆字根', desc: '科学渐进式练习，逐步掌握全部字根', link: '/practice', time: '1-2 天' },
   { num: '叁', title: '练习巩固', desc: '通过错题回顾和反复练习巩固记忆', link: '/practice', time: '2-3 天' },
   { num: '肆', title: '整字输入', desc: '从字根到整字，练习汉字编码拆分', link: '/whole-char', time: '3-5 天' },
@@ -207,7 +207,7 @@ export default function HomePage() {
             <div className="text-center mb-10">
               <h2 className="text-xl sm:text-2xl font-bold mb-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>键位分布</h2>
               <p className="text-sm text-muted-foreground/70">
-                329 个字根分布在 26 键上——点击按键探索
+                {practiceRootMappings.length} 个字根分布在 26 键上——点击按键探索
               </p>
             </div>
 

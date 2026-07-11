@@ -19,6 +19,10 @@ const practiceStyleConfig: Record<PracticeLevel, { label: string; icon: typeof S
 /** 所有可练习的字根 ID（入门和进阶都用全量） */
 const allRootIds = practiceRootMappings.map(r => r.char);
 
+/** 预建 char → RootMapping 索引，避免 nextRoot 中每次 .find() 做线性搜索 */
+const rootByChar = new Map<string, RootMapping>();
+practiceRootMappings.forEach(r => rootByChar.set(r.char, r));
+
 const phoneticHintMap: Record<string, string> = {
   '高': 'Gāo → g', '古': 'Gǔ → g', '工': 'Gōng → g', '广': 'Guǎng → g',
   '己': 'Jǐ → j', '见': 'Jiàn → j', '金': 'Jīn → j', '斤': 'Jīn → j',
@@ -76,24 +80,23 @@ export default function PracticePage() {
   const shuffleIndexRef = useRef(0);
 
   // 切题函数：根据模式选择不同的下一题策略
+  // 注意：spaced.getNextItem 通过 ref 读取 pool，引用已永久稳定
   const nextRoot = useCallback(() => {
     setPhoneticHint(null);
 
     let nextChar: string | null = null;
 
     if (isBeginner) {
-      // 入门：由间隔学习算法决定下一题（新字/弱项/到期复习/随机复习）
       nextChar = spaced.getNextItem();
     } else {
-      // 进阶：按洗牌队列顺序循环
       shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
       nextChar = shuffleQueueRef.current[shuffleIndexRef.current];
     }
 
     if (nextChar) {
-      setCurrentRoot(practiceRootMappings.find(r => r.char === nextChar) ?? practiceRootMappings[0]);
+      setCurrentRoot(rootByChar.get(nextChar) ?? practiceRootMappings[0]);
     }
-  }, [isBeginner, spaced]);
+  }, [isBeginner]); // spaced.getNextItem 稳定，无需依赖
 
   // ============================================
   // 答错处理策略：
@@ -106,7 +109,7 @@ export default function PracticePage() {
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: nextRoot,
     onWrong: nextRoot,
-  }), [isBeginner, nextRoot]));
+  }), [isBeginner])); // nextRoot 引用稳定，仅 isBeginner 变化时重建
 
   const { isPlaying, start, stop, reset, submit, keyFeedback, feedbackType, stats, accuracy } = session;
 
@@ -138,7 +141,7 @@ export default function PracticePage() {
         return rateA - rateB;
       })
       .slice(0, 10);
-  }, [progress.wrongCountMap, progress.correctCountMap]);
+  }, [progress.totalAttempts]); // 仅在答题次数变化时重算，避免每次 map 对象引用变化都触发
 
   // ============================================
   // 练习生命周期
@@ -207,14 +210,15 @@ export default function PracticePage() {
     // 持久化进度
     recordAnswer(currentRoot.char, isCorrect);
 
-    // 入门模式：同步更新间隔学习池
+    // 入门模式：同步更新间隔学习池（recordResult 引用稳定）
     if (isBeginner) {
       spaced.recordResult(currentRoot.char, isCorrect);
     }
 
     // 交由统一状态机处理反馈着色、计分与切题
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, currentRoot, recordAnswer, isBeginner, spaced, submit]);
+  }, [isPlaying, feedbackType, currentRoot, recordAnswer, isBeginner, submit]);
+  // spaced.recordResult 和 submit 引用已稳定，无需额外依赖
 
   // 全局键盘监听
   useEffect(() => {

@@ -7,6 +7,7 @@
 
 import { useMemo } from 'react';
 import { useProgressStore } from '@/store/progress-store';
+import { practiceRootMappings } from '@/data/roots';
 
 export interface LearningStage {
   id: string;
@@ -22,7 +23,7 @@ const STAGE_DEFINITIONS = [
   {
     id: 'table',
     title: '认识字根',
-    description: '查看字根表，了解 329 个字根的分布规律',
+    description: `查看字根表，了解 ${practiceRootMappings.length} 个字根的分布规律`,
     link: '/table',
     threshold: 0,
   },
@@ -62,7 +63,7 @@ export function useLearningProgress() {
   const stages = useMemo<LearningStage[]>(() => {
     // 字根进度：correctCountMap 中 >=3 的占比
     const rootCorrect = state.root.correctCountMap;
-    const totalRoots = 329;
+    const totalRoots = practiceRootMappings.length;
     const rootMastered = Object.values(rootCorrect).filter(c => c >= 3).length;
     const rootProgress = Math.min(Math.round((rootMastered / totalRoots) * 100), 100);
 

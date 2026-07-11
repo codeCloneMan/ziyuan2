@@ -10,7 +10,7 @@
  * 5. 时间维度：基于遗忘曲线预测记忆强度，到期自动安排复习
  */
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useSpacedPool } from '@/store/progress-store';
 
 /** 最小稳定性：5秒 */
@@ -69,55 +69,63 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
 
   const { pool, recordResult: storeRecordResult, reset } = useSpacedPool(storageKey, allItemIds);
 
-  // 确保 pool 中的参数与 options 一致（首次初始化时）
-  // 注意：store 中的 pool 参数在创建后固定，这里只做读取
+  // ============================================
+  // 用 ref 持有最新值，避免 getNextItem/recordResult
+  // 依赖不稳定对象 → 每次答题后引用变化 → 连锁重建
+  // ============================================
+  const poolRef = useRef(pool);
+  poolRef.current = pool;
+  const storeRecordResultRef = useRef(storeRecordResult);
+  storeRecordResultRef.current = storeRecordResult;
 
-  // 获取下一个要练习的项目
+  // 获取下一个要练习的项目（引用稳定，始终读 poolRef.current）
   const getNextItem = useCallback((): string | null => {
+    const p = poolRef.current;
+
     // 活跃池空了，补充新项目
-    if (pool.activePool.length === 0 && pool.pendingPool.length > 0) {
-      const toAdd = pool.pendingPool.slice(0, pool.newItemsPerRound);
+    if (p.activePool.length === 0 && p.pendingPool.length > 0) {
+      const toAdd = p.pendingPool.slice(0, p.newItemsPerRound);
       if (toAdd.length > 0) return toAdd[0];
     }
 
     // 检查已掌握池中是否有需要复习的
-    if (pool.masteredPool.length > 0) {
+    if (p.masteredPool.length > 0) {
       const dueForReview: string[] = [];
-      for (const id of pool.masteredPool) {
-        const item = pool.items[id];
+      for (const id of p.masteredPool) {
+        const item = p.items[id];
         if (item && calcRetention(item.lastPracticeTime, item.stability) < REVIEW_RETENTION_THRESHOLD) {
           dueForReview.push(id);
         }
       }
       if (dueForReview.length > 0) {
         dueForReview.sort((a, b) => {
-          const retA = calcRetention(pool.items[a].lastPracticeTime, pool.items[a].stability);
-          const retB = calcRetention(pool.items[b].lastPracticeTime, pool.items[b].stability);
+          const retA = calcRetention(p.items[a].lastPracticeTime, p.items[a].stability);
+          const retB = calcRetention(p.items[b].lastPracticeTime, p.items[b].stability);
           return retA - retB;
         });
         return dueForReview[0];
       }
 
-      if (Math.random() < pool.reviewProbability) {
-        const randomIndex = Math.floor(Math.random() * pool.masteredPool.length);
-        return pool.masteredPool[randomIndex];
+      if (Math.random() < p.reviewProbability) {
+        const randomIndex = Math.floor(Math.random() * p.masteredPool.length);
+        return p.masteredPool[randomIndex];
       }
     }
 
     // 从活跃池中选择（加权随机）
-    if (pool.activePool.length > 0) {
+    if (p.activePool.length > 0) {
       const now = Date.now();
 
       // 冷却过滤：排除刚练过的项（除非所有项都在冷却中）
-      const eligibleItems = pool.activePool.filter(id => {
-        const item = pool.items[id];
+      const eligibleItems = p.activePool.filter(id => {
+        const item = p.items[id];
         if (!item || item.lastPracticeTime <= 0) return true;
         return (now - item.lastPracticeTime) > MIN_COOLDOWN_MS;
       });
-      const itemsToUse = eligibleItems.length > 0 ? eligibleItems : pool.activePool;
+      const itemsToUse = eligibleItems.length > 0 ? eligibleItems : p.activePool;
 
       const weights = itemsToUse.map(id => {
-        const item = pool.items[id];
+        const item = p.items[id];
         if (!item) return 1;
         const wrongBoost = 1 + item.wrongCount * 2;
         const retention = calcRetention(item.lastPracticeTime, item.stability);
@@ -137,20 +145,20 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
       return itemsToUse[0];
     }
 
-    if (pool.masteredPool.length > 0) {
-      const randomIndex = Math.floor(Math.random() * pool.masteredPool.length);
-      return pool.masteredPool[randomIndex];
+    if (p.masteredPool.length > 0) {
+      const randomIndex = Math.floor(Math.random() * p.masteredPool.length);
+      return p.masteredPool[randomIndex];
     }
 
     return null;
-  }, [pool]);
+  }, []); // 空依赖 — pool 通过 ref 读取，引用永久稳定
 
-  // 记录答题结果 - 委托给 store
+  // 记录答题结果（引用稳定）
   const recordResult = useCallback((itemId: string, isCorrect: boolean) => {
-    storeRecordResult(itemId, isCorrect);
-  }, [storeRecordResult]);
+    storeRecordResultRef.current(itemId, isCorrect);
+  }, []);
 
-  // 重置进度 - 委托给 store
+  // 重置进度（引用稳定）
   const resetProgress = useCallback(() => {
     reset();
   }, [reset]);
@@ -177,3 +185,5 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
     stats,
   };
 }
+
+

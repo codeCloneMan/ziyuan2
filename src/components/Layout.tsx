@@ -12,7 +12,7 @@ import {
 import { rootMappings } from '@/data/roots';
 import { useCharCodeData, buildCharCodeIndex, type CharCodeIndex } from '@/lib/data-loader';
 import { flatFAQs } from '@/data/faqData';
-import { downloadProgress, importProgressFromFile } from '@/lib/progress-io';
+import { downloadProgress, importProgressFromFile } from '@/store/progress-store';
 import UserLevelBadge from '@/components/UserLevelBadge';
 import AchievementToast from '@/components/AchievementToast';
 
