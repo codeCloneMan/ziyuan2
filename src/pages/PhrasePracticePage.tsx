@@ -401,6 +401,7 @@ export default function PhrasePracticePage() {
                 {Array.from({ length: 4 }).map((_, i) => {
                   const char = inputCode[i];
                   const isFilled = !!char;
+                  const isCurrent = !feedbackType && !isFilled && i === inputCode.length;
                   const isCorrectChar = feedbackType === 'correct' && char;
                   const isWrongChar = feedbackType === 'wrong' && i < inputCode.length;
 
@@ -416,7 +417,9 @@ export default function PhrasePracticePage() {
                         isWrongChar && i < inputCode.length && char !== currentPhrase.fullCode[i]
                           && 'border-red-500 bg-red-50 text-red-700',
                         !feedbackType && isFilled && 'border-primary bg-primary/5',
-                        !feedbackType && !isFilled && 'border-border/60',
+                        !feedbackType && isCurrent && 'border-primary ring-2 ring-primary/40',
+                        !feedbackType && !isFilled && !isCurrent && 'border-border/60',
+                        isCurrent && 'animate-caret-blink',
                         feedbackType === 'correct' && !isFilled && 'border-emerald-300 bg-emerald-50/50',
                         feedbackType === 'wrong' && !isFilled && 'border-red-200 bg-red-50/30',
                       )}
@@ -458,6 +461,9 @@ export default function PhrasePracticePage() {
                 <span className="flex items-center gap-1"><kbd className="px-1 py-0.5 rounded bg-muted border text-[10px] font-mono">Backspace</kbd>删除</span>
               </div>
             )}
+
+            {/* 手机端作答提示 */}
+            <p className="sm:hidden text-center text-xs text-muted-foreground/70 mb-2">点击下方键盘作答</p>
 
             {/* 虚拟键盘 */}
             <PracticeKeyboard

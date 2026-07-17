@@ -372,6 +372,7 @@ export default function PracticePage() {
               firstTimeHint={firstTimeHint}
               phoneticHint={phoneticHint}
               inputRef={inputRef}
+              onNativeInput={handleKeyPress}
             />
 
             <PracticeKeyboard

@@ -195,7 +195,8 @@ export default function SplitSearchPage() {
       </section>
 
       {/* 搜索区 */}
-      <section className="sticky top-16 z-40 bg-background border-b border-border">
+      <section className="sticky z-40 bg-background border-b border-border"
+        style={{ top: 'calc(4rem + env(safe-area-inset-top))' }}>
         <div className="container-page max-w-3xl py-4 sm:py-6">
           {/* 模式切换 */}
           <div className="flex gap-2 justify-center mb-4">

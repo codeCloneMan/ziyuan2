@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import RootCharDisplay from '@/components/RootCharDisplay';
 import { CheckCircle2, XCircle, Lightbulb } from 'lucide-react';
@@ -11,6 +12,8 @@ interface RootDisplayCardProps {
   firstTimeHint: string | null;
   phoneticHint: string | null;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  /** 原生键盘（手机/桌面直接键入）输入回调 */
+  onNativeInput?: (char: string) => void;
 }
 
 export default function RootDisplayCard({
@@ -21,7 +24,10 @@ export default function RootDisplayCard({
   firstTimeHint,
   phoneticHint,
   inputRef,
+  onNativeInput,
 }: RootDisplayCardProps) {
+  const [focused, setFocused] = useState(false);
+
   return (
     <div className={cn(
       "card-base p-5 sm:p-8 transition-[border-color,background-color] duration-300",
@@ -58,23 +64,47 @@ export default function RootDisplayCard({
           )}
         </div>
 
-        {/* 输入框 - 更精致 */}
-        <div className="relative w-full max-w-xs">
-          <input ref={inputRef} type="text" readOnly placeholder="输入键位"
+        {/* 输入框 - 可编辑，光标常驻，支持手机原生键盘 */}
+        <div
+          className="relative w-full max-w-xs"
+          onClick={() => inputRef.current?.focus()}
+        >
+          <input
+            ref={inputRef}
+            type="text"
+            inputMode="text"
             autoFocus
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            placeholder="输入键位"
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+            onChange={(e) => {
+              const ch = e.target.value.slice(-1).toLowerCase();
+              if (ch && /^[a-z]$/.test(ch)) onNativeInput?.(ch);
+            }}
             className={cn(
-              "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold",
+              "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold caret-primary",
               "bg-muted/50 border rounded-lg transition-all duration-200",
               "focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary",
               keyFeedback
                 ? (feedbackType === 'correct' ? "border-emerald-300 bg-emerald-50/50 text-emerald-600 dark:text-emerald-400" : "border-red-300 bg-red-50/50 text-red-600 dark:text-red-400")
                 : "border-border/50"
             )}
-            value={keyFeedback?.toUpperCase() || ''} />
-          {!keyFeedback && (
-            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none animate-pulse text-lg">▎</span>
+            value={keyFeedback?.toUpperCase() || ''}
+          />
+          {/* 空态光标占位（聚焦时由真实光标接管，避免双光标） */}
+          {!keyFeedback && !focused && (
+            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground/50 pointer-events-none animate-caret-blink text-lg">▎</span>
           )}
         </div>
+
+        {/* 手机端作答提示 */}
+        <p className="sm:hidden mt-3 text-xs text-muted-foreground/70 text-center leading-relaxed">
+          点击上方输入框或用下方键盘作答
+        </p>
 
         {/* 反馈文字 - 更克制 */}
         {feedbackType && (

@@ -151,6 +151,8 @@ export default function WholeCharPracticePage() {
 
   const inputRef = useRef<HTMLInputElement>(null);
   const splitAnimTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [inputFocused, setInputFocused] = useState(false);
+  const nativePrevRef = useRef('');
 
   const splitParts = useMemo(() => getSplitParts(currentItem.char), [currentItem.char]);
   const codeRule = useMemo(() => getCodeRule(currentItem.code), [currentItem.code]);
@@ -280,7 +282,7 @@ export default function WholeCharPracticePage() {
         if (showHint && inputCode.length > 0) {
           setShowSplitViz(true);
           setSplitAnimationStep(splitParts.length);
-          handleKeyPress(' ');
+          // 仅显示拆分提示，不提交答案
         } else {
           setPref('wholeCharShowHint', !showHint);
         }
@@ -304,6 +306,29 @@ export default function WholeCharPracticePage() {
   useEffect(() => {
     if (isPlaying && inputRef.current) inputRef.current.focus();
   }, [isPlaying, currentItem]);
+
+  // 同步原生键盘输入比对基准，避免自定义键盘与原生键盘混用时错位
+  useEffect(() => { nativePrevRef.current = inputCode; }, [inputCode]);
+
+  // 原生键盘（手机/桌面直接键入）输入处理：与当前编码逐字比对，增量提交
+  const handleNativeInput = useCallback((raw: string) => {
+    if (feedbackType) { nativePrevRef.current = inputCode; return; }
+    const val = raw.toLowerCase().replace(/[^a-z]/g, '');
+    const prev = nativePrevRef.current;
+    if (val === prev) return;
+    if (val.startsWith(prev) && val.length > prev.length) {
+      const appended = val.slice(prev.length);
+      for (const ch of appended) handleKeyPress(ch);
+    } else if (prev.startsWith(val) && val.length < prev.length) {
+      const removed = prev.length - val.length;
+      for (let i = 0; i < removed; i++) {
+        if (!feedbackType) setInputCode(c => c.slice(0, -1));
+      }
+    } else {
+      setInputCode(val);
+    }
+    nativePrevRef.current = val;
+  }, [feedbackType, handleKeyPress, inputCode]);
 
   const renderCodeWithColor = (code: string) => {
     const rule = getCodeRule(code);
@@ -410,7 +435,8 @@ export default function WholeCharPracticePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="sticky top-16 z-30 border-b border-border bg-card">
+      <div className="sticky z-30 border-b border-border bg-card"
+        style={{ top: 'calc(4rem + env(safe-area-inset-top))' }}>
         <div className="container-page max-w-5xl py-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -511,20 +537,28 @@ export default function WholeCharPracticePage() {
                   )}
 
                   <div className="flex justify-center items-center gap-4">
-                    <div className="relative">
-                      <input ref={inputRef} type="text" readOnly placeholder="输入编码"
+                    <div className="relative" onClick={() => inputRef.current?.focus()}>
+                      <input ref={inputRef} type="text" inputMode="text"
+                        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
+                        placeholder="输入编码"
+                        onFocus={() => setInputFocused(true)}
+                        onBlur={() => setInputFocused(false)}
+                        onChange={(e) => handleNativeInput(e.target.value)}
                         className={cn(
-                          "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-lg focus:outline-none transition-[border-color,background-color,color] duration-200",
+                          "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-lg caret-primary focus:outline-none transition-[border-color,background-color,color] duration-200",
                           keyFeedback && feedbackType === 'correct' && "border-emerald-400 bg-emerald-50 text-emerald-600",
                           keyFeedback && feedbackType === 'wrong' && "border-red-400 bg-red-50 text-red-600",
                           !keyFeedback && "border-primary/30"
                         )}
                         value={inputCode.toUpperCase()} />
-                      {!inputCode && !feedbackType && (
-                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none animate-pulse text-2xl">▎</span>
+                      {!inputCode && !feedbackType && !inputFocused && (
+                        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none animate-caret-blink text-2xl">▎</span>
                       )}
                     </div>
                   </div>
+
+                  {/* 手机端作答提示 */}
+                  <p className="sm:hidden mt-1 text-xs text-muted-foreground/70 text-center">点击输入框或用下方键盘作答</p>
 
                   {feedbackType === 'correct' && (
                     <div className="mt-3 flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 font-semibold">

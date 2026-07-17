@@ -176,7 +176,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* 导航栏 - 毛玻璃质感 */}
-      <header className="sticky top-0 z-50 border-b border-border/60 glass-nav bg-background/80">
+      <header className="sticky top-0 z-50 border-b border-border/60 glass-nav bg-background/80 safe-top">
         <div className="mx-auto flex h-14 items-center justify-between px-4 sm:px-6 max-w-[1600px]">
           {/* Logo - 更精致 */}
           <Link
@@ -576,7 +576,7 @@ export default function Layout() {
       </main>
 
       {/* 页脚 - 文化感 */}
-      <footer className="relative border-t border-border/60 bg-muted/20 mt-16">
+      <footer className="relative border-t border-border/60 bg-muted/20 mt-16 safe-bottom">
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
             {/* 品牌信息 - 增加文化感 */}

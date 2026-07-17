@@ -33,7 +33,8 @@ export default function PracticeStatusBar({
   onToggleHint,
 }: PracticeStatusBarProps) {
   return (
-    <div className="sticky top-14 z-30 border-b border-border/50 glass-nav bg-background/80">
+    <div className="sticky z-30 border-b border-border/50 glass-nav bg-background/80"
+      style={{ top: 'calc(3.5rem + env(safe-area-inset-top))' }}>
       <div className="container-page max-w-5xl py-2">
         {/* 第一行：模式 + 退出 + 核心数据 */}
         <div className="flex items-center justify-between">

@@ -137,6 +137,7 @@ export default function PracticeKeyboard({
               return (
                 <button key={key}
                   onClick={() => handlePress(key)}
+                  onMouseDown={(e) => e.preventDefault()}
                   onTouchEnd={(e) => {
                     e.preventDefault();
                     touchHandledRef.current.add(key);
@@ -186,6 +187,7 @@ export default function PracticeKeyboard({
         {mode === 'codes' && onBackspace && (
           <div className="flex gap-[3px] sm:gap-1 w-full" style={{ paddingLeft: '12px' }}>
             <button onClick={onBackspace}
+              onMouseDown={(e) => e.preventDefault()}
               className="flex-[2] min-w-0 h-11 sm:flex-none sm:h-10 sm:w-18 rounded-lg font-medium text-xs transition-all duration-150 border border-border/60 bg-card hover:bg-secondary/40 flex items-center justify-center gap-1">
               <Delete className="h-3 w-3" />
               <span className="text-[11px]" style={{ fontFamily: "'Noto Serif SC', serif" }}>删除</span>

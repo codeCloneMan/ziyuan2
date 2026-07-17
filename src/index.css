@@ -400,6 +400,27 @@
     -webkit-user-select: none;
     user-select: none;
   }
+
+  /* 输入框聚焦时放大字号，避免 iOS Safari 自动缩放 */
+  input, textarea, select {
+    font-size: 16px;
+  }
+}
+
+/* ========================================
+   刘海屏/灵动岛安全区适配
+   ======================================== */
+@supports (padding: env(safe-area-inset-top)) {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-x {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
 }
 
 /* ========================================
