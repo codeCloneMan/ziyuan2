@@ -193,7 +193,12 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
 // ========================================
 
 function getTodayKey(): string {
-  return new Date().toISOString().split('T')[0];
+  // 用本地时区日期（非 UTC），避免 UTC+8 等地区"今天"边界提前 8 小时切换，
+  // 导致今日题数 / practiceDays 成就在 0-8 点之间统计错乱。
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
 }
 
 function calculatePoints(currentStreak: number, isCorrect: boolean): number {
@@ -360,10 +365,17 @@ function reducer(state: ProgressState, action: ProgressAction): ProgressState {
       const MIN_STABILITY = 5;
       const MAX_STABILITY = 90 * 24 * 3600;
 
+      // 使用全局累计答对次数判定掌握状态，与 PracticePage/成就/进度保持一致
+      // 注意：ROOT_ANSWER 和 SPACED_RECORD 在同一批次执行，state.root.correctCountMap
+      // 尚未更新。需手动计算新的正确次数：旧值 + 本次是否正确
+      const oldCorrectCount = state.root.correctCountMap[itemId] || 0;
+      const globalCorrectCount = isCorrect ? oldCorrectCount + 1 : oldCorrectCount;
+      
       if (isCorrect) {
         const newStability = Math.min(item.stability * STABILITY_GROWTH, MAX_STABILITY);
         const newConsecutive = item.consecutiveCorrect + 1;
-        const isNowMastered = newConsecutive >= pool.masteryThreshold && !item.isMastered;
+        // 掌握判定：累计答对 >= masteryThreshold（默认为3），与全局计数一致
+        const isNowMastered = globalCorrectCount >= pool.masteryThreshold && !item.isMastered;
         pool.items[itemId] = {
           ...item,
           consecutiveCorrect: newConsecutive,
@@ -386,13 +398,9 @@ function reducer(state: ProgressState, action: ProgressAction): ProgressState {
           wrongCount: item.wrongCount + 1,
           stability: newStability,
         };
-        if (item.isMastered) {
-          pool.masteredPool = pool.masteredPool.filter(id => id !== itemId);
-          if (!pool.activePool.includes(itemId)) {
-            pool.activePool = [...pool.activePool, itemId];
-          }
-          pool.items[itemId].isMastered = false;
-        }
+        // 注意：由于全局 correctCountMap 只增不减（答错不减少），一旦掌握就不会降级。
+        // 掌握状态由累计答对次数决定，与本次答题结果无关。
+        // 答错只会降低稳定性（影响复习频率），不会取消掌握状态。
       }
 
       // ============================================

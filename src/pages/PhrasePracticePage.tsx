@@ -417,9 +417,8 @@ export default function PhrasePracticePage() {
                         isWrongChar && i < inputCode.length && char !== currentPhrase.fullCode[i]
                           && 'border-red-500 bg-red-50 text-red-700',
                         !feedbackType && isFilled && 'border-primary bg-primary/5',
-                        !feedbackType && isCurrent && 'border-primary ring-2 ring-primary/40',
+                        !feedbackType && isCurrent && 'border-primary ring-2 ring-primary/40 bg-primary/[0.03]',
                         !feedbackType && !isFilled && !isCurrent && 'border-border/60',
-                        isCurrent && 'animate-caret-blink',
                         feedbackType === 'correct' && !isFilled && 'border-emerald-300 bg-emerald-50/50',
                         feedbackType === 'wrong' && !isFilled && 'border-red-200 bg-red-50/30',
                       )}

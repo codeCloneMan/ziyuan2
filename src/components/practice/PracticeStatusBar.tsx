@@ -9,6 +9,7 @@ interface PracticeStatusBarProps {
   stats: PracticeStats;
   accuracy: number;
   masteredCount: number;
+  practicedCount?: number;
   totalRootsCount: number;
   todayAttempts: number;
   showHint: boolean;
@@ -24,6 +25,7 @@ export default function PracticeStatusBar({
   stats,
   accuracy,
   masteredCount,
+  practicedCount,
   totalRootsCount,
   todayAttempts,
   showHint,
@@ -87,11 +89,24 @@ export default function PracticeStatusBar({
         {/* 第二行：进度条 */}
         <div className="mt-1.5">
           <div className="flex justify-between text-[10px] text-muted-foreground/60 mb-0.5">
-            <span>已掌握 {masteredCount}/{totalRootsCount}</span>
+            <span>
+              已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
+              {practicedCount !== undefined && practicedCount > masteredCount && (
+                <> · 已练习 <span className="font-mono-stat">{practicedCount}</span></>
+              )}
+              <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
+            </span>
             <span>今日 {todayAttempts}题</span>
           </div>
-          <div className="progress-base h-1">
-            <div className="progress-bar" style={{ width: `${Math.round((masteredCount / totalRootsCount) * 100)}%` }} />
+          <div className="progress-base h-1 relative overflow-hidden">
+            {/* 已练习（浅色底层） */}
+            {practicedCount !== undefined && (
+              <div className="absolute inset-y-0 left-0 rounded-full bg-primary/25 transition-all duration-500"
+                style={{ width: `${Math.min(100, Math.round((practicedCount / totalRootsCount) * 100))}%` }} />
+            )}
+            {/* 已掌握（深色覆盖） */}
+            <div className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${Math.min(100, Math.round((masteredCount / totalRootsCount) * 100))}%` }} />
           </div>
         </div>
       </div>

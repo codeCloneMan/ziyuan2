@@ -5,6 +5,7 @@ import { practiceRootMappings } from '@/data/roots';
 import type { RootMapping } from '@/data/roots';
 import type { PracticeLevel } from '@/types';
 import { useCharCodeData } from '@/lib/data-loader';
+import { calcMasteredRootCount } from '@/lib/mastered-count';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { useRootProgress, usePreferences, useDailyStats } from '@/store/progress-store';
@@ -121,12 +122,26 @@ export default function PracticePage() {
 
   const showHint = preferences.showHint;
 
-  // 统计已掌握字根数（入门模式用间隔学习池的真实 mastered 数）
-  const masteredCount = useMemo(() => {
-    return isBeginner ? spaced.stats.mastered : 0;
-  }, [isBeginner, spaced.stats.mastered]);
+  // 统计已掌握字根数：
+  //   按累计答对 ≥3 次统计（与首页进度/成就/键盘淡化同一口径）。
+  //   入门模式曾用 spaced.stats.mastered（本次会话掌握池），但该池在每次
+  //   startPractice 时被 resetProgress 清空，导致重启练习后即便用户已掌握
+  //   多个字根仍显示 "已掌握 0/329"。现统一改为累计口径，与会话无关。
+  const masteredCount = useMemo(
+    () => calcMasteredRootCount(progress.correctCountMap),
+    [progress.correctCountMap],
+  );
 
-  const weakestRoots = useMemo(() => {
+  // 已练习字根数（至少答过一次，对或错都算）——让用户区分"练过多少"与"掌握多少"
+  const practicedCount = useMemo(() => {
+    const seen = new Set<string>();
+    for (const c of Object.keys(progress.correctCountMap)) seen.add(c);
+    for (const c of Object.keys(progress.wrongCountMap)) seen.add(c);
+    return seen.size;
+  }, [progress.totalAttempts]);
+
+  // 弱项字根完整列表（按正确率升序），weakRootsCount 取总数
+  const weakRootsAll = useMemo(() => {
     return practiceRootMappings
       .map(r => ({
         char: r.char,
@@ -139,9 +154,11 @@ export default function PracticePage() {
         const rateA = a.correct / Math.max(a.correct + a.wrong, 1);
         const rateB = b.correct / Math.max(b.correct + b.wrong, 1);
         return rateA - rateB;
-      })
-      .slice(0, 10);
+      });
   }, [progress.totalAttempts]); // 仅在答题次数变化时重算，避免每次 map 对象引用变化都触发
+
+  // 展示用：仅前 10 个最弱
+  const weakestRoots = useMemo(() => weakRootsAll.slice(0, 10), [weakRootsAll]);
 
   // ============================================
   // 练习生命周期
@@ -353,6 +370,7 @@ export default function PracticePage() {
         stats={stats}
         accuracy={accuracy}
         masteredCount={masteredCount}
+        practicedCount={practicedCount}
         totalRootsCount={totalRoots}
         todayAttempts={todayStats.attempts}
         showHint={showHint}
@@ -388,7 +406,7 @@ export default function PracticePage() {
 
           <StatsSidePanel
             stats={stats}
-            weakRootsCount={weakestRoots.length}
+            weakRootsCount={weakRootsAll.length}
             todayStats={todayStats}
             masteredCount={masteredCount}
             totalRootsCount={totalRoots}
