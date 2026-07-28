@@ -76,8 +76,8 @@ interface PhraseItem {
 }
 
 const modeConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof BookOpen }> = {
-  beginner: { label: '入门', description: '常用双字词组', icon: BookOpen },
-  advanced: { label: '进阶', description: '混合词组练习', icon: Zap },
+  beginner: { label: '入门', description: '前500高频双字词', icon: BookOpen },
+  advanced: { label: '进阶', description: '前5000高频混合词', icon: Zap },
 };
 
 function buildPhraseList(
@@ -97,20 +97,30 @@ function buildPhraseList(
     phrases.push({ phrase, codes, fullCode });
   };
 
-  const { twoCharPhrases, threeCharPhrases } = phrasesData;
+  const { twoCharPhrases, twoCharFreqs, threeCharPhrases, threeCharFreqs } = phrasesData;
 
   if (level === 'beginner') {
-    // 入门：只练双字词
-    for (const p of twoCharPhrases) {
+    // 入门：前500个双字词（数据已按词频降序排列）
+    const limit = 500;
+    for (let i = 0; i < twoCharPhrases.length && phrases.length < limit; i++) {
+      const p = twoCharPhrases[i];
       if (p.length === 2) addPhrase(p);
     }
   } else {
-    // 进阶：混合双字 + 三字词
-    for (const p of twoCharPhrases) {
-      if (p.length === 2) addPhrase(p);
+    // 进阶：前5000个词（双字+三字合并，按词频降序取前5000）
+    const limit = 5000;
+    const merged: { phrase: string; freq: number }[] = [];
+    for (let i = 0; i < twoCharPhrases.length; i++) {
+      merged.push({ phrase: twoCharPhrases[i], freq: twoCharFreqs[i] });
     }
-    for (const p of threeCharPhrases) {
-      if (p.length >= 3) addPhrase(p.slice(0, 3));
+    for (let i = 0; i < threeCharPhrases.length; i++) {
+      const p = threeCharPhrases[i];
+      merged.push({ phrase: p.length >= 3 ? p.slice(0, 3) : p, freq: threeCharFreqs[i] });
+    }
+    merged.sort((a, b) => b.freq - a.freq);
+    for (const m of merged) {
+      if (phrases.length >= limit) break;
+      addPhrase(m.phrase);
     }
   }
 
