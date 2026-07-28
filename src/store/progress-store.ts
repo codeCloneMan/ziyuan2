@@ -146,7 +146,7 @@ const defaultPreferences: Preferences = {
   wholeCharShowHint: false,
 };
 
-function createDefaultState(): ProgressState {
+export function createDefaultState(): ProgressState {
   return {
     version: CURRENT_VERSION,
     root: { ...defaultRoot },
@@ -242,7 +242,7 @@ export type ProgressAction =
   | { type: 'HYDRATE'; state: ProgressState }
   | { type: 'MIGRATE'; oldState: unknown };
 
-function reducer(state: ProgressState, action: ProgressAction): ProgressState {
+export function reducer(state: ProgressState, action: ProgressAction): ProgressState {
   switch (action.type) {
     case 'ROOT_ANSWER': {
       const { char, isCorrect } = action;
@@ -365,11 +365,15 @@ function reducer(state: ProgressState, action: ProgressAction): ProgressState {
       const MIN_STABILITY = 5;
       const MAX_STABILITY = 90 * 24 * 3600;
 
-      // 使用全局累计答对次数判定掌握状态，与 PracticePage/成就/进度保持一致
-      // 注意：ROOT_ANSWER 和 SPACED_RECORD 在同一批次执行，state.root.correctCountMap
-      // 尚未更新。需手动计算新的正确次数：旧值 + 本次是否正确
-      const oldCorrectCount = state.root.correctCountMap[itemId] || 0;
-      const globalCorrectCount = isCorrect ? oldCorrectCount + 1 : oldCorrectCount;
+      // 使用全局累计答对次数判定掌握状态，与 PracticePage/成就/进度保持一致。
+      // 注意：dispatch 是同步的，调用方先 dispatch ROOT_ANSWER/WHOLE_CHAR_ANSWER
+      // （已更新 correctCountMap）再 dispatch SPACED_RECORD，因此此处读到的已是最新值，
+      // 不需要 +1。按 poolKey 前缀选择正确的 correctCountMap：
+      //   - 'whole:' 前缀 → 整字练习，读 state.wholeChar.modes[poolKey]
+      //   - 其他 → 字根练习，读 state.root
+      const globalCorrectCount = poolKey.startsWith('whole:')
+        ? (state.wholeChar.modes[poolKey]?.correctCountMap[itemId] || 0)
+        : (state.root.correctCountMap[itemId] || 0);
       
       if (isCorrect) {
         const newStability = Math.min(item.stability * STABILITY_GROWTH, MAX_STABILITY);
