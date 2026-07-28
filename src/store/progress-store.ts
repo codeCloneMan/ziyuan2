@@ -92,6 +92,7 @@ export interface Preferences {
   phraseMode: PracticeLevel;
   showHint: boolean;
   wholeCharShowHint: boolean;
+  phraseShowHint: boolean;
 }
 
 export interface DailyStat {
@@ -149,8 +150,9 @@ const defaultPreferences: Preferences = {
   rootMode: 'beginner',
   charSetRange: 'beginner',
   phraseMode: 'beginner',
-  showHint: false,
-  wholeCharShowHint: false,
+  showHint: true,
+  wholeCharShowHint: true,
+  phraseShowHint: true,
 };
 
 export function createDefaultState(): ProgressState {

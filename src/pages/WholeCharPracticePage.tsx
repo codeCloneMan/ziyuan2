@@ -125,12 +125,15 @@ export default function WholeCharPracticePage() {
   // ============================================
   const shuffleQueueRef = useRef<string[]>([]);
   const shuffleIndexRef = useRef(0);
+  // 进阶模式错题重练队列：答错的字在 3 步后重新出现
+  const wrongQueueRef = useRef<{ char: string; step: number }[]>([]);
 
   // ============================================
   // 答错处理策略（对齐字根练习）：
   //   入门+进阶：答错都切下一题。
   //   答错反馈延长（入门2.5s/进阶1.5s），给用户消化拆解和编码。
   //   反馈期间键盘输入被阻止。
+  //   进阶模式：答错的字加入错题重练队列，3 步后重新出现。
   // ============================================
   const {
     isPlaying, start, stop, reset, submit,
@@ -139,7 +142,12 @@ export default function WholeCharPracticePage() {
     correctClearDelay: 500,
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: () => generateNext(),
-    onWrong: () => generateNext(),
+    onWrong: () => {
+      if (!isBeginner && currentItem.char) {
+        wrongQueueRef.current.push({ char: currentItem.char, step: 0 });
+      }
+      generateNext();
+    },
   });
 
   const [currentItem, setCurrentItem] = useState<CharCodeItem>(() => ({
@@ -151,6 +159,7 @@ export default function WholeCharPracticePage() {
   const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [userWrongSplit, setUserWrongSplit] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const splitAnimTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -208,14 +217,22 @@ export default function WholeCharPracticePage() {
       // 入门：由间隔学习算法决定下一题
       nextId = spaced.getNextItem();
     } else {
-      // 进阶：按洗牌队列顺序循环
-      if (shuffleQueueRef.current.length === 0) {
-        shuffleQueueRef.current = shuffleInPlace([...learningPool]);
-        shuffleIndexRef.current = 0;
+      // 优先取错题（已隔 ≥3 步）
+      wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
+      const dueWrong = wrongQueueRef.current.find(w => w.step >= 3);
+      if (dueWrong) {
+        wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
+        nextId = dueWrong.char;
       } else {
-        shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
+        // 进阶：按洗牌队列顺序循环
+        if (shuffleQueueRef.current.length === 0) {
+          shuffleQueueRef.current = shuffleInPlace([...learningPool]);
+          shuffleIndexRef.current = 0;
+        } else {
+          shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
+        }
+        nextId = shuffleQueueRef.current[shuffleIndexRef.current];
       }
-      nextId = shuffleQueueRef.current[shuffleIndexRef.current];
     }
 
     if (nextId) {
@@ -430,7 +447,7 @@ export default function WholeCharPracticePage() {
               </div>
             )}
 
-            <details className="text-left max-w-sm mx-auto">
+            <details open={showSettings} onToggle={e => setShowSettings(e.currentTarget.open)} className="text-left max-w-sm mx-auto">
               <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors text-center">
                 练习设置
               </summary>

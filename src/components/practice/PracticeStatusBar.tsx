@@ -89,24 +89,36 @@ export default function PracticeStatusBar({
         {/* 第二行：进度条 */}
         <div className="mt-1.5">
           <div className="flex justify-between text-[10px] text-muted-foreground/60 mb-0.5">
-            <span>
+            <span className="flex items-center gap-1">
               已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
-              {practicedCount !== undefined && practicedCount > masteredCount && (
+              {practicedCount !== undefined && (
                 <> · 已练习 <span className="font-mono-stat">{practicedCount}</span></>
               )}
               <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
+              {practicedCount !== undefined && practicedCount === totalRootsCount && masteredCount < totalRootsCount && (
+                <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已完成一轮</span>
+              )}
+              {masteredCount === totalRootsCount && (
+                <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
+              )}
             </span>
             <span>今日 {todayAttempts}题</span>
           </div>
           <div className="progress-base h-1 relative overflow-hidden">
             {/* 已练习（浅色底层） */}
             {practicedCount !== undefined && (
-              <div className="absolute inset-y-0 left-0 rounded-full bg-primary/25 transition-all duration-500"
-                style={{ width: `${Math.min(100, Math.round((practicedCount / totalRootsCount) * 100))}%` }} />
+              <div className={cn(
+                "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                masteredCount === totalRootsCount ? "bg-emerald-500/30"
+                  : practicedCount === totalRootsCount ? "bg-amber-500/25"
+                  : "bg-primary/20"
+              )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRootsCount) * 100))}%` }} />
             )}
             {/* 已掌握（深色覆盖） */}
-            <div className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-500"
-              style={{ width: `${Math.min(100, Math.round((masteredCount / totalRootsCount) * 100))}%` }} />
+            <div className={cn(
+              "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+              masteredCount === totalRootsCount ? "bg-emerald-500" : "bg-primary"
+            )} style={{ width: `${Math.min(100, Math.round((masteredCount / totalRootsCount) * 100))}%` }} />
           </div>
         </div>
       </div>

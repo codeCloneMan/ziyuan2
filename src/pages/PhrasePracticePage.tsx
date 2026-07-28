@@ -150,6 +150,7 @@ export default function PhrasePracticePage() {
 
   const { progress: phraseProgress, recordAnswer, setMode: setStoreMode } = usePhraseProgress();
   const { preferences, setPref } = usePreferences();
+  const phraseShowHint = preferences.phraseShowHint;
   const todayStats = useDailyStats();
 
   const rawLevel = preferences.phraseMode;
@@ -162,7 +163,10 @@ export default function PhrasePracticePage() {
   //   入门+进阶：答错都切下一题。
   //   答错反馈延长（入门2.5s/进阶1.5s），给用户消化词组编码。
   //   反馈期间键盘输入被阻止。
+  //   答错的词组加入错题重练队列，3 步后重新出现。
   // ============================================
+  const wrongQueueRef = useRef<{ phrase: PhraseItem; step: number }[]>([]);
+
   const {
     isPlaying, start, stop, reset, submit,
     keyFeedback, feedbackType, stats, accuracy,
@@ -170,7 +174,12 @@ export default function PhrasePracticePage() {
     correctClearDelay: 800,
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: () => advancePhrase(),
-    onWrong: () => advancePhrase(),
+    onWrong: () => {
+      if (currentPhrase) {
+        wrongQueueRef.current.push({ phrase: currentPhrase, step: 0 });
+      }
+      advancePhrase();
+    },
   });
 
   const [currentPhrase, setCurrentPhrase] = useState<PhraseItem | null>(null);
@@ -179,6 +188,7 @@ export default function PhrasePracticePage() {
   const [showStats, setShowStats] = useState(false);
   const [phraseQueue, setPhraseQueue] = useState<PhraseItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [showSettings, setShowSettings] = useState(true);
 
   const answerStartTime = useRef<number>(0);
 
@@ -191,6 +201,15 @@ export default function PhrasePracticePage() {
   const poolCount = phrasePool.length;
 
   const advancePhrase = useCallback(() => {
+    // 优先取错题（已隔 ≥3 步）
+    wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
+    const dueWrong = wrongQueueRef.current.find(w => w.step >= 3);
+    if (dueWrong) {
+      wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
+      setCurrentPhrase(dueWrong.phrase);
+      setInputCode('');
+      return;
+    }
     const nextIndex = (currentIndex + 1) % phraseQueue.length;
     setCurrentIndex(nextIndex);
     setCurrentPhrase(phraseQueue[nextIndex]);
@@ -322,8 +341,8 @@ export default function PhrasePracticePage() {
               {poolCount.toLocaleString()} 个词组 · 每次 20 个 · 今日 {todayStats.attempts} 题
             </p>
 
-            {/* 设置（折叠） */}
-            <details className="text-left max-w-sm mx-auto">
+            {/* 设置 */}
+            <details open={showSettings} onToggle={e => setShowSettings(e.currentTarget.open)} className="text-left max-w-sm mx-auto">
               <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors text-center">
                 练习设置
               </summary>
@@ -344,6 +363,16 @@ export default function PhrasePracticePage() {
                       </button>
                     );
                   })}
+                </div>
+
+                <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                  <span className="text-xs text-muted-foreground">新词组自动显示答案提示</span>
+                  <button onClick={() => setPref('phraseShowHint', !phraseShowHint)}
+                    className={cn('w-9 h-5 rounded-full transition-colors relative',
+                      phraseShowHint ? 'bg-primary' : 'bg-muted-foreground/30')}>
+                    <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                      phraseShowHint ? 'left-[18px]' : 'left-0.5')} />
+                  </button>
                 </div>
 
                 {(phraseProgress.totalAttempts > 0 || phraseProgress.bestStreak > 0) && (
@@ -399,8 +428,8 @@ export default function PhrasePracticePage() {
                 {currentPhrase.phrase}
               </div>
 
-              {/* 逐字全码提示（答案揭晓后显示） */}
-              {feedbackType && (
+              {/* 逐字全码提示（开启提示或答案揭晓后显示） */}
+              {(phraseShowHint || feedbackType) && (
                 <div className="flex justify-center gap-4 text-sm mb-4 animate-fadeIn">
                   {currentPhrase.phrase.split('').map((char, i) => (
                     <div key={i} className="text-center">

@@ -10,6 +10,7 @@
 
 import { GB2312_CHARS, GBK_CHARS } from './standardCharsets';
 import { tongguiAll } from './tongguiChars';
+import { charFrequency } from './charFrequency';
 
 // ========================================
 // 字集校验工具函数
@@ -393,8 +394,13 @@ export const gb2312Level2: string[] = gb2312All.slice(3755);
 /** GBK 全部汉字（来自 gbk.txt 国标文件） */
 export const gbk: string[] = [...GBK_CHARS];
 
-/** 通用规范汉字表（8105字） - 基于 charFrequency 字频排序 + GBK 字集近似构建 */
-export const commonStandard: string[] = [...tongguiAll];
+/** 通用规范汉字表（8105字） - 基于 charFrequency 字频排序，优先练习高频字 */
+export const commonStandard: string[] = [...tongguiAll].sort((a, b) => {
+  const freqA = charFrequency[a] || 0;
+  const freqB = charFrequency[b] || 0;
+  // 按字频降序排列，高频字在前
+  return freqB - freqA;
+});
 
 /** 常用前五百字 */
 export const common500: string[] = top500Chars;

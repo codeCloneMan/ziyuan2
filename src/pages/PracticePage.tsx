@@ -83,6 +83,8 @@ export default function PracticePage() {
   // ============================================
   const shuffleQueueRef = useRef<string[]>([]);
   const shuffleIndexRef = useRef(0);
+  // 进阶模式错题重练队列：答错的字根在 3 步后重新出现
+  const wrongQueueRef = useRef<{ char: string; step: number }[]>([]);
 
   // 切题函数：根据模式选择不同的下一题策略
   // 注意：spaced.getNextItem 通过 ref 读取 pool，引用已永久稳定
@@ -102,8 +104,16 @@ export default function PracticePage() {
     if (isBeginner) {
       nextChar = spaced.getNextItem();
     } else {
-      shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
-      nextChar = shuffleQueueRef.current[shuffleIndexRef.current];
+      // 优先取错题（已隔 ≥3 步）
+      wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
+      const dueWrong = wrongQueueRef.current.find(w => w.step >= 3);
+      if (dueWrong) {
+        wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
+        nextChar = dueWrong.char;
+      } else {
+        shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
+        nextChar = shuffleQueueRef.current[shuffleIndexRef.current];
+      }
     }
 
     if (nextChar) {
@@ -116,13 +126,19 @@ export default function PracticePage() {
   //   入门+进阶：答错都切下一题，不卡在同一题上。
   //   答错后延长反馈时间（入门2.5s/进阶1.5s），给用户消化正确答案。
   //   反馈期间所有键盘输入被阻止，不会误操作。
+  //   进阶模式：答错的字根加入错题重练队列，3 步后重新出现。
   // ============================================
   const session = usePracticeSession(useMemo(() => ({
     correctClearDelay: isBeginner ? 400 : 200,
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: nextRoot,
-    onWrong: nextRoot,
-  }), [isBeginner])); // nextRoot 引用稳定，仅 isBeginner 变化时重建
+    onWrong: () => {
+      if (!isBeginner && currentRoot.char) {
+        wrongQueueRef.current.push({ char: currentRoot.char, step: 0 });
+      }
+      nextRoot();
+    },
+  }), [isBeginner, currentRoot.char, nextRoot])); // nextRoot 引用稳定，仅 isBeginner 变化时重建
 
   const { isPlaying, start, stop, reset, submit, keyFeedback, feedbackType, stats, accuracy } = session;
 
@@ -130,6 +146,7 @@ export default function PracticePage() {
   const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -358,7 +375,7 @@ export default function PracticePage() {
               </p>
             )}
 
-            <details className="text-left max-w-sm mx-auto">
+            <details open={showSettings} onToggle={e => setShowSettings(e.currentTarget.open)} className="text-left max-w-sm mx-auto">
               <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors text-center">
                 练习模式与设置
               </summary>
