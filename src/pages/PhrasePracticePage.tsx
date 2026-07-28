@@ -191,29 +191,34 @@ export default function PhrasePracticePage() {
   const poolCount = phrasePool.length;
 
   const advancePhrase = useCallback(() => {
-    const nextIndex = currentIndex + 1;
-    if (nextIndex < phraseQueue.length) {
-      setCurrentIndex(nextIndex);
-      setCurrentPhrase(phraseQueue[nextIndex]);
-      setInputCode('');
-    } else {
-      stop();
-      setShowStats(true);
-    }
-  }, [currentIndex, phraseQueue, stop]);
+    const nextIndex = (currentIndex + 1) % phraseQueue.length;
+    setCurrentIndex(nextIndex);
+    setCurrentPhrase(phraseQueue[nextIndex]);
+    setInputCode('');
+  }, [currentIndex, phraseQueue]);
 
   const stopPractice = useCallback(() => {
+    // 停止练习：显示统计（如有结果）
+    stop();
+    setShowStats(sessionResults.length > 0);
+    setCurrentPhrase(null);
+    setInputCode('');
+  }, [stop, sessionResults.length]);
+
+  const backToMenu = useCallback(() => {
+    // 从统计页返回级别选择页
     stop();
     setShowStats(false);
     setPhraseQueue([]);
     setCurrentPhrase(null);
     setInputCode('');
+    setSessionResults([]);
   }, [stop]);
 
   const startPractice = useCallback(() => {
     if (phrasePool.length === 0) return;
     setStoreMode(level); // 真正开始练习时才记录 lastMode
-    const shuffled = shuffleArray(phrasePool).slice(0, 20);
+    const shuffled = shuffleArray(phrasePool);
     setPhraseQueue(shuffled);
     setCurrentIndex(0);
     setCurrentPhrase(shuffled[0]);
@@ -560,7 +565,7 @@ export default function PhrasePracticePage() {
                 <RotateCcw className="h-4 w-4" />
                 再来一次
               </Button>
-              <Button variant="outline" onClick={stopPractice} className="gap-2">
+              <Button variant="outline" onClick={backToMenu} className="gap-2">
                 <ArrowLeft className="h-4 w-4" />
                 返回级别选择
               </Button>
