@@ -233,6 +233,7 @@ export type ProgressAction =
   | { type: 'ROOT_RESET' }
   | { type: 'WHOLE_CHAR_ANSWER'; mode: string; char: string; isCorrect: boolean }
   | { type: 'WHOLE_CHAR_SET_MODE'; mode: string }
+  | { type: 'WHOLE_CHAR_RESET_MODE'; mode: string }
   | { type: 'PHRASE_ANSWER'; isCorrect: boolean }
   | { type: 'PHRASE_SET_MODE'; mode: string }
   | { type: 'SPACED_RECORD'; poolKey: string; itemId: string; isCorrect: boolean; allItemIds: string[] }
@@ -270,6 +271,16 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
 
     case 'ROOT_RESET':
       return { ...state, root: { ...defaultRoot } };
+
+    case 'WHOLE_CHAR_RESET_MODE': {
+      // 清除单个 wholeChar mode 的进度（correctCountMap/wrongCountMap/统计）。
+      // 下次 WHOLE_CHAR_ANSWER 会自动重建默认结构。
+      const wholeChar = { ...state.wholeChar };
+      const modes = { ...wholeChar.modes };
+      delete modes[action.mode];
+      wholeChar.modes = modes;
+      return { ...state, wholeChar };
+    }
 
     case 'WHOLE_CHAR_ANSWER': {
       const { mode, char, isCorrect } = action;
@@ -692,6 +703,7 @@ export function useWholeCharProgress() {
     recordAnswer: (mode: string, char: string, isCorrect: boolean) =>
       dispatch({ type: 'WHOLE_CHAR_ANSWER', mode, char, isCorrect }),
     setMode: (mode: string) => dispatch({ type: 'WHOLE_CHAR_SET_MODE', mode }),
+    resetMode: (mode: string) => dispatch({ type: 'WHOLE_CHAR_RESET_MODE', mode }),
   };
 }
 
