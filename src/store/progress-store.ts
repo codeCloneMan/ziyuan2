@@ -28,6 +28,13 @@ export interface SpacedItem {
   totalAttempts: number;
   wrongCount: number;
   stability: number;
+  /**
+   * 降级基线：已掌握项在复习时答错会降级回 activePool，
+   * 此字段记录降级时的全局 correctCount。
+   * 重新掌握需 globalCorrectCount - downgradeBaseline >= masteryThreshold（再答对 N 次）。
+   * undefined 表示未被降级过（首次掌握判定用 globalCorrectCount >= masteryThreshold）。
+   */
+  downgradeBaseline?: number;
 }
 
 export interface SpacedPool {
@@ -389,8 +396,13 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
       if (isCorrect) {
         const newStability = Math.min(item.stability * STABILITY_GROWTH, MAX_STABILITY);
         const newConsecutive = item.consecutiveCorrect + 1;
-        // 掌握判定：累计答对 >= masteryThreshold（默认为3），与全局计数一致
-        const isNowMastered = globalCorrectCount >= pool.masteryThreshold && !item.isMastered;
+        // 掌握判定：
+        // - 未被降级过（无 downgradeBaseline）：globalCorrectCount >= masteryThreshold
+        // - 被降级过：globalCorrectCount - downgradeBaseline >= masteryThreshold（降级后需再答对 N 次）
+        const effectiveCount = item.downgradeBaseline !== undefined
+          ? globalCorrectCount - item.downgradeBaseline
+          : globalCorrectCount;
+        const isNowMastered = effectiveCount >= pool.masteryThreshold && !item.isMastered;
         pool.items[itemId] = {
           ...item,
           consecutiveCorrect: newConsecutive,
@@ -398,6 +410,8 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
           lastPracticeTime: Date.now(),
           totalAttempts: item.totalAttempts + 1,
           stability: newStability,
+          // 重新掌握后清除降级基线
+          downgradeBaseline: isNowMastered ? undefined : item.downgradeBaseline,
         };
         if (isNowMastered) {
           pool.activePool = pool.activePool.filter(id => id !== itemId);
@@ -405,17 +419,26 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
         }
       } else {
         const newStability = Math.max(item.stability * STABILITY_DECAY, MIN_STABILITY);
+        // 已掌握项答错 → 降级回 activePool（重新高频练习）
+        // 全局 correctCountMap 保持 append-only（不影响首页/成就），仅间隔池内部降级
+        const wasMastered = item.isMastered;
         pool.items[itemId] = {
           ...item,
           consecutiveCorrect: 0,
+          isMastered: false,
           lastPracticeTime: Date.now(),
           totalAttempts: item.totalAttempts + 1,
           wrongCount: item.wrongCount + 1,
           stability: newStability,
+          // 记录降级基线：重新掌握需再答对 masteryThreshold 次
+          downgradeBaseline: wasMastered ? globalCorrectCount : item.downgradeBaseline,
         };
-        // 注意：由于全局 correctCountMap 只增不减（答错不减少），一旦掌握就不会降级。
-        // 掌握状态由累计答对次数决定，与本次答题结果无关。
-        // 答错只会降低稳定性（影响复习频率），不会取消掌握状态。
+        if (wasMastered) {
+          pool.masteredPool = pool.masteredPool.filter(id => id !== itemId);
+          if (!pool.activePool.includes(itemId)) {
+            pool.activePool = [...pool.activePool, itemId];
+          }
+        }
       }
 
       // ============================================

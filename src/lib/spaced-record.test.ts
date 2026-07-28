@@ -79,4 +79,74 @@ describe('SPACED_RECORD correctCountMap 路由', () => {
 
     expect(state.root.correctCountMap[itemId] || 0).toBe(0);
   });
+
+  it('已掌握项答错 → 降级回 activePool，重新掌握需再答对 3 次', () => {
+    const poolKey = 'root:beginner';
+    const itemId = '白';
+    const allItemIds = ['白', '日', '月', '木', '水', '火'];
+
+    let state = createDefaultState();
+
+    // 答对 3 次掌握
+    for (let i = 0; i < 3; i++) {
+      state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+      state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    }
+    const poolAfterMaster = state.spacedPools[poolKey];
+    expect(poolAfterMaster.masteredPool).toContain(itemId);
+    expect(poolAfterMaster.activePool).not.toContain(itemId);
+    expect(poolAfterMaster.items[itemId].isMastered).toBe(true);
+    expect(poolAfterMaster.items[itemId].downgradeBaseline).toBeUndefined();
+
+    // 复习时答错 → 降级
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: false });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: false, allItemIds });
+    const poolAfterWrong = state.spacedPools[poolKey];
+    expect(poolAfterWrong.masteredPool).not.toContain(itemId);
+    expect(poolAfterWrong.activePool).toContain(itemId);
+    expect(poolAfterWrong.items[itemId].isMastered).toBe(false);
+    expect(poolAfterWrong.items[itemId].downgradeBaseline).toBe(3); // 降级时全局计数为 3
+
+    // 降级后答对 1 次（全局 4）→ 不应重新掌握
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    expect(state.spacedPools[poolKey].items[itemId].isMastered).toBe(false);
+    expect(state.spacedPools[poolKey].activePool).toContain(itemId);
+
+    // 降级后答对 2 次（全局 5）→ 不应重新掌握
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    expect(state.spacedPools[poolKey].items[itemId].isMastered).toBe(false);
+
+    // 降级后答对 3 次（全局 6，baseline 3，6-3=3 >= 3）→ 重新掌握
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    const poolAfterReMaster = state.spacedPools[poolKey];
+    expect(poolAfterReMaster.items[itemId].isMastered).toBe(true);
+    expect(poolAfterReMaster.masteredPool).toContain(itemId);
+    expect(poolAfterReMaster.activePool).not.toContain(itemId);
+    expect(poolAfterReMaster.items[itemId].downgradeBaseline).toBeUndefined();
+  });
+
+  it('未掌握项答错 → 不降级（已在 activePool），仅重置 consecutiveCorrect', () => {
+    const poolKey = 'root:beginner';
+    const itemId = '白';
+    const allItemIds = ['白', '日', '月', '木', '水', '火'];
+
+    let state = createDefaultState();
+    // 答对 1 次（未掌握）
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    expect(state.spacedPools[poolKey].items[itemId].consecutiveCorrect).toBe(1);
+
+    // 答错 → consecutiveCorrect 重置为 0，仍在 activePool，不设 downgradeBaseline
+    state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: false });
+    state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: false, allItemIds });
+    const pool = state.spacedPools[poolKey];
+    expect(pool.items[itemId].consecutiveCorrect).toBe(0);
+    expect(pool.items[itemId].isMastered).toBe(false);
+    expect(pool.activePool).toContain(itemId);
+    expect(pool.masteredPool).not.toContain(itemId);
+    expect(pool.items[itemId].downgradeBaseline).toBeUndefined();
+  });
 });
