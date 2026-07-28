@@ -81,41 +81,85 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
   // 获取下一个要练习的项目（引用稳定，始终读 poolRef.current）
   const getNextItem = useCallback((): string | null => {
     const p = poolRef.current;
+    const now = Date.now();
 
-    // 活跃池空了，补充新项目
+    // 活跃池空了，补充新项目（就地提升整批到 activePool，避免 SPACED_RECORD 的
+    // defense block 只把单个借出项加入 activePool 而阻塞其余 pending 的提升）
     if (p.activePool.length === 0 && p.pendingPool.length > 0) {
-      const toAdd = p.pendingPool.slice(0, p.newItemsPerRound);
-      if (toAdd.length > 0) return toAdd[0];
+      const promoteCount = Math.min(p.newItemsPerRound, p.pendingPool.length);
+      const promoted = p.pendingPool.slice(0, promoteCount);
+      p.activePool = [...p.activePool, ...promoted];
+      p.pendingPool = p.pendingPool.slice(promoteCount);
+      for (const id of promoted) {
+        if (!p.items[id]) {
+          p.items[id] = {
+            id,
+            consecutiveCorrect: 0,
+            isMastered: false,
+            lastPracticeTime: 0,
+            totalAttempts: 0,
+            wrongCount: 0,
+            stability: 30,
+          };
+        }
+      }
+      return promoted[0];
     }
 
     // 检查已掌握池中是否有需要复习的
+    // 门控：activePool 有货时按 reviewProbability 概率进入复习分支（默认 10%）；
+    //       activePool 空时必须从 masteredPool 选（兜底，避免无题可出）。
     if (p.masteredPool.length > 0) {
-      const dueForReview: string[] = [];
-      for (const id of p.masteredPool) {
-        const item = p.items[id];
-        if (item && calcRetention(item.lastPracticeTime, item.stability) < REVIEW_RETENTION_THRESHOLD) {
-          dueForReview.push(id);
+      const shouldReviewMastered = p.activePool.length === 0 || Math.random() < p.reviewProbability;
+      if (shouldReviewMastered) {
+        const dueForReview: string[] = [];
+        for (const id of p.masteredPool) {
+          const item = p.items[id];
+          if (item && calcRetention(item.lastPracticeTime, item.stability) < REVIEW_RETENTION_THRESHOLD) {
+            dueForReview.push(id);
+          }
         }
-      }
-      if (dueForReview.length > 0) {
-        dueForReview.sort((a, b) => {
+        if (dueForReview.length > 0) {
+          dueForReview.sort((a, b) => {
+            const retA = calcRetention(p.items[a].lastPracticeTime, p.items[a].stability);
+            const retB = calcRetention(p.items[b].lastPracticeTime, p.items[b].stability);
+            return retA - retB;
+          });
+          return dueForReview[0];
+        }
+
+        // 增加"最长未复习优先"机制，确保所有已掌握项都能被循环到
+        // 混合概率策略：
+        //   30% 概率选择最长未复习的项（保证遍历覆盖）
+        //   40% 概率随机选择（保持随机性）
+        //   30% 概率选择记忆强度最低的项（强化薄弱项）
+        const sortedByLastPractice = [...p.masteredPool].sort((a, b) => {
+          return (p.items[a].lastPracticeTime || 0) - (p.items[b].lastPracticeTime || 0);
+        });
+
+        const sortedByRetention = [...p.masteredPool].sort((a, b) => {
           const retA = calcRetention(p.items[a].lastPracticeTime, p.items[a].stability);
           const retB = calcRetention(p.items[b].lastPracticeTime, p.items[b].stability);
           return retA - retB;
         });
-        return dueForReview[0];
-      }
 
-      if (Math.random() < p.reviewProbability) {
-        const randomIndex = Math.floor(Math.random() * p.masteredPool.length);
-        return p.masteredPool[randomIndex];
+        const rand = Math.random();
+        if (rand < 0.3) {
+          // 30%：最长未复习优先，确保所有项都能被循环到
+          return sortedByLastPractice[0];
+        } else if (rand < 0.7) {
+          // 40%：随机选择，保持练习多样性
+          const randomIndex = Math.floor(Math.random() * p.masteredPool.length);
+          return p.masteredPool[randomIndex];
+        } else {
+          // 30%：记忆强度最低优先，强化薄弱项
+          return sortedByRetention[0];
+        }
       }
     }
 
     // 从活跃池中选择（加权随机）
     if (p.activePool.length > 0) {
-      const now = Date.now();
-
       // 冷却过滤：排除刚练过的项（除非所有项都在冷却中）
       const eligibleItems = p.activePool.filter(id => {
         const item = p.items[id];
@@ -145,6 +189,7 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
       return itemsToUse[0];
     }
 
+    // 兜底：如果所有项都掌握且前面逻辑未返回（理论上不会走到这里）
     if (p.masteredPool.length > 0) {
       const randomIndex = Math.floor(Math.random() * p.masteredPool.length);
       return p.masteredPool[randomIndex];
