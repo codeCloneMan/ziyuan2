@@ -113,7 +113,7 @@ export interface ProgressState {
   dailyStats: Record<string, DailyStat>;
 }
 
-const CURRENT_VERSION = 3;
+const CURRENT_VERSION = 4;
 const STORAGE_KEY = 'ziyuan-progress-v3';
 
 // ========================================
@@ -611,6 +611,15 @@ function migrateFromOld(old: unknown): ProgressState {
   // 初始化新版字段
   if (typeof o['totalPoints'] === 'number') state.totalPoints = o['totalPoints'];
   if (o['dailyStats'] && typeof o['dailyStats'] === 'object') state.dailyStats = o['dailyStats'] as Record<string, DailyStat>;
+
+  // ============================================
+  // v4 迁移：强制开启所有"首次提示"开关
+  // 旧版本中部分用户的 hint 偏好被持久化为 false，
+  // 导致默认看不到首次提示。迁移时统一重置为 true。
+  // ============================================
+  state.preferences.showHint = true;
+  state.preferences.wholeCharShowHint = true;
+  state.preferences.phraseShowHint = true;
 
   return normalizeState(state);
 }

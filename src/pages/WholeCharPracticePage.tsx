@@ -230,6 +230,10 @@ export default function WholeCharPracticePage() {
           shuffleIndexRef.current = 0;
         } else {
           shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
+          // 回绕到 0 时重新洗牌，避免每轮顺序相同
+          if (shuffleIndexRef.current === 0) {
+            shuffleQueueRef.current = shuffleInPlace([...shuffleQueueRef.current]);
+          }
         }
         nextId = shuffleQueueRef.current[shuffleIndexRef.current];
       }

@@ -150,3 +150,37 @@ describe('SPACED_RECORD correctCountMap 路由', () => {
     expect(pool.items[itemId].downgradeBaseline).toBeUndefined();
   });
 });
+
+describe('版本迁移：hint 偏好默认开启', () => {
+  it('migrateFromOld 后 showHint/wholeCharShowHint/phraseShowHint 均为 true', () => {
+    // 模拟旧版本数据，其中 hint 被设为 false
+    const oldState = {
+      version: 3,
+      preferences: {
+        showHint: false,
+        wholeCharShowHint: false,
+        phraseShowHint: false,
+        theme: 'light',
+        practiceStyle: 'beginner',
+        rootMode: 'beginner',
+        charSetRange: 'beginner',
+        phraseMode: 'beginner',
+      },
+      root: { correctCountMap: {}, wrongCountMap: {}, totalAttempts: 0, totalCorrect: 0, streak: 0, bestStreak: 0, lastPracticeAt: 0 },
+      wholeChar: { modes: {} },
+      phrase: { correctCountMap: {}, wrongCountMap: {}, totalAttempts: 0, totalCorrect: 0, streak: 0, bestStreak: 0, lastMode: 'beginner', lastPracticeAt: 0 },
+      spacedPools: {},
+      achievements: [],
+      totalPoints: 0,
+      dailyStats: {},
+    };
+
+    // 通过 reducer 的 MIGRATE action 触发迁移
+    const newState = reducer(createDefaultState(), { type: 'MIGRATE', oldState });
+
+    expect(newState.preferences.showHint).toBe(true);
+    expect(newState.preferences.wholeCharShowHint).toBe(true);
+    expect(newState.preferences.phraseShowHint).toBe(true);
+    expect(newState.version).toBe(4);
+  });
+});

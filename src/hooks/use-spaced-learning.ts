@@ -24,6 +24,15 @@ const REVIEW_RETENTION_THRESHOLD = 0.6;
  */
 const MIN_COOLDOWN_MS = 5000;
 
+/** 就地洗牌（Fisher-Yates），用于入门模式提升新批次时打乱顺序 */
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 // 学习项状态（从 store 导出，保持兼容）
 export interface LearningItem {
   id: string;
@@ -88,6 +97,7 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
     if (p.activePool.length === 0 && p.pendingPool.length > 0) {
       const promoteCount = Math.min(p.newItemsPerRound, p.pendingPool.length);
       const promoted = p.pendingPool.slice(0, promoteCount);
+      shuffleInPlace(promoted); // 批次内随机顺序，避免固定顺序
       p.activePool = [...p.activePool, ...promoted];
       p.pendingPool = p.pendingPool.slice(promoteCount);
       for (const id of promoted) {

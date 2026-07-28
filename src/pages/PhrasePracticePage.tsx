@@ -211,6 +211,15 @@ export default function PhrasePracticePage() {
       return;
     }
     const nextIndex = (currentIndex + 1) % phraseQueue.length;
+    if (nextIndex === 0) {
+      // 回绕时重新洗牌，避免每轮顺序相同
+      const reshuffled = shuffleArray(phraseQueue);
+      setPhraseQueue(reshuffled);
+      setCurrentIndex(0);
+      setCurrentPhrase(reshuffled[0]);
+      setInputCode('');
+      return;
+    }
     setCurrentIndex(nextIndex);
     setCurrentPhrase(phraseQueue[nextIndex]);
     setInputCode('');

@@ -77,6 +77,22 @@ export default function PracticePage() {
   });
 
   // ============================================
+  // UI 状态（先声明，避免下方 nextRoot / usePracticeSession 引用未初始化变量）
+  // ============================================
+  const [currentRoot, setCurrentRoot] = useState<RootMapping>(practiceRootMappings[0]);
+  const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
+  const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // 用 ref 持有最新 currentRoot，避免 usePracticeSession 的 onWrong 闭包
+  // 把 currentRoot.char 放入 deps 导致 session 频繁重建（每次切题都会重建）
+  const currentRootRef = useRef<RootMapping>(currentRoot);
+  currentRootRef.current = currentRoot;
+
+  // ============================================
   // 进阶模式：高速循环
   //     所有字根洗牌后匀速轮转，不判断掌握/遗忘，
   //     答对答错都立即切入下一题，追求速度和广度。
@@ -112,6 +128,10 @@ export default function PracticePage() {
         nextChar = dueWrong.char;
       } else {
         shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
+        // 回绕到 0 时重新洗牌，避免每轮顺序相同导致强行记忆
+        if (shuffleIndexRef.current === 0) {
+          shuffleQueueRef.current = shuffleInPlace([...shuffleQueueRef.current]);
+        }
         nextChar = shuffleQueueRef.current[shuffleIndexRef.current];
       }
     }
@@ -133,22 +153,15 @@ export default function PracticePage() {
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: nextRoot,
     onWrong: () => {
-      if (!isBeginner && currentRoot.char) {
-        wrongQueueRef.current.push({ char: currentRoot.char, step: 0 });
+      // 通过 ref 读取最新 currentRoot，避免闭包捕获 + 避免把 currentRoot.char 放入 deps
+      if (!isBeginner && currentRootRef.current.char) {
+        wrongQueueRef.current.push({ char: currentRootRef.current.char, step: 0 });
       }
       nextRoot();
     },
-  }), [isBeginner, currentRoot.char, nextRoot])); // nextRoot 引用稳定，仅 isBeginner 变化时重建
+  }), [isBeginner, nextRoot])); // nextRoot 引用稳定，仅 isBeginner 变化时重建
 
   const { isPlaying, start, stop, reset, submit, keyFeedback, feedbackType, stats, accuracy } = session;
-
-  const [currentRoot, setCurrentRoot] = useState<RootMapping>(practiceRootMappings[0]);
-  const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
-  const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
-  const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(true);
-
-  const inputRef = useRef<HTMLInputElement>(null);
 
   const showHint = preferences.showHint;
 
