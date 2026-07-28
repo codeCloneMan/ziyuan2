@@ -272,7 +272,7 @@ export default function PhrasePracticePage() {
   }, [isPlaying, feedbackType, handleKeyPress, stopPractice]);
 
   const progress = phraseQueue.length > 0
-    ? (currentIndex / phraseQueue.length) * 100 : 0;
+    ? ((currentIndex + 1) / phraseQueue.length) * 100 : 0;
 
   if (dataLoading || !charCodeData) {
     return (

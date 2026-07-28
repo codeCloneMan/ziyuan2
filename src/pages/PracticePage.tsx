@@ -10,7 +10,7 @@ import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { useRootProgress, usePreferences, useDailyStats } from '@/store/progress-store';
 import { PracticeKeyboard, StatsSidePanel, PracticeStatusBar, RootDisplayCard } from '@/components/practice';
-import { Play, Sparkles, GraduationCap, Trash2 } from 'lucide-react';
+import { Play, Sparkles, GraduationCap, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
 
 const practiceStyleConfig: Record<PracticeLevel, { label: string; icon: typeof Sparkles; description: string }> = {
   beginner: { label: '入门', icon: Sparkles, description: '所有字根 · 科学循序渐进' },
@@ -52,11 +52,15 @@ function shuffleInPlace<T>(arr: T[]): T[] {
 
 export default function PracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
-  const { progress, recordAnswer } = useRootProgress();
+  const { progress, recordAnswer, reset: resetRootProgress } = useRootProgress();
   const { preferences, setPref } = usePreferences();
   const todayStats = useDailyStats();
   const practiceStyle: PracticeLevel = preferences.rootMode;
   const isBeginner = practiceStyle === 'beginner';
+
+  // 用 ref 持有最新 correctCountMap，避免 nextRoot 依赖 correctCountMap 导致引用不稳定
+  const correctCountMapRef = useRef(progress.correctCountMap);
+  correctCountMapRef.current = progress.correctCountMap;
 
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
@@ -82,8 +86,16 @@ export default function PracticePage() {
 
   // 切题函数：根据模式选择不同的下一题策略
   // 注意：spaced.getNextItem 通过 ref 读取 pool，引用已永久稳定
+  // 使用 correctCountMapRef 读取最新值，避免依赖 correctCountMap 导致引用不稳定
   const nextRoot = useCallback(() => {
     setPhoneticHint(null);
+
+    // 检查是否已全部掌握（使用 ref 读取最新值）
+    const newMasteredCount = calcMasteredRootCount(correctCountMapRef.current);
+    if (newMasteredCount === allRootIds.length) {
+      setShowCompletionModal(true);
+      return;
+    }
 
     let nextChar: string | null = null;
 
@@ -97,7 +109,7 @@ export default function PracticePage() {
     if (nextChar) {
       setCurrentRoot(rootByChar.get(nextChar) ?? practiceRootMappings[0]);
     }
-  }, [isBeginner]); // spaced.getNextItem 稳定，无需依赖
+  }, [isBeginner]); // spaced.getNextItem、allRootIds、correctCountMapRef 均稳定
 
   // ============================================
   // 答错处理策略：
@@ -117,6 +129,7 @@ export default function PracticePage() {
   const [currentRoot, setCurrentRoot] = useState<RootMapping>(practiceRootMappings[0]);
   const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -138,7 +151,7 @@ export default function PracticePage() {
     for (const c of Object.keys(progress.correctCountMap)) seen.add(c);
     for (const c of Object.keys(progress.wrongCountMap)) seen.add(c);
     return seen.size;
-  }, [progress.totalAttempts]);
+  }, [progress.correctCountMap, progress.wrongCountMap]);
 
   // 弱项字根完整列表（按正确率升序），weakRootsCount 取总数
   const weakRootsAll = useMemo(() => {
@@ -165,6 +178,8 @@ export default function PracticePage() {
   // ============================================
 
   const startPractice = useCallback(() => {
+    // 清全局 correctCountMap（避免完成检查误判）+ 清间隔池
+    resetRootProgress();
     if (isBeginner) {
       // 入门：重置间隔学习池（从头开始循序渐进）
       spaced.resetProgress();
@@ -175,7 +190,7 @@ export default function PracticePage() {
     }
     reset();
     start();
-  }, [isBeginner, spaced, reset, start]);
+  }, [isBeginner, spaced, reset, resetRootProgress, start]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -185,11 +200,12 @@ export default function PracticePage() {
 
   const clearProgress = useCallback(() => {
     if (confirm('确定要清除当前模式的练习记录吗？')) {
+      resetRootProgress();
       if (isBeginner) spaced.resetProgress();
       stop();
       reset();
     }
-  }, [isBeginner, spaced, stop, reset]);
+  }, [isBeginner, spaced, stop, reset, resetRootProgress]);
 
   // 开始练习时生成首题
   useEffect(() => {
@@ -294,15 +310,45 @@ export default function PracticePage() {
               <Play className="h-5 w-5 mr-2" />开始练习
             </Button>
 
-            {isBeginner && masteredCount > 0 && (
-              <div className="card-base p-4 text-left max-w-sm mx-auto mb-8">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">已掌握字根</span>
+            {(masteredCount > 0 || practicedCount > 0) && (
+              <div className={cn(
+                "card-base p-4 text-left max-w-sm mx-auto mb-8",
+                masteredCount === totalRoots && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
+              )}>
+                <div className="flex justify-between items-center text-sm mb-2">
+                  {masteredCount === totalRoots ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                      <Trophy className="h-4 w-4" />已全部掌握
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">已掌握字根</span>
+                  )}
                   <span className="font-bold font-mono-stat">{masteredCount}/{totalRoots}</span>
                 </div>
-                <div className="progress-base">
-                  <div className="progress-bar-animated bg-primary" style={{ width: `${Math.round((masteredCount / totalRoots) * 100)}%` }} />
+                <div className="progress-base relative overflow-hidden">
+                  <div className={cn(
+                    "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                    masteredCount === totalRoots ? "bg-emerald-500/30"
+                      : practicedCount === totalRoots ? "bg-amber-500/25"
+                      : "bg-primary/20"
+                  )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRoots) * 100))}%` }} />
+                  <div className={cn(
+                    "progress-bar-animated transition-colors relative",
+                    masteredCount === totalRoots ? "bg-emerald-500" : "bg-primary"
+                  )} style={{ width: `${Math.round((masteredCount / totalRoots) * 100)}%` }} />
                 </div>
+                <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/60">
+                  <span>已练习 {practicedCount}/{totalRoots}</span>
+                  {masteredCount === totalRoots && (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
+                  )}
+                </div>
+                {masteredCount === totalRoots && (
+                  <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>太棒了！你已经掌握了所有字根</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -414,6 +460,60 @@ export default function PracticePage() {
           />
         </div>
       </div>
+
+      {/* 进度完成弹窗 */}
+      {showCompletionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="card-base p-8 max-w-sm w-full mx-4 text-center animate-fadeIn">
+            <div className={cn(
+              "w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center",
+              masteredCount === totalRoots ? "bg-emerald-100 dark:bg-emerald-950/50" : "bg-amber-100 dark:bg-amber-950/50"
+            )}>
+              {masteredCount === totalRoots ? (
+                <Trophy className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <Target className="h-8 w-8 text-amber-600 dark:text-amber-400" />
+              )}
+            </div>
+            <h2 className="text-2xl font-bold mb-2">
+              {masteredCount === totalRoots ? "恭喜完成！🎉" : "练习完成！"}
+            </h2>
+            <p className="text-muted-foreground mb-6">
+              {masteredCount === totalRoots
+                ? "你已经掌握了所有字根！"
+                : `你已经练习完所有 ${totalRoots} 个字根，已掌握 ${masteredCount} 个。继续加油！`}
+            </p>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{masteredCount}</div>
+                <div className="text-xs text-muted-foreground">已掌握</div>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{stats.totalAttempts}</div>
+                <div className="text-xs text-muted-foreground">总题数</div>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{accuracy}%</div>
+                <div className="text-xs text-muted-foreground">正确率</div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => {
+                setShowCompletionModal(false);
+                stopPractice();
+              }} className="flex-1">
+                返回首页
+              </Button>
+              <Button onClick={() => {
+                setShowCompletionModal(false);
+                startPractice();
+              }} className="flex-1">
+                {masteredCount === totalRoots ? "重新练习" : "继续练习"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

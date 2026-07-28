@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars } from '@/data/commonChars';
+import { commonStandard } from '@/data/builtinCharSets';
 import type { PracticeLevel } from '@/types';
 import { PracticeKeyboard } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -31,7 +32,7 @@ function shuffleInPlace<T>(arr: T[]): T[] {
 
 const levelConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof Star }> = {
   beginner: { label: '入门', description: '常用 500 高频字', icon: Star },
-  advanced: { label: '进阶', description: '全部汉字，科学记忆', icon: GraduationCap },
+  advanced: { label: '进阶', description: '常用 8000+ 字，科学记忆', icon: GraduationCap },
 };
 
 type CodeRule = 'A' | 'AB' | 'ABb' | 'ABCc' | 'ABCD' | 'ABCZ';
@@ -77,7 +78,7 @@ function isMustSplitChar(char: string): boolean {
 
 export default function WholeCharPracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
-  const { progress, recordAnswer } = useWholeCharProgress();
+  const { progress, recordAnswer, resetMode } = useWholeCharProgress();
   const { preferences, setPref } = usePreferences();
   const todayStats = useDailyStats();
 
@@ -92,12 +93,13 @@ export default function WholeCharPracticePage() {
 
   const allCharIds = useMemo(() => charCodeData?.map(d => d.char) ?? [], [charCodeData]);
 
-  // 入门=500高频，进阶=全字集
+  // 入门=500高频，进阶=常用8000字（通用规范汉字表）
   const learningPool = useMemo(() => {
     if (!charCodeData) return [];
     if (level === 'beginner') return top500Chars;
-    return allCharIds;
-  }, [charCodeData, level, allCharIds]);
+    // 使用通用规范汉字表（8105字），控制在常用8000字内循环
+    return commonStandard;
+  }, [charCodeData, level]);
 
   const modeKey = `whole:${level}`;
   const modeProgress = progress.modes[modeKey] || {
@@ -148,6 +150,7 @@ export default function WholeCharPracticePage() {
   const [splitAnimationStep, setSplitAnimationStep] = useState(0);
   const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [userWrongSplit, setUserWrongSplit] = useState<string | null>(null);
+  const [showCompletionModal, setShowCompletionModal] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const splitAnimTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -178,11 +181,26 @@ export default function WholeCharPracticePage() {
   }, [learningPool, modeProgress.correctCountMap]);
 
   const practicedCount = useMemo(() => {
-    return Object.keys(modeProgress.correctCountMap).length;
-  }, [modeProgress.correctCountMap]);
+    const seen = new Set<string>();
+    for (const c of Object.keys(modeProgress.correctCountMap)) seen.add(c);
+    for (const c of Object.keys(modeProgress.wrongCountMap)) seen.add(c);
+    return seen.size;
+  }, [modeProgress.correctCountMap, modeProgress.wrongCountMap]);
 
   const generateNext = useCallback(() => {
     if (!charCodeData || learningPool.length === 0) return;
+
+    // 检查是否已全部掌握（与进度条同口径：只统计 learningPool 内的项）
+    const currentCorrectMap = modeProgress.correctCountMap;
+    const masteredCount = learningPool.filter(ch => (currentCorrectMap[ch] || 0) >= 3).length;
+    if (masteredCount === learningPool.length) {
+      // 所有字都已掌握，显示完成提示
+      setShowCompletionModal(true);
+      setShowSplitViz(false);
+      setSplitAnimationStep(0);
+      setUserWrongSplit(null);
+      return;
+    }
 
     let nextId: string | null = null;
 
@@ -208,9 +226,11 @@ export default function WholeCharPracticePage() {
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [charCodeData, learningPool, isBeginner, spaced]);
+  }, [charCodeData, learningPool, isBeginner, spaced, modeProgress]);
 
   const startPractice = useCallback(() => {
+    // 清全局 correctCountMap（避免完成检查误判）+ 清间隔池
+    resetMode(modeKey);
     if (isBeginner) {
       spaced.resetProgress();
     } else {
@@ -219,7 +239,7 @@ export default function WholeCharPracticePage() {
     }
     reset();
     start();
-  }, [isBeginner, learningPool, spaced, reset, start]);
+  }, [isBeginner, learningPool, modeKey, spaced, reset, resetMode, start]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -231,11 +251,12 @@ export default function WholeCharPracticePage() {
 
   const clearData = useCallback(() => {
     if (confirm('确定要清除当前模式的整字练习记录吗？')) {
+      resetMode(modeKey);
       spaced.resetProgress();
       stop();
       reset();
     }
-  }, [spaced, stop, reset]);
+  }, [modeKey, spaced, stop, reset, resetMode]);
 
   useEffect(() => {
     if (isPlaying && charCodeData) generateNext();
@@ -374,14 +395,38 @@ export default function WholeCharPracticePage() {
             </Button>
 
             {masteredCount > 0 && (
-              <div className="card-base p-4 text-left max-w-sm mx-auto mb-8">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-muted-foreground">已掌握</span>
+              <div className={cn(
+                "card-base p-4 text-left max-w-sm mx-auto mb-8",
+                masteredCount === learningPool.length && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
+              )}>
+                <div className="flex justify-between items-center text-sm mb-2">
+                  {masteredCount === learningPool.length ? (
+                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                      <Trophy className="h-4 w-4" />已全部掌握
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">已掌握</span>
+                  )}
                   <span className="font-bold font-mono-stat">{masteredCount}/{learningPool.length}</span>
                 </div>
-                <div className="progress-base">
-                  <div className="progress-bar-animated bg-primary" style={{ width: `${Math.round((masteredCount / Math.max(learningPool.length, 1)) * 100)}%` }} />
+                <div className="progress-base relative overflow-hidden">
+                  <div className={cn(
+                    "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                    masteredCount === learningPool.length ? "bg-emerald-500/30"
+                      : practicedCount === learningPool.length ? "bg-amber-500/25"
+                      : "bg-primary/20"
+                  )} style={{ width: `${Math.min(100, Math.round((practicedCount / Math.max(learningPool.length, 1)) * 100))}%` }} />
+                  <div className={cn(
+                    "progress-bar-animated transition-colors relative",
+                    masteredCount === learningPool.length ? "bg-emerald-500" : "bg-primary"
+                  )} style={{ width: `${Math.round((masteredCount / Math.max(learningPool.length, 1)) * 100)}%` }} />
                 </div>
+                {masteredCount === learningPool.length && (
+                  <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>太棒了！你已经掌握了所有汉字</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -474,12 +519,30 @@ export default function WholeCharPracticePage() {
           </div>
           <div className="mt-2">
             <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-              <span>已练习 {practicedCount}/{learningPool.length}</span>
+              <span>
+                已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
+                {' · '}已练习 <span className="font-mono-stat">{practicedCount}</span>
+                <span className="text-muted-foreground/40"> / {learningPool.length}</span>
+                {practicedCount === learningPool.length && masteredCount < learningPool.length && (
+                  <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已完成一轮</span>
+                )}
+                {masteredCount === learningPool.length && (
+                  <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
+                )}
+              </span>
               <span>今日 {todayStats.attempts}题</span>
             </div>
-            <div className="progress-base h-1.5">
-              <div className="progress-bar-animated bg-primary"
-                style={{ width: `${Math.round((practicedCount / Math.max(learningPool.length, 1)) * 100)}%` }} />
+            <div className="progress-base h-1.5 relative overflow-hidden">
+              <div className={cn(
+                "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                masteredCount === learningPool.length ? "bg-emerald-500/30"
+                  : practicedCount === learningPool.length ? "bg-amber-500/25"
+                  : "bg-primary/20"
+              )} style={{ width: `${Math.min(100, Math.round((practicedCount / Math.max(learningPool.length, 1)) * 100))}%` }} />
+              <div className={cn(
+                "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                masteredCount === learningPool.length ? "bg-emerald-500" : "bg-primary"
+              )} style={{ width: `${Math.min(100, Math.round((masteredCount / Math.max(learningPool.length, 1)) * 100))}%` }} />
             </div>
           </div>
         </div>
@@ -687,6 +750,49 @@ export default function WholeCharPracticePage() {
           </div>
         </div>
       </div>
+
+      {/* 进度完成弹窗 */}
+      {showCompletionModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="card-base p-8 max-w-sm w-full mx-4 text-center animate-fadeIn">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-emerald-100 dark:bg-emerald-950/50 flex items-center justify-center">
+              <Trophy className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+            </div>
+            <h2 className="text-2xl font-bold mb-2">恭喜完成！🎉</h2>
+            <p className="text-muted-foreground mb-6">
+              你已经掌握了当前模式下的所有汉字！
+            </p>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{masteredCount}</div>
+                <div className="text-xs text-muted-foreground">已掌握</div>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{stats.totalAttempts}</div>
+                <div className="text-xs text-muted-foreground">总题数</div>
+              </div>
+              <div className="p-3 rounded-lg bg-muted/50">
+                <div className="text-xl font-bold font-mono-stat">{accuracy}%</div>
+                <div className="text-xs text-muted-foreground">正确率</div>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" onClick={() => {
+                setShowCompletionModal(false);
+                stopPractice();
+              }} className="flex-1">
+                返回首页
+              </Button>
+              <Button onClick={() => {
+                setShowCompletionModal(false);
+                startPractice();
+              }} className="flex-1">
+                重新练习
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
