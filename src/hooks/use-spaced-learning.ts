@@ -10,7 +10,7 @@
  * 5. 时间维度：基于遗忘曲线预测记忆强度，到期自动安排复习
  */
 
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSpacedPool } from '@/store/progress-store';
 
 /** 最小稳定性：5秒 */
@@ -83,9 +83,12 @@ export function useSpacedLearning(options: UseSpacedLearningOptions) {
   // 依赖不稳定对象 → 每次答题后引用变化 → 连锁重建
   // ============================================
   const poolRef = useRef(pool);
-  poolRef.current = pool;
   const storeRecordResultRef = useRef(storeRecordResult);
-  storeRecordResultRef.current = storeRecordResult;
+  // 只能在 effect 中同步最新值（render 期间写 ref 违反 React 19 规则）
+  useEffect(() => {
+    poolRef.current = pool;
+    storeRecordResultRef.current = storeRecordResult;
+  });
 
   // 获取下一个要练习的项目（引用稳定，始终读 poolRef.current）
   const getNextItem = useCallback((): string | null => {

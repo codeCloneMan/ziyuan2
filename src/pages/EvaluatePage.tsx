@@ -220,6 +220,24 @@ interface EvaluateResult {
     sameFingerTriple: number; // 同指三连
     sameFingerQuad: number;   // 同指四连
     pinkyCount: number;       // 小指干扰
+    // 频率加权字段（加权比重用，与运行时返回对象一致）
+    freqSum: number;
+    oneCodeFreq: number;
+    twoCodeFreq: number;
+    threeCodeFreq: number;
+    fourCodeFreq: number;
+    shortDupFreq: number;
+    fullDupFreq: number;
+    theoreticalTwoShortFreq: number;
+    pairFreqSum: number;
+    handAltFreq: number;
+    sfbFreq: number;
+    sfsFreq: number;
+    sktFreq: number;
+    skqFreq: number;
+    sftFreq: number;
+    sfqFreq: number;
+    pinkyFreq: number;
   }>;
   codeLenChartData: Array<{ name: string; count: number; percent: number }>;
   fingerChartData: Array<{ name: string; value: number; percent: number }>;
@@ -274,6 +292,18 @@ interface PhraseTierStat {
   sameFingerTriple: number;
   sameFingerQuad: number;
   pinkyCount: number;
+  // 频率加权字段（加权比重用）
+  freqSum: number;
+  selFreqSum: number;
+  pairFreqSum: number;
+  handAltFreq: number;
+  sfbFreq: number;
+  sfsFreq: number;
+  sktFreq: number;
+  skqFreq: number;
+  sftFreq: number;
+  sfqFreq: number;
+  pinkyFreq: number;
 }
 
 // ========================================
@@ -292,26 +322,59 @@ function parseCodeTable(content: string): CodeEntry[] {
   const lines = content.split(/\r?\n/);
   const entries: CodeEntry[] = [];
   let formatDetected = '';
+  // rime 码表正文前的 YAML 头（--- ... 之间）整体跳过，
+  // 避免 name:/version:/columns:/- text 等行被当成码表条目。
+  // 仅识别文件开头（尚未解析任何条目）的 ---，避免普通码表正文中的 --- 分隔线误触发
+  let inYamlHeader = false;
 
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    if (trimmed.startsWith('...') && !formatDetected) { formatDetected = 'rime'; continue; }
-    if (trimmed.startsWith('---') || trimmed.startsWith('...')) continue;
-    if (formatDetected !== 'rime' && /^[;/#]/.test(trimmed)) continue;
+    if (trimmed.startsWith('---') && entries.length === 0 && !formatDetected) { inYamlHeader = true; continue; }
+    if (trimmed.startsWith('...') && !formatDetected) {
+      formatDetected = 'rime';
+      inYamlHeader = false;
+      continue;
+    }
+    if (trimmed.startsWith('...')) { inYamlHeader = false; continue; }
+    if (inYamlHeader) continue;
+    // 注释行：# 通用（rime 与普通码表）；; 仅普通码表跳过（rime 中 ; 可能是分隔符）
+    if (trimmed.startsWith('#')) continue;
+    if (formatDetected !== 'rime' && trimmed.startsWith(';')) continue;
 
     let match: RegExpMatchArray | null = null;
+    // 编码格式判断：形码编码为字母/数字混合，纯数字串视为词频权重而非编码
+    const looksLikeCode = (s: string) => /^[\da-z]+$/.test(s) && !/^\d+$/.test(s);
 
     if (trimmed.includes('\t')) {
       const parts = trimmed.split('\t');
       if (parts.length >= 2) {
-        const f1 = parts[0].trim(), f2 = parts[1].trim();
-        if (/^[\da-z]+$/.test(f1)) {
+        // 与空格分支保持一致：f1 先转小写（编码位置），f2 按编码判断时再转小写
+        const f1 = parts[0].trim().toLowerCase(), f2 = parts[1].trim();
+        if (looksLikeCode(f1)) {
           entries.push({ char: f2, code: f1 });
-        } else if (/^[\da-z]+$/.test(f2)) {
-          entries.push({ char: f1, code: f2 });
+        } else if (looksLikeCode(f2.toLowerCase())) {
+          entries.push({ char: f1, code: f2.toLowerCase() });
+        } else if (f2) {
+          // 两列都不是编码（如 `字 权重`）：无编码可评，跳过
+          continue;
+        }
+        continue;
+      }
+    }
+
+    // 空格分隔的三列及以上：`编码 字 权重`（或 `字 编码 权重`），只取前两列
+    if (!trimmed.includes('\t')) {
+      const parts = trimmed.split(/\s+/);
+      if (parts.length >= 3) {
+        const f1 = parts[0].toLowerCase(), f2 = parts[1];
+        if (looksLikeCode(f1)) {
+          entries.push({ char: f2, code: f1 });
+        } else if (looksLikeCode(f2)) {
+          entries.push({ char: f1, code: f2.toLowerCase() });
         } else {
-          entries.push({ char: f1, code: f2 });
+          // 前两列都不是编码（如 `字 权重 权重`）：无编码可评，跳过
+          continue;
         }
         continue;
       }
@@ -319,11 +382,15 @@ function parseCodeTable(content: string): CodeEntry[] {
 
     match = trimmed.match(/^(\S+)\s+(\S+)$/);
     if (match) {
-      const code = match[1].toLowerCase(), chars = match[2];
-      if (/^[\da-z]+$/.test(code)) {
-        entries.push({ char: chars, code });
+      const f1 = match[1].toLowerCase(), f2 = match[2];
+      if (looksLikeCode(f1)) {
+        entries.push({ char: f2, code: f1 });
+      } else if (looksLikeCode(f2)) {
+        // 两列：字 编码
+        entries.push({ char: f1, code: f2.toLowerCase() });
       } else {
-        entries.push({ char: code, code: chars.toLowerCase() });
+        // 两列都不是编码（如 `字 权重`）：不是可评估的码表条目，跳过
+        continue;
       }
       continue;
     }
@@ -377,18 +444,37 @@ function getAllPhrasesMerged(phrasesData: BuiltinPhrasesData): Array<{ phrase: s
 // 核心评码算法
 // ========================================
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', allPhrasesMerged: Array<{ phrase: string; freq: number }> = [], prevResult?: EvaluateResult | null): EvaluateResult {
-  // 安全检查：词组数据未加载时返回空结果
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- allPhrasesMerged 参数保留以兼容调用方签名
+function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhrasesMerged: Array<{ phrase: string; freq: number }> = [], prevResult?: EvaluateResult | null): EvaluateResult {
+  // 词组数据未加载时的空词组结果：渲染处直接访问 phraseEval.* 且无 null 检查，
+  // 因此必须给同结构空值而非 null，否则上传码表但词组数据未就绪时会崩溃
+  const emptyPhraseTier: PhraseTierResult = {
+    totalPhrases: 0, coveredPhrases: 0, coverageRate: 0, avgCodeLen: 0, dupRate: 0,
+    selectionRate: 0, selectionCount: 0, weightedCodeEquiv: 0,
+    handAltCount: 0, sameFingerBigCross: 0, sameFingerSmallCross: 0,
+    sameKeyTriple: 0, sameKeyQuad: 0, sameFingerTriple: 0, sameFingerQuad: 0,
+    pinkyCount: 0, keyFreq: {},
+  };
+  // 安全检查：词组数据未加载时返回与完整结果同结构的空结果，
+  // 保证调用方/渲染处访问任何字段都不会得到 undefined
   if (!_phrasesData) {
     return {
-      weightedCodeLength: 0, fullCodeDupRate: 0, selectRate: 0, simplifiedDupRate: 0,
-      speedEquivalent: 0, weightedSpeedEquivalent: 0, totalScore: 0, fullCodeScore: 0,
-      simplifiedScore: 0, keyFrequency: {}, fingerLoad: {}, sameFingerPairs: {},
-      handBalance: { left: 0, right: 0 }, rowUsage: {}, coveragePercent: 0,
-      totalChars: 0, noCodeChars: [], missingChars: [], keyCount: 0, totalKeystrokes: 0,
-      phraseEval: null, phraseFreqTierStats: null, topPhraseCount: 0, phraseDupGroups: null,
-    } as EvaluateResult;
+      totalChars: 0, totalCodes: 0, uniqueCodes: 0, duplicateCount: 0,
+      weightedAvgCodeLen: 0, fullDupRate: 0, staticDupCount: 0, simplifiedDupRate: 0,
+      dynamicSelectionRate: 0, equivalent: 0, speedEquivalent: 0, compositeScore: 0,
+      avgCodeLength: 0, maxCodeLength: 0, codeLengthStdDev: 0, codeLengthDist: {},
+      keyFreq: {}, keyUsageRate: {}, leftHandRate: 0, rightHandRate: 0, fingerLoad: {},
+      sameFingerRate: 0, handAlternationRate: 0,
+      gb2312Coverage: 0, gbkCoverage: 0, tongguiCoverage: 0,
+      efficiencyScore: 0, ergonomicsScore: 0, balanceScore: 0,
+      maxCandidatesPerCode: 0, codesNeedingPage: 0,
+      gb2312MaxCandidates: 0, gbkMaxCandidates: 0, gb2312StaticDup: 0, gbkStaticDup: 0,
+      weightedSameFingerRate: 0, weightedHandAltRate: 0,
+      topDupes: [], freqTierStats: [], codeLenChartData: [], fingerChartData: [],
+      phraseEval: { twoChar: emptyPhraseTier, threeChar: emptyPhraseTier, fourChar: emptyPhraseTier, overall: emptyPhraseTier },
+      phraseDupGroups: [], phraseFreqTierStats: [],
+      topPhraseCount: 0, missingCodeCharCount: 0, missingCodeChars: [],
+    };
   }
   // ★ 固定字集：始终以前6000高频字为评估基准
   // charset 参数只控制哪些字参与评估（如 gb2312 只评估6000字中的GB2312子集），
@@ -691,6 +777,10 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', allPhras
     if (a.char !== b.char) return a.char < b.char ? -1 : 1;
     return a.code.length - b.code.length; // 短码在前
   });
+  // 跨 tier 共享去重集合：slice 切点可能把同一字的多个编码条目切到相邻 tier，
+  // 若每个 tier 独立声明 Set，同字会在两个频段被重复计入字数/频重/加权键长。
+  // 共享后同字只在其最短码（首次出现）所在 tier 计入一次。
+  const tierSeenChars = new Set<string>();
   const freqTierStats = FREQ_TIERS.map(tier => {
     const tierEntries = sortedByFreq.slice(tier.start, Math.min(tier.end, sortedByFreq.length));
     const tierCodeMap = new Map<string, string[]>();
@@ -740,8 +830,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', allPhras
     let tierWeightedKeyEquiv = 0;
 
     // ★ 字频去重：同一字多编码条目时，字频按最短码（简码）归入对应桶，分母只计一次
-    // 排序已保证同字条目相邻且短码在前，首次遇到即为最短码
-    const tierSeenChars = new Set<string>();
+    // 排序已保证同字条目相邻且短码在前，首次遇到即为最短码；Set 跨 tier 共享避免重复
 
     for (const e of tierEntries) {
       const len = e.code.length;
@@ -1646,8 +1735,9 @@ export default function EvaluatePage() {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // 逐层关闭：一次 Esc 只关最顶层，避免一次按键同时关掉弹窗与全屏展开
         if (selectedDupCode) setSelectedDupCode(null);
-        if (showSingleCharDup) setShowSingleCharDup(false);
+        else if (showSingleCharDup) setShowSingleCharDup(false);
         else if (expandedSection) setExpandedSection(null);
       }
     };
@@ -1747,7 +1837,9 @@ export default function EvaluatePage() {
     setFileName('字源单字方案 v1.32（内置）');
 
     try {
-      const response = await fetch('/字源单字.txt');
+      // 与 data-loader 的 getDataUrl 保持一致，支持部署在子路径（如 GitHub Pages）
+      const base = (import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+      const response = await fetch(`${base}/字源单字.txt`);
       if (!response.ok) throw new Error('加载失败');
       const text = await response.text();
       setParseProgress(10);

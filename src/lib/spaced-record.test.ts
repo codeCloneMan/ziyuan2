@@ -184,3 +184,57 @@ describe('版本迁移：hint 偏好默认开启', () => {
     expect(newState.version).toBe(4);
   });
 });
+
+describe('SPACED_RESET 只重置池、保留累计进度（开始练习不再清空）', () => {
+  it('SPACED_RESET 后 correctCountMap 保留，池从空重新开始', () => {
+    const poolKey = 'root:beginner';
+    const itemId = '白';
+    const allItemIds = ['白', '日', '月', '木', '水', '火'];
+
+    let state = createDefaultState();
+    // 用户已练过：'白' 累计答对 3 次（掌握），并已进入 masteredPool
+    for (let i = 0; i < 3; i++) {
+      state = reducer(state, { type: 'ROOT_ANSWER', char: itemId, isCorrect: true });
+      state = reducer(state, { type: 'SPACED_RECORD', poolKey, itemId, isCorrect: true, allItemIds });
+    }
+    expect(state.spacedPools[poolKey].masteredPool).toContain(itemId);
+
+    // 点"开始练习"：只 SPACED_RESET（页面不再派发 ROOT_RESET）
+    state = reducer(state, { type: 'SPACED_RESET', poolKey, allItemIds });
+
+    // 累计进度保留（首页/成就数据源）
+    expect(state.root.correctCountMap[itemId]).toBe(3);
+    expect(state.root.totalAttempts).toBe(3);
+    // 池从空重新开始（循序渐进）
+    const pool = state.spacedPools[poolKey];
+    expect(pool.masteredPool).toHaveLength(0);
+    expect(pool.activePool.length).toBeGreaterThan(0);
+    expect(pool.activePool.length + pool.pendingPool.length).toBe(allItemIds.length);
+  });
+
+  it('整字模式：SPACED_RESET 保留 wholeChar.modes 累计数据', () => {
+    const poolKey = 'whole:beginner';
+    const itemId = '的';
+    const allItemIds = ['的', '一', '是', '在', '不', '了'];
+
+    let state = createDefaultState();
+    state = reducer(state, { type: 'WHOLE_CHAR_ANSWER', mode: poolKey, char: itemId, isCorrect: true });
+    state = reducer(state, { type: 'WHOLE_CHAR_ANSWER', mode: poolKey, char: itemId, isCorrect: true });
+
+    state = reducer(state, { type: 'SPACED_RESET', poolKey, allItemIds });
+
+    expect(state.wholeChar.modes[poolKey]?.correctCountMap[itemId]).toBe(2);
+    expect(state.wholeChar.modes[poolKey]?.totalAttempts).toBe(2);
+    expect(state.spacedPools[poolKey].masteredPool).toHaveLength(0);
+  });
+
+  it('HYDRATE 导入缺字段 JSON 时走 normalizeState 补齐，不崩溃', () => {
+    // 模拟损坏/旧版导入文件：只有 version 和部分字段
+    const partial = { version: 4, root: { correctCountMap: { '白': 5 } } };
+    const newState = reducer(createDefaultState(), { type: 'HYDRATE', state: partial as never });
+    expect(newState.preferences).toBeDefined();
+    expect(newState.preferences.phraseMode).toBe('beginner');
+    expect(newState.root.correctCountMap['白']).toBe(5);
+    expect(newState.phrase.totalAttempts).toBe(0);
+  });
+});

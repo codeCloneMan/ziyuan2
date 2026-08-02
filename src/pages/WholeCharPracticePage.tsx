@@ -91,8 +91,6 @@ export default function WholeCharPracticePage() {
   const currentConfig = levelConfig[level];
   const showHint = preferences.wholeCharShowHint;
 
-  const allCharIds = useMemo(() => charCodeData?.map(d => d.char) ?? [], [charCodeData]);
-
   // 入门=500高频，进阶=常用8000字（通用规范汉字表）
   const learningPool = useMemo(() => {
     if (!charCodeData) return [];
@@ -102,10 +100,15 @@ export default function WholeCharPracticePage() {
   }, [charCodeData, level]);
 
   const modeKey = `whole:${level}`;
-  const modeProgress = progress.modes[modeKey] || {
-    correctCountMap: {}, wrongCountMap: {}, totalAttempts: 0, totalCorrect: 0,
-    streak: 0, bestStreak: 0, lastPracticeAt: 0,
-  };
+  // 用 useMemo 稳定 modeProgress 引用：直接写 `progress.modes[modeKey] || {...}` 时，
+  // mode 不存在的情况下每次渲染都会创建新对象，导致依赖它的 useCallback 每次重建
+  const modeProgress = useMemo(
+    () => progress.modes[modeKey] || {
+      correctCountMap: {}, wrongCountMap: {}, totalAttempts: 0, totalCorrect: 0,
+      streak: 0, bestStreak: 0, lastPracticeAt: 0,
+    },
+    [progress.modes, modeKey],
+  );
 
   const isBeginner = level === 'beginner';
 
@@ -119,6 +122,10 @@ export default function WholeCharPracticePage() {
     reviewProbability: 0.1,
     storageKey: modeKey,
   });
+  // 解构稳定引用：spaced 对象每次渲染新建，但其方法引用永久稳定
+  const spacedGetNextItem = spaced.getNextItem;
+  const spacedRecordResult = spaced.recordResult;
+  const spacedResetProgress = spaced.resetProgress;
 
   // ============================================
   // 进阶模式：洗牌轮转队列
@@ -160,9 +167,12 @@ export default function WholeCharPracticePage() {
   const [userWrongSplit, setUserWrongSplit] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
+  // 重新练习时 isPlaying 可能已是 true（完成弹窗内），setState 相同值会被 React bail out，
+  // 不会触发下方 generateNext effect；用 nonce 强制 effect 重跑
+  const [restartNonce, setRestartNonce] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const splitAnimTimer = useRef<ReturnType<typeof setTimeout>>();
+  const splitAnimTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [inputFocused, setInputFocused] = useState(false);
   const nativePrevRef = useRef('');
 
@@ -199,10 +209,9 @@ export default function WholeCharPracticePage() {
   const generateNext = useCallback(() => {
     if (!charCodeData || learningPool.length === 0) return;
 
-    // 检查是否已全部掌握（与进度条同口径：只统计 learningPool 内的项）
-    const currentCorrectMap = modeProgress.correctCountMap;
-    const masteredCount = learningPool.filter(ch => (currentCorrectMap[ch] || 0) >= 3).length;
-    if (masteredCount === learningPool.length) {
+    // 完成判定改为会话内池掌握数（入门模式）：累计进度保留（首页/成就不清零），
+    // 每轮练习从空池重新循序渐进，池全部掌握时才提示完成
+    if (isBeginner && spaced.pool.masteredPool.length === learningPool.length) {
       // 所有字都已掌握，显示完成提示
       setShowCompletionModal(true);
       setShowSplitViz(false);
@@ -215,7 +224,7 @@ export default function WholeCharPracticePage() {
 
     if (isBeginner) {
       // 入门：由间隔学习算法决定下一题
-      nextId = spaced.getNextItem();
+      nextId = spacedGetNextItem();
     } else {
       // 优先取错题（已隔 ≥3 步）
       wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
@@ -247,20 +256,24 @@ export default function WholeCharPracticePage() {
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [charCodeData, learningPool, isBeginner, spaced, modeProgress]);
+  }, [charCodeData, learningPool, isBeginner, spacedGetNextItem, spaced.pool]);
 
   const startPractice = useCallback(() => {
-    // 清全局 correctCountMap（避免完成检查误判）+ 清间隔池
-    resetMode(modeKey);
+    // 只重置间隔学习池（会话从空池重新循序渐进），不清当前模式的累计进度：
+    // 首页进度/成就/已掌握统计均以 modes[modeKey] 的累计数据为数据源，清空会导致归零
     if (isBeginner) {
-      spaced.resetProgress();
+      spacedResetProgress();
     } else {
       shuffleQueueRef.current = shuffleInPlace([...learningPool]);
       shuffleIndexRef.current = -1;
+      // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
+      wrongQueueRef.current = [];
     }
     reset();
     start();
-  }, [isBeginner, learningPool, modeKey, spaced, reset, resetMode, start]);
+    // 强制 generateNext effect 重跑（isPlaying 可能已是 true，start() 不触发重渲染）
+    setRestartNonce(n => n + 1);
+  }, [isBeginner, learningPool, reset, start, spacedResetProgress]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -273,16 +286,16 @@ export default function WholeCharPracticePage() {
   const clearData = useCallback(() => {
     if (confirm('确定要清除当前模式的整字练习记录吗？')) {
       resetMode(modeKey);
-      spaced.resetProgress();
+      spacedResetProgress();
       stop();
       reset();
     }
-  }, [modeKey, spaced, stop, reset, resetMode]);
+  }, [modeKey, stop, reset, resetMode, spacedResetProgress]);
 
   useEffect(() => {
     if (isPlaying && charCodeData) generateNext();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 首题生成依赖 store 重渲染后的池状态，由 restartNonce 控制重触发
+  }, [isPlaying, restartNonce]);
 
   useEffect(() => {
     if (showSplitViz && splitAnimationStep < splitParts.length) {
@@ -302,18 +315,18 @@ export default function WholeCharPracticePage() {
     if (correctCode.startsWith(newCode)) {
       if (newCode === correctCode) {
         recordAnswer(modeKey, currentItem.char, true);
-        if (isBeginner) spaced.recordResult(currentItem.char, true);
+        if (isBeginner) spacedRecordResult(currentItem.char, true);
         submit(true, key);
       }
     } else {
       recordAnswer(modeKey, currentItem.char, false);
-      if (isBeginner) spaced.recordResult(currentItem.char, false);
+      if (isBeginner) spacedRecordResult(currentItem.char, false);
       setUserWrongSplit(newCode);
       setShowSplitViz(true);
       setSplitAnimationStep(splitParts.length);
       submit(false, key);
     }
-  }, [isPlaying, feedbackType, inputCode, currentItem, recordAnswer, modeKey, isBeginner, spaced, splitParts.length, submit]);
+  }, [isPlaying, feedbackType, inputCode, currentItem, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

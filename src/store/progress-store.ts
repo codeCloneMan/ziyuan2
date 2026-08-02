@@ -494,7 +494,9 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
     }
 
     case 'HYDRATE':
-      return action.state;
+      // 防御：任何来源的导入都经过 normalizeState 补齐字段与校验 level，
+      // 避免缺字段/损坏的 JSON 直接进入 store 导致各页面访问 undefined 崩溃。
+      return normalizeState(action.state);
 
     case 'MIGRATE':
       return migrateFromOld(action.oldState);
@@ -548,9 +550,10 @@ function migrateFromOld(old: unknown): ProgressState {
 
   // v5 字根练习
   try {
-    const v5 = typeof o['ziyuan-practice-v5'] === 'string'
-      ? JSON.parse(o['ziyuan-practice-v5'])
-      : o['ziyuan-practice-v5'];
+    const rawV5 = o['ziyuan-practice-v5'];
+    const v5 = typeof rawV5 === 'string'
+      ? JSON.parse(rawV5)
+      : rawV5;
     if (v5 && typeof v5 === 'object') {
       state.root.correctCountMap = v5.correctCountMap || {};
       state.root.wrongCountMap = v5.wrongCountMap || {};
@@ -563,9 +566,10 @@ function migrateFromOld(old: unknown): ProgressState {
 
   // v3 整字练习
   try {
-    const v3 = typeof o['ziyuan-whole-char-v3'] === 'string'
-      ? JSON.parse(o['ziyuan-whole-char-v3'])
-      : o['ziyuan-whole-char-v3'];
+    const rawV3 = o['ziyuan-whole-char-v3'];
+    const v3 = typeof rawV3 === 'string'
+      ? JSON.parse(rawV3)
+      : rawV3;
     if (v3 && typeof v3 === 'object') {
       state.wholeChar.modes = v3.modes || {};
     }
@@ -583,9 +587,10 @@ function migrateFromOld(old: unknown): ProgressState {
   const poolKeys = ['beginner', 'progressive', 'fullcode', 'weak'];
   for (const key of poolKeys) {
     try {
-      const raw = typeof o[`ziyuan-practice-${key}`] === 'string'
-        ? JSON.parse(o[`ziyuan-practice-${key}`])
-        : o[`ziyuan-practice-${key}`];
+      const rawKey = o[`ziyuan-practice-${key}`];
+      const raw = typeof rawKey === 'string'
+        ? JSON.parse(rawKey)
+        : rawKey;
       if (raw && typeof raw === 'object' && raw.items) {
         state.spacedPools[key] = raw as SpacedPool;
       }
@@ -638,9 +643,10 @@ function loadFromStorage(): ProgressState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<ProgressState>;
-      if (parsed.version === CURRENT_VERSION) return normalizeState(parsed);
-      // 版本不匹配：尝试迁移
-      return migrateFromOld(parsed);
+      // 同 schema 数据（无论版本号新旧）一律走 normalizeState：按 partial 合并默认值并保留全部字段。
+      // 不走 migrateFromOld（那是给旧独立 key 集合用的，会把同 schema 数据误判为无旧 key
+      // 而清空 root/wholeChar/phrase/spacedPools/achievements）。
+      return normalizeState(parsed);
     }
   } catch { /* ignore */ }
 
@@ -714,11 +720,16 @@ export function useProgressStore(): {
 
 export function useRootProgress() {
   const { state, dispatch } = useProgressStore();
+  // 稳定函数引用：避免内联箭头函数导致下游 useCallback 依赖每次渲染变化
+  const recordAnswer = useCallback(
+    (char: string, isCorrect: boolean) => dispatch({ type: 'ROOT_ANSWER', char, isCorrect }),
+    [dispatch],
+  );
+  const reset = useCallback(() => dispatch({ type: 'ROOT_RESET' }), [dispatch]);
   return {
     progress: state.root,
-    recordAnswer: (char: string, isCorrect: boolean) =>
-      dispatch({ type: 'ROOT_ANSWER', char, isCorrect }),
-    reset: () => dispatch({ type: 'ROOT_RESET' }),
+    recordAnswer,
+    reset,
   };
 }
 
@@ -732,43 +743,74 @@ export function useDailyStats() {
 
 export function useWholeCharProgress() {
   const { state, dispatch } = useProgressStore();
+  const recordAnswer = useCallback(
+    (mode: string, char: string, isCorrect: boolean) =>
+      dispatch({ type: 'WHOLE_CHAR_ANSWER', mode, char, isCorrect }),
+    [dispatch],
+  );
+  const setMode = useCallback(
+    (mode: string) => dispatch({ type: 'WHOLE_CHAR_SET_MODE', mode }),
+    [dispatch],
+  );
+  const resetMode = useCallback(
+    (mode: string) => dispatch({ type: 'WHOLE_CHAR_RESET_MODE', mode }),
+    [dispatch],
+  );
   return {
     progress: state.wholeChar,
-    recordAnswer: (mode: string, char: string, isCorrect: boolean) =>
-      dispatch({ type: 'WHOLE_CHAR_ANSWER', mode, char, isCorrect }),
-    setMode: (mode: string) => dispatch({ type: 'WHOLE_CHAR_SET_MODE', mode }),
-    resetMode: (mode: string) => dispatch({ type: 'WHOLE_CHAR_RESET_MODE', mode }),
+    recordAnswer,
+    setMode,
+    resetMode,
   };
 }
 
 export function usePhraseProgress() {
   const { state, dispatch } = useProgressStore();
+  const recordAnswer = useCallback(
+    (isCorrect: boolean) => dispatch({ type: 'PHRASE_ANSWER', isCorrect }),
+    [dispatch],
+  );
+  const setMode = useCallback(
+    (mode: string) => dispatch({ type: 'PHRASE_SET_MODE', mode }),
+    [dispatch],
+  );
   return {
     progress: state.phrase,
-    recordAnswer: (isCorrect: boolean) =>
-      dispatch({ type: 'PHRASE_ANSWER', isCorrect }),
-    setMode: (mode: string) => dispatch({ type: 'PHRASE_SET_MODE', mode }),
+    recordAnswer,
+    setMode,
   };
 }
 
 export function useSpacedPool(poolKey: string, allItemIds: string[]) {
   const { state, dispatch } = useProgressStore();
   const pool = state.spacedPools[poolKey] || createDefaultPool(allItemIds);
+  const recordResult = useCallback(
+    (itemId: string, isCorrect: boolean) =>
+      dispatch({ type: 'SPACED_RECORD', poolKey, itemId, isCorrect, allItemIds }),
+    [dispatch, poolKey, allItemIds],
+  );
+  const reset = useCallback(
+    () => dispatch({ type: 'SPACED_RESET', poolKey, allItemIds }),
+    [dispatch, poolKey, allItemIds],
+  );
 
   return {
     pool,
-    recordResult: (itemId: string, isCorrect: boolean) =>
-      dispatch({ type: 'SPACED_RECORD', poolKey, itemId, isCorrect, allItemIds }),
-    reset: () => dispatch({ type: 'SPACED_RESET', poolKey, allItemIds }),
+    recordResult,
+    reset,
   };
 }
 
 export function usePreferences() {
   const { state, dispatch } = useProgressStore();
+  const setPref = useCallback(
+    <K extends keyof Preferences>(key: K, value: Preferences[K]) =>
+      dispatch({ type: 'SET_PREF', key, value }),
+    [dispatch],
+  );
   return {
     preferences: state.preferences,
-    setPref: <K extends keyof Preferences>(key: K, value: Preferences[K]) =>
-      dispatch({ type: 'SET_PREF', key, value }),
+    setPref,
   };
 }
 
@@ -828,7 +870,8 @@ export function importProgressFromJSON(json: string): { success: boolean; error?
     if (!parsed.version || typeof parsed.version !== 'number') {
       return { success: false, error: '无效的进度文件格式' };
     }
-    dispatch({ type: 'HYDRATE', state: parsed });
+    // normalizeState 补齐缺失字段/校验非法 level，防止缺字段文件导致页面崩溃
+    dispatch({ type: 'HYDRATE', state: normalizeState(parsed) });
     return { success: true };
   } catch {
     return { success: false, error: '无法解析 JSON 文件' };

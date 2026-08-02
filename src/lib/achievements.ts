@@ -179,7 +179,7 @@ export const ACHIEVEMENTS: Achievement[] = [
  * 获取当前等级
  */
 export function getCurrentLevel(totalPoints: number): typeof LEVELS[number] {
-  let current = LEVELS[0];
+  let current: typeof LEVELS[number] = LEVELS[0];
   for (const level of LEVELS) {
     if (totalPoints >= level.minPoints) {
       current = level;

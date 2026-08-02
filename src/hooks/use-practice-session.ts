@@ -53,10 +53,13 @@ export function usePracticeSession(options: UsePracticeSessionOptions = {}) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // 用 ref 保存最新的回调，避免 setTimeout 内调用到过期闭包
+  // 注意：只能在 effect 中同步，render 期间写 ref 违反 React 19 规则
   const onCorrectRef = useRef(onCorrect);
   const onWrongRef = useRef(onWrong);
-  onCorrectRef.current = onCorrect;
-  onWrongRef.current = onWrong;
+  useEffect(() => {
+    onCorrectRef.current = onCorrect;
+    onWrongRef.current = onWrong;
+  });
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) {

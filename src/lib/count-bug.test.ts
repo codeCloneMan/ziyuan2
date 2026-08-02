@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { practiceRootMappings, rootMappings, renderableKeyGroups } from '@/data/roots';
+import { practiceRootMappings, renderableKeyGroups, type RootMapping } from '@/data/roots';
 import { calcMasteredRootCount } from './mastered-count';
 
 describe('计数问题排查', () => {

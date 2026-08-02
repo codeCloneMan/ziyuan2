@@ -140,8 +140,13 @@ export default function PracticeKeyboard({
                   onMouseDown={(e) => e.preventDefault()}
                   onTouchEnd={(e) => {
                     e.preventDefault();
-                    touchHandledRef.current.add(key);
+                    // 顺序关键：先清残留标记 → 正常处理按键 → 再打标记，
+                    // 让随后的合成 click 被 handlePress 的 has 检查跳过（防双重触发）。
+                    // 若浏览器因 preventDefault 不派发合成 click，标记会残留，
+                    // 因此下次 touch 必须先 delete，否则本次按键会被误吞。
+                    touchHandledRef.current.delete(key);
                     handlePress(key);
+                    touchHandledRef.current.add(key);
                   }}
                   className={cn(
                     "flex-1 min-w-0 flex flex-col items-center justify-center rounded-lg border transition-colors duration-150 cursor-pointer select-none relative",

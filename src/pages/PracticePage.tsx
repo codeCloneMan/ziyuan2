@@ -58,10 +58,6 @@ export default function PracticePage() {
   const practiceStyle: PracticeLevel = preferences.rootMode;
   const isBeginner = practiceStyle === 'beginner';
 
-  // 用 ref 持有最新 correctCountMap，避免 nextRoot 依赖 correctCountMap 导致引用不稳定
-  const correctCountMapRef = useRef(progress.correctCountMap);
-  correctCountMapRef.current = progress.correctCountMap;
-
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
   //     每次引入 5 个新字根，答对 3 次即掌握，
@@ -75,6 +71,11 @@ export default function PracticePage() {
     reviewProbability: 0.1,
     storageKey: poolKey,
   });
+  // 解构稳定引用：spaced 对象每次渲染新建，但 getNextItem/recordResult/resetProgress 引用永久稳定，
+  // 直接使用 spaced 会导致 useCallback 依赖每次渲染变化（memoization 失效）
+  const spacedGetNextItem = spaced.getNextItem;
+  const spacedRecordResult = spaced.recordResult;
+  const spacedResetProgress = spaced.resetProgress;
 
   // ============================================
   // UI 状态（先声明，避免下方 nextRoot / usePracticeSession 引用未初始化变量）
@@ -84,13 +85,18 @@ export default function PracticePage() {
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
+  // 重新练习时 isPlaying 可能已是 true（完成弹窗内），setState 相同值会被 React bail out，
+  // 不会触发下方首题 effect；用 nonce 强制 effect 重跑
+  const [restartNonce, setRestartNonce] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
 
   // 用 ref 持有最新 currentRoot，避免 usePracticeSession 的 onWrong 闭包
   // 把 currentRoot.char 放入 deps 导致 session 频繁重建（每次切题都会重建）
   const currentRootRef = useRef<RootMapping>(currentRoot);
-  currentRootRef.current = currentRoot;
+  useEffect(() => {
+    currentRootRef.current = currentRoot;
+  });
 
   // ============================================
   // 进阶模式：高速循环
@@ -104,13 +110,13 @@ export default function PracticePage() {
 
   // 切题函数：根据模式选择不同的下一题策略
   // 注意：spaced.getNextItem 通过 ref 读取 pool，引用已永久稳定
-  // 使用 correctCountMapRef 读取最新值，避免依赖 correctCountMap 导致引用不稳定
+  // 完成判定用会话内池掌握数（masteredPool），不再依赖累计 correctCountMap：
+  // 累计进度保留（首页/成就数据源不清零），但每轮练习从空池重新循序渐进
   const nextRoot = useCallback(() => {
     setPhoneticHint(null);
 
-    // 检查是否已全部掌握（使用 ref 读取最新值）
-    const newMasteredCount = calcMasteredRootCount(correctCountMapRef.current);
-    if (newMasteredCount === allRootIds.length) {
+    // 检查本次会话池是否已全部掌握（入门模式；进阶模式无完成判定）
+    if (isBeginner && spaced.pool.masteredPool.length === allRootIds.length) {
       setShowCompletionModal(true);
       return;
     }
@@ -118,7 +124,7 @@ export default function PracticePage() {
     let nextChar: string | null = null;
 
     if (isBeginner) {
-      nextChar = spaced.getNextItem();
+      nextChar = spacedGetNextItem();
     } else {
       // 优先取错题（已隔 ≥3 步）
       wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
@@ -139,7 +145,7 @@ export default function PracticePage() {
     if (nextChar) {
       setCurrentRoot(rootByChar.get(nextChar) ?? practiceRootMappings[0]);
     }
-  }, [isBeginner]); // spaced.getNextItem、allRootIds、correctCountMapRef 均稳定
+  }, [isBeginner, spacedGetNextItem, spaced.pool]); // spacedGetNextItem/pool 均稳定，仅池变化时重建
 
   // ============================================
   // 答错处理策略：
@@ -198,7 +204,7 @@ export default function PracticePage() {
         const rateB = b.correct / Math.max(b.correct + b.wrong, 1);
         return rateA - rateB;
       });
-  }, [progress.totalAttempts]); // 仅在答题次数变化时重算，避免每次 map 对象引用变化都触发
+  }, [progress]); // 依赖整个 progress 对象，满足 lint 且答题时正确重算
 
   // 展示用：仅前 10 个最弱
   const weakestRoots = useMemo(() => weakRootsAll.slice(0, 10), [weakRootsAll]);
@@ -208,19 +214,26 @@ export default function PracticePage() {
   // ============================================
 
   const startPractice = useCallback(() => {
-    // 清全局 correctCountMap（避免完成检查误判）+ 清间隔池
-    resetRootProgress();
+    // 只重置间隔学习池（会话从空池重新循序渐进），不清累计进度：
+    // 首页进度/成就/键盘淡化均以累计 correctCountMap 为数据源，清空会导致数据归零
     if (isBeginner) {
       // 入门：重置间隔学习池（从头开始循序渐进）
-      spaced.resetProgress();
+      spacedResetProgress();
     } else {
       // 进阶：所有字根洗牌，从第 0 个开始高速循环
       shuffleQueueRef.current = shuffleInPlace([...allRootIds]);
       shuffleIndexRef.current = -1; // nextRoot 首次调用会 +1 → 0
+      // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
+      wrongQueueRef.current = [];
     }
     reset();
     start();
-  }, [isBeginner, spaced, reset, resetRootProgress, start]);
+    // 强制首题 effect 重跑（isPlaying 可能已是 true，start() 不触发重渲染）
+    setRestartNonce(n => n + 1);
+    // 首题由下方 useEffect 在渲染后生成：startPractice 内同步调用 nextRoot 会读到
+    // 本次渲染的旧池（dispatch 后 store 状态在事件处理器内不更新），
+    // 上一轮全部掌握时会导致立即重弹完成弹窗、无法重开练习。
+  }, [isBeginner, reset, start, spacedResetProgress]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -231,16 +244,18 @@ export default function PracticePage() {
   const clearProgress = useCallback(() => {
     if (confirm('确定要清除当前模式的练习记录吗？')) {
       resetRootProgress();
-      if (isBeginner) spaced.resetProgress();
+      if (isBeginner) spacedResetProgress();
       stop();
       reset();
     }
-  }, [isBeginner, spaced, stop, reset, resetRootProgress]);
+  }, [isBeginner, stop, reset, resetRootProgress, spacedResetProgress]);
 
-  // 开始练习时生成首题
+  // 开始练习后生成首题：必须在 SPACED_RESET dispatch 生效、组件重渲染（池已重置）后执行，
+  // 否则 nextRoot 的完成判定（spaced.pool.masteredPool）读到的还是旧池
   useEffect(() => {
     if (isPlaying) nextRoot();
-  }, [isPlaying]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 首题生成依赖 store 重渲染后的池状态，由 restartNonce 控制重触发
+  }, [isPlaying, restartNonce]);
 
   // 新字根首次出现时，显示答案提示（仅入门模式）
   useEffect(() => {
@@ -275,13 +290,12 @@ export default function PracticePage() {
 
     // 入门模式：同步更新间隔学习池（recordResult 引用稳定）
     if (isBeginner) {
-      spaced.recordResult(currentRoot.char, isCorrect);
+      spacedRecordResult(currentRoot.char, isCorrect);
     }
 
     // 交由统一状态机处理反馈着色、计分与切题
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, currentRoot, recordAnswer, isBeginner, submit]);
-  // spaced.recordResult 和 submit 引用已稳定，无需额外依赖
+  }, [isPlaying, feedbackType, currentRoot, recordAnswer, isBeginner, submit, spacedRecordResult]);
 
   // 全局键盘监听
   useEffect(() => {

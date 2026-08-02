@@ -675,11 +675,11 @@ export default function Layout() {
                         const file = e.target.files?.[0];
                         if (!file) return;
                         const result = await importProgressFromFile(file);
-                        if (result.success > 0) {
-                          alert(`成功导入 ${result.success} 项进度数据，页面将刷新`);
+                        if (result.success) {
+                          alert('进度导入成功，页面将刷新');
                           window.location.reload();
                         } else {
-                          alert(`导入失败：${result.errors.join(', ')}`);
+                          alert(`导入失败：${result.error || '未知错误'}`);
                         }
                         e.target.value = '';
                       }}

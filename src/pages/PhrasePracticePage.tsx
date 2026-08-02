@@ -141,6 +141,7 @@ interface SessionResult {
   correct: boolean;
   input: string;
   time: number;
+  fullCode: string;
 }
 
 export default function PhrasePracticePage() {
@@ -156,7 +157,6 @@ export default function PhrasePracticePage() {
   const rawLevel = preferences.phraseMode;
   const level: PracticeLevel = (rawLevel === 'beginner' || rawLevel === 'advanced') ? rawLevel : 'beginner';
   const isBeginner = level === 'beginner';
-  const config = modeConfig[level];
 
   // ============================================
   // 答错处理策略（对齐字根练习）：
@@ -166,21 +166,6 @@ export default function PhrasePracticePage() {
   //   答错的词组加入错题重练队列，3 步后重新出现。
   // ============================================
   const wrongQueueRef = useRef<{ phrase: PhraseItem; step: number }[]>([]);
-
-  const {
-    isPlaying, start, stop, reset, submit,
-    keyFeedback, feedbackType, stats, accuracy,
-  } = usePracticeSession({
-    correctClearDelay: 800,
-    wrongClearDelay: isBeginner ? 2500 : 1500,
-    onCorrect: () => advancePhrase(),
-    onWrong: () => {
-      if (currentPhrase) {
-        wrongQueueRef.current.push({ phrase: currentPhrase, step: 0 });
-      }
-      advancePhrase();
-    },
-  });
 
   const [currentPhrase, setCurrentPhrase] = useState<PhraseItem | null>(null);
   const [inputCode, setInputCode] = useState('');
@@ -192,6 +177,12 @@ export default function PhrasePracticePage() {
 
   const answerStartTime = useRef<number>(0);
 
+  // 用 ref 持有最新 currentPhrase，使 useMemo 缓存的 onWrong 闭包不会捕获过期值
+  const currentPhraseRef = useRef(currentPhrase);
+  useEffect(() => {
+    currentPhraseRef.current = currentPhrase;
+  });
+
   // 词组池（同步计算，getPhraseCode 有缓存，构建足够快）
   const phrasePool = useMemo(() => {
     if (!charCodeData || !phrasesData) return [];
@@ -201,13 +192,16 @@ export default function PhrasePracticePage() {
   const poolCount = phrasePool.length;
 
   const advancePhrase = useCallback(() => {
-    // 优先取错题（已隔 ≥3 步）
-    wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
+    // 优先取错题（已隔 ≥3 步）；原地修改队列避免重新赋值 ref.current
+    for (const w of wrongQueueRef.current) w.step += 1;
     const dueWrong = wrongQueueRef.current.find(w => w.step >= 3);
     if (dueWrong) {
-      wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
+      const idx = wrongQueueRef.current.indexOf(dueWrong);
+      if (idx >= 0) wrongQueueRef.current.splice(idx, 1);
       setCurrentPhrase(dueWrong.phrase);
       setInputCode('');
+      // 重置计时起点，否则下一题用时统计会累积前面的时间
+      answerStartTime.current = Date.now();
       return;
     }
     const nextIndex = (currentIndex + 1) % phraseQueue.length;
@@ -218,12 +212,31 @@ export default function PhrasePracticePage() {
       setCurrentIndex(0);
       setCurrentPhrase(reshuffled[0]);
       setInputCode('');
+      answerStartTime.current = Date.now();
       return;
     }
     setCurrentIndex(nextIndex);
     setCurrentPhrase(phraseQueue[nextIndex]);
     setInputCode('');
+    answerStartTime.current = Date.now();
   }, [currentIndex, phraseQueue]);
+
+  const {
+    isPlaying, start, stop, reset, submit,
+    keyFeedback, feedbackType, stats, accuracy,
+  } = usePracticeSession(useMemo(() => ({
+    correctClearDelay: 800,
+    wrongClearDelay: isBeginner ? 2500 : 1500,
+    onCorrect: () => advancePhrase(),
+    onWrong: () => {
+      // 通过 ref 读取最新 currentPhrase，避免闭包捕获过期值
+      const phrase = currentPhraseRef.current;
+      if (phrase) {
+        wrongQueueRef.current.push({ phrase, step: 0 });
+      }
+      advancePhrase();
+    },
+  }), [isBeginner, advancePhrase]));
 
   const stopPractice = useCallback(() => {
     // 停止练习：显示统计（如有结果）
@@ -246,6 +259,8 @@ export default function PhrasePracticePage() {
   const startPractice = useCallback(() => {
     if (phrasePool.length === 0) return;
     setStoreMode(level); // 真正开始练习时才记录 lastMode
+    // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
+    wrongQueueRef.current = [];
     const shuffled = shuffleArray(phrasePool);
     setPhraseQueue(shuffled);
     setCurrentIndex(0);
@@ -271,7 +286,7 @@ export default function PhrasePracticePage() {
 
     const correctCode = currentPhrase.fullCode;
     const time = Date.now() - answerStartTime.current;
-    const result = { phrase: currentPhrase.phrase, input: newCode, time };
+    const result = { phrase: currentPhrase.phrase, input: newCode, time, fullCode: correctCode };
 
     if (correctCode.startsWith(newCode)) {
       if (newCode === correctCode) {
@@ -587,7 +602,7 @@ export default function PhrasePracticePage() {
                     </span>
                     {!result.correct && (
                       <span className="text-xs text-muted-foreground font-mono">
-                        → {phraseQueue[i]?.fullCode.toUpperCase()}
+                        → {result.fullCode.toUpperCase()}
                       </span>
                     )}
                     <span className="ml-auto text-xs text-muted-foreground font-mono-stat">
