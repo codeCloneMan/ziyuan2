@@ -90,6 +90,9 @@ export default function PracticePage() {
   const [restartNonce, setRestartNonce] = useState(0);
 
   const inputRef = useRef<HTMLInputElement>(null);
+  // 用户是否正在使用原生输入框（软键盘）：仅在此时切题后保持 focus，
+  // 避免 Android 上每次切题强制 focus 导致软键盘反复弹出、遮挡虚拟键盘
+  const nativeInputActiveRef = useRef(false);
 
   // 用 ref 持有最新 currentRoot，避免 usePracticeSession 的 onWrong 闭包
   // 把 currentRoot.char 放入 deps 导致 session 频繁重建（每次切题都会重建）
@@ -301,6 +304,8 @@ export default function PracticePage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying) return;
+      // 中文输入法组合期间不提交（isComposing 为主，keyCode 229 为 WebView 纵深防御）
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { stopPractice(); return; }
       if (e.key === ' ') { e.preventDefault(); setPref('showHint', !showHint); return; }
       const key = e.key.toLowerCase();
@@ -314,7 +319,11 @@ export default function PracticePage() {
   }, [isPlaying, handleKeyPress, stopPractice, showHint, setPref]);
 
   useEffect(() => {
-    if (isPlaying && inputRef.current) inputRef.current.focus();
+    // 仅当用户在用原生输入（软键盘）时，切题后保持焦点；
+    // 虚拟键盘用户不被强制弹软键盘
+    if (isPlaying && inputRef.current && nativeInputActiveRef.current) {
+      inputRef.current.focus();
+    }
   }, [isPlaying, currentRoot]);
 
   // ============================================
@@ -481,6 +490,7 @@ export default function PracticePage() {
               phoneticHint={phoneticHint}
               inputRef={inputRef}
               onNativeInput={handleKeyPress}
+              onNativeFocusChange={(f) => { nativeInputActiveRef.current = f; }}
             />
 
             <PracticeKeyboard

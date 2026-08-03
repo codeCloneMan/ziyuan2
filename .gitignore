@@ -8,6 +8,7 @@ dist/
 .vscode/
 .idea/
 .trae/
+.reasonix/
 .codebuddy/
 
 # OS

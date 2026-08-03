@@ -191,7 +191,7 @@ export default function PracticeKeyboard({
         {/* 编码模式：退格键行 */}
         {mode === 'codes' && onBackspace && (
           <div className="flex gap-[3px] sm:gap-1 w-full" style={{ paddingLeft: '12px' }}>
-            <button onClick={onBackspace}
+            <button onClick={() => { hapticFeedback('tap'); onBackspace(); }}
               onMouseDown={(e) => e.preventDefault()}
               className="flex-[2] min-w-0 h-11 sm:flex-none sm:h-10 sm:w-18 rounded-lg font-medium text-xs transition-all duration-150 border border-border/60 bg-card hover:bg-secondary/40 flex items-center justify-center gap-1">
               <Delete className="h-3 w-3" />

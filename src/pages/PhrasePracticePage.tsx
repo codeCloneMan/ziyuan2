@@ -176,6 +176,7 @@ export default function PhrasePracticePage() {
   const [showSettings, setShowSettings] = useState(true);
 
   const answerStartTime = useRef<number>(0);
+  const phraseInputRef = useRef<HTMLInputElement>(null);
 
   // 用 ref 持有最新 currentPhrase，使 useMemo 缓存的 onWrong 闭包不会捕获过期值
   const currentPhraseRef = useRef(currentPhrase);
@@ -312,6 +313,8 @@ export default function PhrasePracticePage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying) return;
+      // 中文输入法组合期间不提交（isComposing 为主，keyCode 229 为 WebView 纵深防御）
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { stopPractice(); return; }
       if (feedbackType) return;
       if (e.key === 'Backspace') {
@@ -497,6 +500,37 @@ export default function PhrasePracticePage() {
                 })}
               </div>
 
+              {/* 原生输入框：手机软键盘/桌面直接键入（beforeinput 逐按键提交，中文组合被忽略） */}
+              <div className="flex justify-center mb-3">
+                <input
+                  ref={phraseInputRef}
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  placeholder="输入四码"
+                  onBeforeInput={(e) => {
+                    const ne = e.nativeEvent as InputEvent;
+                    if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
+                      e.preventDefault(); // 受控组件无需实际插入
+                      handleKeyPress(ne.data.toLowerCase());
+                    } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
+                      e.preventDefault();
+                      // 与 window keydown 的 Backspace 分支一致：反馈期间不允许删除；粘贴/拖放无意义
+                      if (ne.inputType === 'deleteContentBackward' && !feedbackType) setInputCode(c => c.slice(0, -1));
+                    }
+                  }}
+                  className={cn(
+                    "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-lg caret-primary focus:outline-none transition-colors",
+                    keyFeedback && feedbackType === 'correct' && "border-emerald-400 bg-emerald-50 text-emerald-600",
+                    keyFeedback && feedbackType === 'wrong' && "border-red-400 bg-red-50 text-red-600",
+                    !keyFeedback && "border-primary/30"
+                  )}
+                  value={inputCode.toUpperCase()} />
+              </div>
+
               {/* 正确答案（错误时显示） */}
               {feedbackType === 'wrong' && (
                 <div className="text-lg font-mono font-bold text-red-600 animate-fadeIn">
@@ -530,7 +564,7 @@ export default function PhrasePracticePage() {
             )}
 
             {/* 手机端作答提示 */}
-            <p className="sm:hidden text-center text-xs text-muted-foreground/70 mb-2">点击下方键盘作答</p>
+            <p className="sm:hidden text-center text-xs text-muted-foreground/70 mb-2">点击上方输入框或用下方键盘作答</p>
 
             {/* 虚拟键盘 */}
             <PracticeKeyboard

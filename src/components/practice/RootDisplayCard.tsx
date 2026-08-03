@@ -14,6 +14,8 @@ interface RootDisplayCardProps {
   inputRef: React.RefObject<HTMLInputElement | null>;
   /** 原生键盘（手机/桌面直接键入）输入回调 */
   onNativeInput?: (char: string) => void;
+  /** 原生输入框聚焦状态变化（用于页面决定切题后是否保持焦点/软键盘） */
+  onNativeFocusChange?: (focused: boolean) => void;
 }
 
 export default function RootDisplayCard({
@@ -25,6 +27,7 @@ export default function RootDisplayCard({
   phoneticHint,
   inputRef,
   onNativeInput,
+  onNativeFocusChange,
 }: RootDisplayCardProps) {
   const [focused, setFocused] = useState(false);
 
@@ -73,17 +76,26 @@ export default function RootDisplayCard({
             ref={inputRef}
             type="text"
             inputMode="text"
-            autoFocus
             autoComplete="off"
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
             placeholder="输入键位"
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onChange={(e) => {
-              const ch = e.target.value.slice(-1).toLowerCase();
-              if (ch && /^[a-z]$/.test(ch)) onNativeInput?.(ch);
+            onFocus={() => { setFocused(true); onNativeFocusChange?.(true); }}
+            onBlur={() => { setFocused(false); onNativeFocusChange?.(false); }}
+            onBeforeInput={(e) => {
+              // 逐物理按键提交（beforeinput）：英文键盘每次按键触发一次 insertText；
+              // 中文输入法组合过程（insertCompositionText/insertFromComposition）被忽略，
+              // 避免组合提交时旧 slice(-1) 逻辑丢字符/误判
+              const ne = e.nativeEvent as InputEvent;
+              if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
+                e.preventDefault(); // 受控组件无需实际插入
+                onNativeInput?.(ne.data.toLowerCase());
+              } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
+                // 字根练习每题一键：退格/粘贴/拖放均无意义，
+                // 阻止默认行为避免受控 value 与 state 脱同步或残留未提交文本
+                e.preventDefault();
+              }
             }}
             className={cn(
               "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold caret-primary",

@@ -174,7 +174,9 @@ export default function WholeCharPracticePage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const splitAnimTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [inputFocused, setInputFocused] = useState(false);
-  const nativePrevRef = useRef('');
+  // 用户是否正在使用原生输入框（软键盘）：仅在此时切题后保持 focus，
+  // 避免 Android 上每次切题强制 focus 导致软键盘反复弹出、遮挡虚拟键盘
+  const nativeInputActiveRef = useRef(false);
 
   const splitParts = useMemo(() => getSplitParts(currentItem.char), [currentItem.char]);
   const codeRule = useMemo(() => getCodeRule(currentItem.code), [currentItem.code]);
@@ -331,6 +333,8 @@ export default function WholeCharPracticePage() {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying || feedbackType) return;
+      // 中文输入法组合期间不提交（isComposing 为主，keyCode 229 为 WebView 纵深防御）
+      if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { stopPractice(); return; }
       if (e.key === ' ') {
         e.preventDefault();
@@ -359,31 +363,29 @@ export default function WholeCharPracticePage() {
   }, [isPlaying, feedbackType, handleKeyPress, stopPractice, splitParts.length, showHint, inputCode, setPref]);
 
   useEffect(() => {
-    if (isPlaying && inputRef.current) inputRef.current.focus();
+    // 仅当用户在用原生输入（软键盘）时，切题后保持焦点；
+    // 虚拟键盘用户不被强制弹软键盘（Android 上反复 focus 会反复弹出软键盘）
+    if (isPlaying && inputRef.current && nativeInputActiveRef.current) {
+      inputRef.current.focus();
+    }
   }, [isPlaying, currentItem]);
 
-  // 同步原生键盘输入比对基准，避免自定义键盘与原生键盘混用时错位
-  useEffect(() => { nativePrevRef.current = inputCode; }, [inputCode]);
-
-  // 原生键盘（手机/桌面直接键入）输入处理：与当前编码逐字比对，增量提交
-  const handleNativeInput = useCallback((raw: string) => {
-    if (feedbackType) { nativePrevRef.current = inputCode; return; }
-    const val = raw.toLowerCase().replace(/[^a-z]/g, '');
-    const prev = nativePrevRef.current;
-    if (val === prev) return;
-    if (val.startsWith(prev) && val.length > prev.length) {
-      const appended = val.slice(prev.length);
-      for (const ch of appended) handleKeyPress(ch);
-    } else if (prev.startsWith(val) && val.length < prev.length) {
-      const removed = prev.length - val.length;
-      for (let i = 0; i < removed; i++) {
-        if (!feedbackType) setInputCode(c => c.slice(0, -1));
-      }
-    } else {
-      setInputCode(val);
+  // 原生键盘输入（手机软键盘/桌面直接键入）：beforeinput 逐物理按键提交。
+  // 英文键盘每次按键触发一次 insertText；中文输入法组合过程
+  // （insertCompositionText/insertFromComposition）被忽略，避免组合提交时
+  // 旧 diff 逻辑把多个字符当作同一题的多个编码（误判）或注入下一题。
+  const handleNativeBeforeInput = useCallback((e: React.FormEvent<HTMLInputElement>) => {
+    const ne = e.nativeEvent as InputEvent;
+    if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
+      e.preventDefault(); // 受控组件无需实际插入
+      handleKeyPress(ne.data.toLowerCase());
+    } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
+      e.preventDefault();
+      // 与 window keydown 的 Backspace 分支一致：反馈期间不允许删除；
+      // 粘贴/拖放无意义且会污染受控输入框，一律阻止（与字根/词组输入一致）
+      if (ne.inputType === 'deleteContentBackward' && !feedbackType) setInputCode(c => c.slice(0, -1));
     }
-    nativePrevRef.current = val;
-  }, [feedbackType, handleKeyPress, inputCode]);
+  }, [handleKeyPress, feedbackType]);
 
   const renderCodeWithColor = (code: string) => {
     const rule = getCodeRule(code);
@@ -515,7 +517,7 @@ export default function WholeCharPracticePage() {
   return (
     <div className="min-h-screen bg-background">
       <div className="sticky z-30 border-b border-border bg-card"
-        style={{ top: 'calc(4rem + env(safe-area-inset-top))' }}>
+        style={{ top: 'calc(3.5rem + env(safe-area-inset-top))' }}>
         <div className="container-page max-w-5xl py-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -638,9 +640,9 @@ export default function WholeCharPracticePage() {
                       <input ref={inputRef} type="text" inputMode="text"
                         autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
                         placeholder="输入编码"
-                        onFocus={() => setInputFocused(true)}
-                        onBlur={() => setInputFocused(false)}
-                        onChange={(e) => handleNativeInput(e.target.value)}
+                        onFocus={() => { setInputFocused(true); nativeInputActiveRef.current = true; }}
+                        onBlur={() => { setInputFocused(false); nativeInputActiveRef.current = false; }}
+                        onBeforeInput={handleNativeBeforeInput}
                         className={cn(
                           "w-48 sm:w-56 h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono bg-muted border-2 rounded-lg caret-primary focus:outline-none transition-[border-color,background-color,color] duration-200",
                           keyFeedback && feedbackType === 'correct' && "border-emerald-400 bg-emerald-50 text-emerald-600",
