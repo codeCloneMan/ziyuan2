@@ -61,7 +61,11 @@ export default function PracticeKeyboard({
   headerLeft,
   headerRight,
 }: PracticeKeyboardProps) {
-  const [displayMode, setDisplayMode] = useState<KeyboardDisplayMode>('roots');
+  // 键盘显示模式记忆：记住用户上次选择（字根/编码/空白），下次进入练习直接恢复
+  const [displayMode, setDisplayMode] = useState<KeyboardDisplayMode>(() => {
+    const saved = localStorage.getItem('ziyuan-keyboard-mode');
+    return saved === 'roots' || saved === 'codes' || saved === 'blank' ? saved : 'roots';
+  });
   const [selectedKeyInfo, setSelectedKeyInfo] = useState<string | null>(null);
   // 防止移动端 touch + click 双重触发
   const touchHandledRef = useRef<Set<string>>(new Set());
@@ -95,7 +99,7 @@ export default function PracticeKeyboard({
             </div>
             <div className="flex items-center gap-0.5">
               {(['roots', 'codes', 'blank'] as KeyboardDisplayMode[]).map(dm => (
-                <button key={dm} onClick={() => setDisplayMode(dm)}
+                <button key={dm} onClick={() => { setDisplayMode(dm); localStorage.setItem('ziyuan-keyboard-mode', dm); }}
                   className={cn('px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors',
                     displayMode === dm ? 'bg-primary/10 text-primary' : 'text-muted-foreground/50 hover:text-foreground'
                   )}>

@@ -365,7 +365,7 @@ export default function PhrasePracticePage() {
               {poolReady ? '开始练习' : '加载中...'}
             </Button>
             <p className="text-xs text-muted-foreground mb-8">
-              {poolCount.toLocaleString()} 个词组 · 每次 20 个 · 今日 {todayStats.attempts} 题
+              {poolCount.toLocaleString()} 个词组 · 完整循环随机练习 · 今日 {todayStats.attempts} 题
             </p>
 
             {/* 设置 */}

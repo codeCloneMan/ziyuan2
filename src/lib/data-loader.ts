@@ -8,17 +8,77 @@
 // ========================================
 // 通用 JSON 缓存
 // ========================================
+/**
+ * 三级缓存策略，让 3.6MB 码表数据"秒开"：
+ *   1. 内存缓存（Map）：本次会话内最快，多次访问零等待
+ *   2. Cache Storage：跨会话持久化，刷新/重开页面无需重新下载
+ *   3. 网络：首次访问或缓存失效时拉取，并回写持久化缓存
+ *
+ * 采用 stale-while-revalidate：命中缓存立即返回，同时后台
+ * 重新拉取网络数据并更新缓存，保证内容不会永久过期。
+ */
 const jsonCache = new Map<string, unknown>();
 
+/** Cache Storage 版本号：数据文件 schema 变更时 +1，使旧缓存自动作废 */
+const DATA_CACHE_NAME = 'ziyuan-data-v1';
+
+function cacheAvailable(): boolean {
+  return typeof window !== 'undefined' && 'caches' in window;
+}
+
+/** 从 Cache Storage 读取已缓存的 JSON */
+async function getCachedJSON<T>(url: string): Promise<T | null> {
+  if (!cacheAvailable()) return null;
+  try {
+    const cache = await caches.open(DATA_CACHE_NAME);
+    const resp = await cache.match(url);
+    if (!resp || !resp.ok) return null;
+    const data = (await resp.json()) as T;
+    jsonCache.set(url, data); // 同步进内存缓存
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+/** 把 JSON 写入 Cache Storage */
+async function putCachedJSON(url: string, data: unknown): Promise<void> {
+  if (!cacheAvailable()) return;
+  try {
+    const cache = await caches.open(DATA_CACHE_NAME);
+    const resp = new Response(JSON.stringify(data), {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    });
+    await cache.put(url, resp);
+  } catch {
+    /* 忽略缓存写入失败（如隐私模式） */
+  }
+}
+
+/** 从网络拉取 JSON 并回写两级缓存 */
+async function fetchFromNetwork<T>(url: string): Promise<T> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  const data = (await res.json()) as T;
+  jsonCache.set(url, data);
+  void putCachedJSON(url, data);
+  return data;
+}
+
 export async function fetchJSON<T>(url: string): Promise<T> {
+  // 1. 内存缓存
   const cached = jsonCache.get(url);
   if (cached !== undefined) return cached as T;
 
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
-  const data: T = await res.json();
-  jsonCache.set(url, data);
-  return data;
+  // 2. Cache Storage 持久化缓存（stale-while-revalidate：命中即返回 + 后台刷新）
+  const persistent = await getCachedJSON<T>(url);
+  if (persistent !== null) {
+    void fetchFromNetwork(url).catch(() => { /* 离线时静默使用缓存 */ });
+    return persistent;
+  }
+
+  // 3. 网络
+  return fetchFromNetwork<T>(url);
 }
 
 // ========================================

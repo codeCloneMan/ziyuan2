@@ -173,6 +173,28 @@ export default function Layout() {
     return () => document.removeEventListener('keydown', handleEsc);
   }, []);
 
+  // 全局快捷键：按 / 打开搜索并聚焦（工具站通用习惯，提升检索效率）
+  useEffect(() => {
+    function handleSlash(e: KeyboardEvent) {
+      // 输入框内不拦截（避免打断正在输入的内容）
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+      if (e.key === '/' && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        setSearchOpen(true);
+        setToolsOpen(false);
+        setMobileMenuOpen(false);
+        // 等搜索栏渲染后聚焦输入框
+        setTimeout(() => {
+          const input = document.querySelector<HTMLInputElement>('[data-global-search-input]');
+          input?.focus();
+        }, 0);
+      }
+    }
+    document.addEventListener('keydown', handleSlash);
+    return () => document.removeEventListener('keydown', handleSlash);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* 导航栏 - 毛玻璃质感 */}
@@ -270,13 +292,15 @@ export default function Layout() {
                 setToolsOpen(false);
               }}
               className={cn(
-                'h-8 w-8 flex items-center justify-center rounded-md transition-colors',
+                'h-8 w-8 flex items-center justify-center rounded-md transition-colors relative group',
                 searchOpen
                   ? 'bg-secondary text-foreground'
                   : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
               )}
+              title="全局搜索（快捷键 /）"
             >
               <Search className="h-3.5 w-3.5" />
+              <kbd className="hidden sm:inline absolute -bottom-0.5 -right-0.5 px-0.5 rounded bg-muted border border-border/60 text-[8px] font-mono text-muted-foreground/70 leading-tight">/</kbd>
             </button>
 
             <button
@@ -354,11 +378,12 @@ export default function Layout() {
                 <Search className="icon" />
                 <input
                   type="text"
-                  placeholder="搜索字根、汉字或编码..."
+                  placeholder="搜索字根、汉字或编码...（快捷键 /）"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full"
                   autoFocus
+                  data-global-search-input
                 />
               </div>
 
