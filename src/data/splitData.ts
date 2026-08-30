@@ -4,7 +4,7 @@
  * 数据来源：public/字源拆分.txt（20,901条）
  */
 
-import splitRaw from '../../public/字源拆分.txt?raw';
+import splitRaw from './字源拆分.txt?raw';
 
 /** 汉字 → 拆分字符串 */
 export const charSplits = new Map<string, string>();

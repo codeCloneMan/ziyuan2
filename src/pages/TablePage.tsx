@@ -87,17 +87,17 @@ export default function TablePage() {
             v1.32版完整字根表
           </Badge>
           
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-3 animate-slideInUp" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-3 animate-slide-in-up" style={{ fontFamily: "'Noto Serif SC', serif" }}>
             字根总表
           </h1>
           
-          <p className="text-sm text-muted-foreground/70 max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s', fontFamily: "'Noto Serif SC', serif" }}>
+          <p className="text-sm text-muted-foreground/70 max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s', fontFamily: "'Noto Serif SC', serif" }}>
             共 <span className="font-mono-stat font-bold text-foreground">{totalRoots}</span> 个字根，
             分布在 <span className="font-mono-stat font-bold text-primary">26</span> 个键位上
           </p>
 
           {/* 快速统计 */}
-          <div className="mt-6 sm:mt-10 flex items-center justify-center gap-4 sm:gap-12 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="mt-6 sm:mt-10 flex items-center justify-center gap-4 sm:gap-12 animate-fade-in" style={{ animationDelay: '0.2s' }}>
             <div className="text-center">
               <div className="stat-number font-mono-stat text-primary">{totalRoots}</div>
               <div className="stat-label">总字根数</div>
@@ -278,11 +278,11 @@ export default function TablePage() {
       {/* 字根详情弹窗 */}
       {selectedRoot && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => setSelectedRoot(null)}
         >
           <div
-            className="w-full max-w-md bg-card rounded-lg shadow-2xl border border-border/50 overflow-hidden animate-slideInUp"
+            className="w-full max-w-md bg-card rounded-lg shadow-2xl border border-border/50 overflow-hidden animate-slide-in-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 弹窗头部 */}

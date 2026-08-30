@@ -163,7 +163,6 @@ export default function PracticeKeyboard({
                   {showRootsExtras && displayMode === 'roots' && (
                     <span className="text-[7px] sm:text-[9px] leading-tight text-center mt-0.5 line-clamp-2 text-muted-foreground/70 root-char">
                       {rootsOnKey.slice(0, 3).map(r => r.char).join('')}
-                      {rootsOnKey.length > 3 && '…'}
                     </span>
                   )}
                   {showRootsExtras && displayMode === 'codes' && (
@@ -173,7 +172,7 @@ export default function PracticeKeyboard({
                   )}
                   {/* 字根模式：点击键位展开详情 */}
                   {showRootsExtras && selectedKeyInfo === key && (
-                    <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-36 sm:w-44 p-2 rounded-lg bg-popover border border-border/60 shadow-lg animate-fadeIn">
+                    <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-36 sm:w-44 p-2 rounded-lg bg-popover border border-border/60 shadow-lg animate-fade-in">
                       <div className="text-[11px] font-medium text-foreground mb-1" style={{ fontFamily: "'Noto Serif SC', serif" }}>{key.toUpperCase()} 键字根</div>
                       <div className="flex flex-wrap gap-0.5">
                         {rootsOnKey.map(r => (

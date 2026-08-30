@@ -36,17 +36,17 @@ export default function ChartPage() {
             v1.32版完整字根图
           </Badge>
           
-          <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
+          <h1 className="text-2xl sm:text-3xl lg:text-5xl font-bold tracking-tight mb-4 animate-slide-in-up">
             字根
             <span className="text-gradient-primary"> 图</span>
           </h1>
           
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s' }}>
             字源形码 v1.32 字根键位分布图
           </p>
 
           {/* 快速操作 - 与 icon 放一行 */}
-          <div className="mt-8 flex items-center justify-center gap-3 animate-fadeIn" style={{ animationDelay: '0.2s' }}>
+          <div className="mt-8 flex items-center justify-center gap-3 animate-fade-in" style={{ animationDelay: '0.2s' }}>
             <a href="./字源字根图.png" download="字源1.32字根图.png">
               <Button className="gap-2">
                 <Download className="h-4 w-4" />
@@ -202,7 +202,7 @@ export default function ChartPage() {
       {/* 全屏遮罩 */}
       {fullscreen && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm cursor-zoom-out animate-fadeIn"
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-sm cursor-zoom-out animate-fade-in"
           onClick={toggleFullscreen}
         >
           {/* 关闭按钮 */}
@@ -223,7 +223,7 @@ export default function ChartPage() {
           <img
             src="./字源字根图.png"
             alt="字源形码 v1.32 字根图"
-            className="max-h-[92vh] max-w-[92vw] object-contain rounded-lg shadow-2xl animate-slideInUp"
+            className="max-h-[92vh] max-w-[92vw] object-contain rounded-lg shadow-2xl animate-slide-in-up"
             draggable={false}
             onClick={(e) => e.stopPropagation()}
           />

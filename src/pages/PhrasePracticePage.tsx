@@ -173,7 +173,6 @@ export default function PhrasePracticePage() {
   const [showStats, setShowStats] = useState(false);
   const [phraseQueue, setPhraseQueue] = useState<PhraseItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showSettings, setShowSettings] = useState(true);
 
   const answerStartTime = useRef<number>(0);
   const phraseInputRef = useRef<HTMLInputElement>(null);
@@ -351,73 +350,85 @@ export default function PhrasePracticePage() {
 
       {/* 级别选择（未开始时） */}
       {!isPlaying && !showStats && (
-        <section className="py-12 sm:py-20">
-          <div className="container-page text-center max-w-xl mx-auto">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-              词组<span className="text-gradient-primary">练习</span>
-            </h1>
-            <p className="text-muted-foreground mb-10">
-              看词组，打四码编码。练习常用词组的输入
-            </p>
+        <div className="min-h-[calc(100vh-3.5rem)] bg-mesh">
+          <section className="container-page py-10 sm:py-16">
+            <div className="max-w-4xl mx-auto">
+              <header className="text-center mb-8 sm:mb-10">
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
+                  词组<span className="text-gradient-primary">练习</span>
+                </h1>
+                <p className="text-muted-foreground max-w-lg mx-auto">
+                  看词组，打四码编码。练习常用词组的输入
+                </p>
+              </header>
 
-            <Button size="lg" onClick={startPractice} disabled={!poolReady} className="btn-primary text-lg px-12 py-4 mb-4">
-              <Play className="h-5 w-5 mr-2" />
-              {poolReady ? '开始练习' : '加载中...'}
-            </Button>
-            <p className="text-xs text-muted-foreground mb-8">
-              {poolCount.toLocaleString()} 个词组 · 完整循环随机练习 · 今日 {todayStats.attempts} 题
-            </p>
-
-            {/* 设置 */}
-            <details open={showSettings} onToggle={e => setShowSettings(e.currentTarget.open)} className="text-left max-w-sm mx-auto">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors text-center">
-                练习设置
-              </summary>
-              <div className="mt-4 space-y-3">
-                <div className="text-xs font-semibold text-foreground mb-2">练习级别</div>
-                <div className="grid grid-cols-2 gap-2">
-                  {(Object.keys(modeConfig) as PracticeLevel[]).map((lvl) => {
-                    const cfg = modeConfig[lvl];
-                    return (
-                      <button key={lvl} onClick={() => handleLevelChange(lvl)}
-                        className={cn('p-3 rounded-lg border text-center transition-all',
-                          level === lvl ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border/50 hover:border-primary/30')}>
-                        <div className="flex items-center justify-center gap-1.5 mb-1">
-                          <cfg.icon className={cn('h-4 w-4', level === lvl ? 'text-primary' : 'text-muted-foreground')} />
-                          <span className={cn('font-semibold text-sm', level === lvl ? 'text-foreground' : 'text-muted-foreground')}>{cfg.label}</span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground">{cfg.description}</div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
-                  <span className="text-xs text-muted-foreground">新词组自动显示答案提示</span>
-                  <button onClick={() => setPref('phraseShowHint', !phraseShowHint)}
-                    className={cn('w-9 h-5 rounded-full transition-colors relative',
-                      phraseShowHint ? 'bg-primary' : 'bg-muted-foreground/30')}>
-                    <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                      phraseShowHint ? 'left-[18px]' : 'left-0.5')} />
-                  </button>
-                </div>
-
-                {(phraseProgress.totalAttempts > 0 || phraseProgress.bestStreak > 0) && (
-                  <div className="mt-2 pt-2 border-t border-border/40 text-[11px] text-muted-foreground space-y-1">
-                    <div className="flex justify-between">
-                      <span>累计练习</span>
-                      <span className="font-mono-stat">{phraseProgress.totalAttempts} 题 / {phraseProgress.totalCorrect} 对</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>历史最佳连击</span>
-                      <span className="font-mono-stat">{phraseProgress.bestStreak}x</span>
-                    </div>
+              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5">
+                {/* 左：开始 + 统计 */}
+                <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
+                  <div className="flex-1 flex flex-col items-center justify-center py-4 mb-6">
+                    <button
+                      onClick={startPractice}
+                      disabled={!poolReady}
+                      className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
+                    >
+                      <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
+                      {poolReady ? '开始练习' : '加载中...'}
+                    </button>
+                    <p className="text-xs text-muted-foreground/70 mt-4">
+                      {poolCount.toLocaleString()} 个词组 · 完整循环随机练习 · 今日 {todayStats.attempts} 题
+                    </p>
                   </div>
-                )}
+
+                  {(phraseProgress.totalAttempts > 0 || phraseProgress.bestStreak > 0) && (
+                    <div className="rounded-xl border border-border/60 bg-muted/20 p-4 grid grid-cols-2 gap-4 text-center">
+                      <div>
+                        <div className="text-xl font-bold font-mono-stat text-foreground">{phraseProgress.totalAttempts}</div>
+                        <div className="text-xs text-muted-foreground">累计练习 · {phraseProgress.totalCorrect} 对</div>
+                      </div>
+                      <div>
+                        <div className="text-xl font-bold font-mono-stat text-amber-500">{phraseProgress.bestStreak}x</div>
+                        <div className="text-xs text-muted-foreground">历史最佳连击</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 右：级别与设置 */}
+                <div className="lg:col-span-2 card-base !rounded-2xl p-6">
+                  <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">练习级别</h2>
+                  <div className="space-y-2 mb-5">
+                    {(Object.keys(modeConfig) as PracticeLevel[]).map((lvl) => {
+                      const cfg = modeConfig[lvl];
+                      return (
+                        <button key={lvl} onClick={() => handleLevelChange(lvl)}
+                          className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200',
+                            level === lvl
+                              ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                              : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                          <div className="flex items-center gap-2">
+                            <cfg.icon className={cn('h-4 w-4 shrink-0', level === lvl ? 'text-primary' : 'text-muted-foreground')} />
+                            <span className={cn('text-sm font-medium', level === lvl ? 'text-foreground' : 'text-muted-foreground')}>{cfg.label}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground/70 mt-0.5">{cfg.description}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
+                    <span className="text-xs text-muted-foreground">新词组自动显示答案提示</span>
+                    <button onClick={() => setPref('phraseShowHint', !phraseShowHint)} aria-label="切换答案提示"
+                      className={cn('w-9 h-5 rounded-full transition-colors relative',
+                        phraseShowHint ? 'bg-primary' : 'bg-muted-foreground/30')}>
+                      <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                        phraseShowHint ? 'left-[18px]' : 'left-0.5')} />
+                    </button>
+                  </div>
+                </div>
               </div>
-            </details>
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
       )}
 
       {/* ===== 练习区 ===== */}
@@ -457,7 +468,7 @@ export default function PhrasePracticePage() {
 
               {/* 逐字全码提示（开启提示或答案揭晓后显示） */}
               {(phraseShowHint || feedbackType) && (
-                <div className="flex justify-center gap-4 text-sm mb-4 animate-fadeIn">
+                <div className="flex justify-center gap-4 text-sm mb-4 animate-fade-in">
                   {currentPhrase.phrase.split('').map((char, i) => (
                     <div key={i} className="text-center">
                       <div className="font-bold root-char">{char}</div>
@@ -533,7 +544,7 @@ export default function PhrasePracticePage() {
 
               {/* 正确答案（错误时显示） */}
               {feedbackType === 'wrong' && (
-                <div className="text-lg font-mono font-bold text-red-600 animate-fadeIn">
+                <div className="text-lg font-mono font-bold text-red-600 animate-fade-in">
                   正确编码：<span className="uppercase">{currentPhrase.fullCode}</span>
                 </div>
               )}
@@ -541,7 +552,7 @@ export default function PhrasePracticePage() {
               {/* 反馈提示 */}
               {feedbackType && (
                 <div className={cn(
-                  'mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium animate-fadeIn',
+                  'mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium animate-fade-in',
                   feedbackType === 'correct'
                     ? 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400'
                     : 'bg-red-100 dark:bg-red-950/30 text-red-700 dark:text-red-400'

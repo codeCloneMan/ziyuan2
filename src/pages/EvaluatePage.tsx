@@ -4,19 +4,19 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { parseCodeTable, type CodeEntry } from '@/lib/code-table-parser';
 import {
   Upload, FileText, BarChart3, Keyboard, CheckCircle2, XCircle, X,
   Loader2, Trash2, ClipboardCopy, Download, AlertTriangle, Activity,
   Award, Zap, Info, Target, Gauge, Flame, BookOpen, Maximize2, Search,
+  TrendingDown,
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import html2canvas from 'html2canvas';
 import { useCharCodeData, useBuiltinPhrases, type BuiltinPhrasesData } from '@/lib/data-loader';
 import { calculateCoverage } from '@/data/builtinCharSets';
+import { tongguiLevel1And2, tongguiAll } from '@/data/tongguiChars';
 import { charFrequency } from '@/data/charFrequency';
-import { calcWeightedSpeedEquivalent, getSpeedEquivalent } from '@/data/speedEquivalent';
+import { calcWeightedSpeedEquivalent, getSpeedEquivalent, calcSpeedIndex } from '@/data/speedEquivalent';
 import { GB2312_CHARS, GBK_CHARS } from '@/data/standardCharsets';
-import { tongguiAll } from '@/data/tongguiChars';
 
 // ========================================
 // 安全计算工具函数
@@ -146,11 +146,6 @@ function filterEntriesByCharset(entries: CodeEntry[], charset: CharsetFilter): C
 // 类型定义
 // ========================================
 
-interface CodeEntry {
-  char: string;
-  code: string;
-}
-
 interface EvaluateResult {
   // 基础数据
   totalChars: number;
@@ -166,6 +161,7 @@ interface EvaluateResult {
   dynamicSelectionRate: number;
   equivalent: number;
   speedEquivalent: number;
+  speedIndex: number;
   compositeScore: number;
 
   // 原有指标
@@ -194,8 +190,15 @@ interface EvaluateResult {
   gbkMaxCandidates: number;
   gb2312StaticDup: number;
   gbkStaticDup: number;
+  /** 通规一二级（6500字）静态重码（非首选字数） */
+  tonggui12StaticDup: number;
+  /** 通规全部（8105字）静态重码（非首选字数） */
+  tongguiAllStaticDup: number;
   weightedSameFingerRate: number;
   weightedHandAltRate: number;
+
+  /** 码长-简码效率曲线：假设用户记住前 N 高频字的简码时的字频加权码长 */
+  shortCodeCurve: Array<{ n: number; avgLen: number }>;
 
   // 详细数据
   topDupes: Array<{ code: string; chars: string[]; count: number }>;
@@ -310,110 +313,49 @@ interface PhraseTierStat {
 // 工具函数
 // ========================================
 
+/**
+ * 活动字频表：默认内置前6000高频字频表，可由用户上传的自定义字频表切换。
+ * 模块级可变引用——评测算法各处（加权码长/选重率/速度当量/分段统计）
+ * 统一经 getCharFrequencyWeight 读取，切换字频表只需替换此引用后重算。
+ */
+let activeFreqTable: Record<string, number> = charFrequency;
+let activeFreqTableName = '内置前6000高频字频表';
+
 function getCharFrequencyWeight(char: string): number {
-  return charFrequency[char] ?? 0.00001;
+  // 字频未收录的字返回 0：自动从加权指标（加权码长/选重率/速度当量/分段统计）
+  // 中剔除（社区口径：无字频数据不参与字频加权），但仍计入非加权指标
+  // （总字数/静重/重码/覆盖率）。各分母均有 safeDivide 除零保护。
+  return activeFreqTable[char] ?? 0;
 }
 
-// ========================================
-// 码表解析
-// ========================================
-
-function parseCodeTable(content: string): CodeEntry[] {
-  const lines = content.split(/\r?\n/);
-  const entries: CodeEntry[] = [];
-  let formatDetected = '';
-  // rime 码表正文前的 YAML 头（--- ... 之间）整体跳过，
-  // 避免 name:/version:/columns:/- text 等行被当成码表条目。
-  // 仅识别文件开头（尚未解析任何条目）的 ---，避免普通码表正文中的 --- 分隔线误触发
-  let inYamlHeader = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith('---') && entries.length === 0 && !formatDetected) { inYamlHeader = true; continue; }
-    if (trimmed.startsWith('...') && !formatDetected) {
-      formatDetected = 'rime';
-      inYamlHeader = false;
-      continue;
+/**
+ * 解析用户上传的字频表。支持：
+ *   - 每行「字 频率」/「字,频率」/「字(Tab)频率」（中英文逗号均可）
+ *   - JSON 对象 { "字": 频率, ... }
+ * 无频率列的行跳过；频率必须为正数。
+ */
+function parseFreqTable(text: string): Record<string, number> {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('{')) {
+    const obj = JSON.parse(trimmed) as Record<string, unknown>;
+    const out: Record<string, number> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const n = typeof v === 'number' ? v : Number(v);
+      if (k.length >= 1 && Number.isFinite(n) && n > 0) out[k] = n;
     }
-    if (trimmed.startsWith('...')) { inYamlHeader = false; continue; }
-    if (inYamlHeader) continue;
-    // 注释行：# 通用（rime 与普通码表）；; 仅普通码表跳过（rime 中 ; 可能是分隔符）
-    if (trimmed.startsWith('#')) continue;
-    if (formatDetected !== 'rime' && trimmed.startsWith(';')) continue;
-
-    let match: RegExpMatchArray | null = null;
-    // 编码格式判断：形码编码为字母/数字混合，纯数字串视为词频权重而非编码
-    const looksLikeCode = (s: string) => /^[\da-z]+$/.test(s) && !/^\d+$/.test(s);
-
-    if (trimmed.includes('\t')) {
-      const parts = trimmed.split('\t');
-      if (parts.length >= 2) {
-        // 与空格分支保持一致：f1 先转小写（编码位置），f2 按编码判断时再转小写
-        const f1 = parts[0].trim().toLowerCase(), f2 = parts[1].trim();
-        if (looksLikeCode(f1)) {
-          entries.push({ char: f2, code: f1 });
-        } else if (looksLikeCode(f2.toLowerCase())) {
-          entries.push({ char: f1, code: f2.toLowerCase() });
-        } else if (f2) {
-          // 两列都不是编码（如 `字 权重`）：无编码可评，跳过
-          continue;
-        }
-        continue;
-      }
-    }
-
-    // 空格分隔的三列及以上：`编码 字 权重`（或 `字 编码 权重`），只取前两列
-    if (!trimmed.includes('\t')) {
-      const parts = trimmed.split(/\s+/);
-      if (parts.length >= 3) {
-        const f1 = parts[0].toLowerCase(), f2 = parts[1];
-        if (looksLikeCode(f1)) {
-          entries.push({ char: f2, code: f1 });
-        } else if (looksLikeCode(f2)) {
-          entries.push({ char: f1, code: f2.toLowerCase() });
-        } else {
-          // 前两列都不是编码（如 `字 权重 权重`）：无编码可评，跳过
-          continue;
-        }
-        continue;
-      }
-    }
-
-    match = trimmed.match(/^(\S+)\s+(\S+)$/);
-    if (match) {
-      const f1 = match[1].toLowerCase(), f2 = match[2];
-      if (looksLikeCode(f1)) {
-        entries.push({ char: f2, code: f1 });
-      } else if (looksLikeCode(f2)) {
-        // 两列：字 编码
-        entries.push({ char: f1, code: f2.toLowerCase() });
-      } else {
-        // 两列都不是编码（如 `字 权重`）：不是可评估的码表条目，跳过
-        continue;
-      }
-      continue;
-    }
-
-    match = trimmed.match(/^(\S+)\s+(.+)$/);
-    if (match) {
-      const code = match[1].toLowerCase(), rest = match[2].trim();
-      if (/^[\da-z]+$/.test(code)) {
-        entries.push({ char: rest, code });
-      } else {
-        entries.push({ char: code, code: rest.toLowerCase().split(/\s+/)[0] ?? '' });
-      }
-      continue;
-    }
-
-    match = trimmed.match(/^(\S)(\S+)$/);
-    if (match && /^[a-z]+$/.test(match[2])) {
-      entries.push({ char: match[1], code: match[2].toLowerCase() });
-    }
+    return out;
   }
-
-  return entries.filter(e => e.char && e.code && e.code.length > 0);
+  const out: Record<string, number> = {};
+  for (const line of trimmed.split('\n')) {
+    const parts = line.trim().split(/[\t,，\s]+/);
+    if (parts.length < 2) continue;
+    const ch = parts[0];
+    const n = Number(parts[1]);
+    if (ch && Number.isFinite(n) && n > 0) out[ch] = n;
+  }
+  return out;
 }
+
 
 // ========================================
 // 模块级常量：全部词组四路归并（只算一次，所有组件共享）
@@ -461,7 +403,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     return {
       totalChars: 0, totalCodes: 0, uniqueCodes: 0, duplicateCount: 0,
       weightedAvgCodeLen: 0, fullDupRate: 0, staticDupCount: 0, simplifiedDupRate: 0,
-      dynamicSelectionRate: 0, equivalent: 0, speedEquivalent: 0, compositeScore: 0,
+      dynamicSelectionRate: 0, equivalent: 0, speedEquivalent: 0, speedIndex: 0, compositeScore: 0,
       avgCodeLength: 0, maxCodeLength: 0, codeLengthStdDev: 0, codeLengthDist: {},
       keyFreq: {}, keyUsageRate: {}, leftHandRate: 0, rightHandRate: 0, fingerLoad: {},
       sameFingerRate: 0, handAlternationRate: 0,
@@ -469,7 +411,9 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
       efficiencyScore: 0, ergonomicsScore: 0, balanceScore: 0,
       maxCandidatesPerCode: 0, codesNeedingPage: 0,
       gb2312MaxCandidates: 0, gbkMaxCandidates: 0, gb2312StaticDup: 0, gbkStaticDup: 0,
+      tonggui12StaticDup: 0, tongguiAllStaticDup: 0,
       weightedSameFingerRate: 0, weightedHandAltRate: 0,
+      shortCodeCurve: [],
       topDupes: [], freqTierStats: [], codeLenChartData: [], fingerChartData: [],
       phraseEval: { twoChar: emptyPhraseTier, threeChar: emptyPhraseTier, fourChar: emptyPhraseTier, overall: emptyPhraseTier },
       phraseDupGroups: [], phraseFreqTierStats: [],
@@ -481,8 +425,11 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   // 不影响码表条目的查找范围（编码始终从完整码表中查找）
 
   // 1. 从完整码表构建 字→所有编码 映射（供词组编码和选重检测使用）
+  //    单字口径：第三方主码表可能混入词组行（如虎码「常用字词」表），
+  //    多字条目不属于单字测评范畴，跳过（词组应由词组测评的码表提供）。
   const allCharToCodes = new Map<string, string[]>();
   for (const entry of entries) {
+    if (entry.char.length !== 1) continue;
     const existing = allCharToCodes.get(entry.char);
     if (existing) {
       if (!existing.includes(entry.code)) existing.push(entry.code);
@@ -491,8 +438,12 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     }
   }
 
-  // 2. 确定目标字集：从字频表取前N高频字，按字集过滤
-  const targetChars = Object.keys(charFrequency);
+  // 2. 确定目标字集：以上传码表自有的字为基准。
+  //    第三方码表（虎码/GBK 扩展/繁体方案等）可能含字频表之外的字，
+  //    若仍以字频表字集为基准会静默丢弃这些字。字频未收录的字
+  //    由 getCharFrequencyWeight 提供兜底权重（1e-5）。
+  //    与 UI「全字库(N字)」标签语义一致（N=码表字数），也与社区测评工具对齐。
+  const targetChars = [...allCharToCodes.keys()];
   const charsetSet = getCharsetSet(charset);
   const evalChars = charsetSet
     ? targetChars.filter(ch => charsetSet.has(ch))
@@ -638,7 +589,9 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   })();
 
   // ★ 速度当量（字频加权）
-  const speedEquiv = calcWeightedSpeedEquivalent(filteredEntries, charFrequency);
+  const speedEquiv = calcWeightedSpeedEquivalent(filteredEntries, activeFreqTable);
+  // ★ 速度指数 = 100 / 速度当量（社区通用换算，直观反映相对速度上限）
+  const speedIndex = calcSpeedIndex(speedEquiv);
 
   // ★ 当量 = 字频加权码长 + 动态选重率（小数形式）
   const equivalent = weightedAvgCodeLen + dynamicSelectionRate;
@@ -664,7 +617,8 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   const codeLenScore = calcScore(weightedAvgCodeLen, 2.5, 4.5, true);
   const dupScore = calcScore(fullDupRate, 3, 15, true);
   const dynamicSelScore = calcScore(dynamicSelectionRate, 0.0005, 0.005, true);
-  const speedEquivScore = calcScore(speedEquiv, 1.0, 1.5, true);
+  // 速度当量阈值参考社区分布：主流形码全码当量集中在 1.27~1.40（字源 1.3473、卿云 1.27、灵明 1.2835）
+  const speedEquivScore = calcScore(speedEquiv, 1.25, 1.45, true);
 
   const compositeScore = Math.max(0, Math.min(100,
     roundTo(30 * codeLenScore / 100 +
@@ -716,26 +670,111 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   const gbkCoverage = gbkResult.percentage;
   const tongguiCoverage = tongguiResult.percentage;
 
-  // 候选项指标
+  // ============================================
+  // 候选项指标 + 静态重码（社区官方口径）
+  // 基于码表全量编码（含简码/全码），而非"每字最短码"：
+  // 静重 = 指定字集内每个编码组的非首选字数；
+  // 候选项数 = 同一编码下的字数（用户输入该码时候选列表长度）。
+  // 此前用最短码统计会严重低估（如字源 GB2312 静重 16 字 vs 全量口径数百字）。
+  // ============================================
+  const fullCodeToChars = new Map<string, string[]>();
+  for (const [ch, codes] of allCharToCodes) {
+    for (const code of codes) {
+      const existing = fullCodeToChars.get(code);
+      if (existing) {
+        if (!existing.includes(ch)) existing.push(ch);
+      } else {
+        fullCodeToChars.set(code, [ch]);
+      }
+    }
+  }
+
   let maxCandidatesPerCode = 0;
   let codesNeedingPage = 0;
-  for (const [, chars] of codeToChars) {
+  for (const [, chars] of fullCodeToChars) {
     if (chars.length > maxCandidatesPerCode) maxCandidatesPerCode = chars.length;
     if (chars.length > 9) codesNeedingPage++;
   }
 
   const gb2312Set = getCharsetSet('gb2312')!;
   const gbkSet = getCharsetSet('gbk')!;
+  const tonggui12Set = new Set(tongguiLevel1And2);
+  const tongguiAllSet = new Set(tongguiAll);
   let gb2312MaxCandidates = 0, gbkMaxCandidates = 0;
   let gb2312StaticDup = 0, gbkStaticDup = 0;
-  for (const [, chars] of codeToChars) {
+  let tonggui12StaticDup = 0, tongguiAllStaticDup = 0;
+  for (const [, chars] of fullCodeToChars) {
     const gb2312Chars = chars.filter(c => gb2312Set.has(c));
     if (gb2312Chars.length > gb2312MaxCandidates) gb2312MaxCandidates = gb2312Chars.length;
     if (gb2312Chars.length > 1) gb2312StaticDup += gb2312Chars.length - 1;
     const gbkChars = chars.filter(c => gbkSet.has(c));
     if (gbkChars.length > gbkMaxCandidates) gbkMaxCandidates = gbkChars.length;
     if (gbkChars.length > 1) gbkStaticDup += gbkChars.length - 1;
+    // 通规静重（口径同社区：字表内每个编码组的非首选字数）
+    const tonggui12Chars = chars.filter(c => tonggui12Set.has(c));
+    if (tonggui12Chars.length > 1) tonggui12StaticDup += tonggui12Chars.length - 1;
+    const tongguiAllChars = chars.filter(c => tongguiAllSet.has(c));
+    if (tongguiAllChars.length > 1) tongguiAllStaticDup += tongguiAllChars.length - 1;
   }
+
+  // ★ 码长-简码效率曲线：假设用户记住前 N 高频字的简码（最短码），
+  //   其余字仍打全码（最长码），得到随 N 递减的字频加权平均码长。
+  //   对应官方测评表中 N=0/50/100/.../全部 那组数据。
+  //   码长数据必须取自码表全量编码（allCharToCodes，含简码与全码）；
+  //   若码表每字只有一条编码（无简码/全码之分），曲线为平线，前端不渲染。
+  const shortCodeCurve = (() => {
+    // 每字：最短码长（简码）与最长码长（全码）
+    const charLens = new Map<string, { min: number; max: number }>();
+    for (const ch of evalChars) {
+      const codes = allCharToCodes.get(ch);
+      if (!codes || codes.length === 0) continue;
+      let min = Infinity, max = 0;
+      for (const code of codes) {
+        const len = code.length;
+        if (len < min) min = len;
+        if (len > max) max = len;
+      }
+      charLens.set(ch, { min, max });
+    }
+    // 按字频降序排列（同频按码面稳定排序）
+    const sortedChars = [...charLens.keys()].sort((a, b) => {
+      const fwA = getCharFrequencyWeight(a);
+      const fwB = getCharFrequencyWeight(b);
+      if (fwB !== fwA) return fwB - fwA;
+      return a < b ? -1 : 1;
+    });
+    const totalFreq = sortedChars.reduce((s, ch) => s + getCharFrequencyWeight(ch), 0);
+    if (totalFreq <= 0) return [];
+
+    const N_STEPS = [0, 50, 100, 200, 300, 400, 500, 1000, sortedChars.length];
+    const seenN = new Set<number>();
+    const curve: Array<{ n: number; avgLen: number }> = [];
+    // N=0 基准：全部字按全码（最长码）计
+    let sumRest = 0;
+    for (const ch of sortedChars) {
+      sumRest += getCharFrequencyWeight(ch) * charLens.get(ch)!.max;
+    }
+    let sumTopMin = 0; // 前 N 字按最短码计
+    let idx = 0;
+    for (const n of N_STEPS) {
+      if (seenN.has(n)) continue;
+      seenN.add(n);
+      while (idx < n && idx < sortedChars.length) {
+        const ch = sortedChars[idx];
+        const lens = charLens.get(ch)!;
+        const f = getCharFrequencyWeight(ch);
+        // 该字从"打全码"切换为"打最短码"：全码贡献移出，最短码贡献移入
+        sumRest -= f * lens.max;
+        sumTopMin += f * lens.min;
+        idx++;
+      }
+      curve.push({
+        n,
+        avgLen: Math.round(safeDivide(sumRest + sumTopMin, totalFreq) * 10000) / 10000,
+      });
+    }
+    return curve;
+  })();
 
   // 效率和工学评分
   const balanceScore = Math.max(0, Math.min(100, 100 - Math.abs(leftHandRate - 50) * 2));
@@ -764,7 +803,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   const ergonomicsScore = Math.max(0, Math.min(100,
     0.35 * calcScore(weightedSameFingerRate, 10, 30, true) +
     0.30 * calcScore(weightedHandAltRate, 50, 30, false) +
-    0.20 * calcScore(speedEquiv, 1.0, 1.5, true) +
+    0.20 * calcScore(speedEquiv, 1.25, 1.45, true) +
     0.15 * balanceScore
   ));
 
@@ -1379,6 +1418,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     dynamicSelectionRate,
     equivalent,
     speedEquivalent: speedEquiv,
+    speedIndex,
     compositeScore,
     avgCodeLength,
     maxCodeLength: maxLen,
@@ -1403,8 +1443,11 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     gbkMaxCandidates,
     gb2312StaticDup,
     gbkStaticDup,
+    tonggui12StaticDup,
+    tongguiAllStaticDup,
     weightedSameFingerRate,
     weightedHandAltRate,
+    shortCodeCurve,
     topDupes: dupeList.slice(0, 30),
     freqTierStats,
     codeLenChartData,
@@ -1482,7 +1525,7 @@ const PhraseFreqPanel = ({
   };
 
   return (
-    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slideInRight">
+    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slide-in-right">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <div>
           <h3 className="font-bold text-sm text-foreground">词频一览</h3>
@@ -1630,7 +1673,7 @@ const CharFreqPanel = ({
   };
 
   return (
-    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slideInRight">
+    <div className="fixed right-0 top-16 bottom-0 z-[55] w-80 bg-card border-l border-border shadow-2xl flex flex-col animate-slide-in-right">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
         <div>
           <h3 className="font-bold text-sm text-foreground">单字一览</h3>
@@ -1721,6 +1764,11 @@ export default function EvaluatePage() {
   } | null>(null);
   const [useBuiltin, setUseBuiltin] = useState(false);
   const [charsetFilter, setCharsetFilter] = useState<CharsetFilter>('all');
+  // 码表内唯一单字数（供「全字库」标签显示；第三方主码表可能混入词组行）
+  const uniqueSingleCharCount = useMemo(
+    () => new Set(rawEntries.filter(e => e.char.length === 1).map(e => e.char)).size,
+    [rawEntries],
+  );
   const [countSpace, setCountSpace] = useState(false); // 计算空格模式
   const resultRef = useRef<HTMLDivElement>(null);
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -1827,6 +1875,35 @@ export default function EvaluatePage() {
     }
   }, [charsetFilter, rawEntries, parsing, reEvaluate]);
 
+  // ★ 字频表切换：字频是加权码长/选重率/速度当量的计算基准
+  const [customFreqTable, setCustomFreqTable] = useState<Record<string, number> | null>(null);
+  const [freqTableName, setFreqTableName] = useState('内置前6000高频字频表');
+
+  const applyFreqTable = useCallback((table: Record<string, number>, name: string) => {
+    activeFreqTable = table;
+    activeFreqTableName = name;
+    setCustomFreqTable(table === charFrequency ? null : table);
+    setFreqTableName(name);
+    // 字频影响全部加权指标：清字集缓存强制全量重算
+    reEvaluate(rawEntries, charsetFilter, true);
+  }, [rawEntries, charsetFilter, reEvaluate]);
+
+  const handleFreqFile = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const table = parseFreqTable(text);
+      const count = Object.keys(table).length;
+      if (count === 0) {
+        setError('字频文件未解析出有效数据。支持格式：每行「字 频率」/「字,频率」/「字(Tab)频率」，或 JSON 对象');
+        return;
+      }
+      setError('');
+      applyFreqTable(table, `${file.name.replace(/\.[^.]+$/, '')}（${count.toLocaleString()}字）`);
+    } catch {
+      setError('字频文件读取或解析失败');
+    }
+  }, [applyFreqTable]);
+
   // 预置方案一键测评
   const handleBuiltinEvaluate = useCallback(async () => {
     setUseBuiltin(true);
@@ -1908,11 +1985,12 @@ export default function EvaluatePage() {
     if (file) handleFile(file);
   }, [handleFile]);
 
-  // 导出图片
+  // 导出图片（html2canvas 体积较大，仅在点击导出时动态加载）
   const exportAsImage = async () => {
     if (!resultRef.current || !result) return;
     setExportingImage(true);
     try {
+      const { default: html2canvas } = await import('html2canvas');
       const canvas = await html2canvas(resultRef.current, {
         backgroundColor: '#ffffff', scale: 2, logging: false, useCORS: true, allowTaint: true,
       });
@@ -1932,19 +2010,27 @@ export default function EvaluatePage() {
     const lines = [
       `码表测评结果 - ${fileName}`,
       `字集范围: ${charsetLabel}`,
+      `字频表: ${activeFreqTableName}`,
       `总字数: ${result.totalChars}`,
       `字频加权码长: ${result.weightedAvgCodeLen.toFixed(3)}`,
       `全码重码率: ${result.fullDupRate.toFixed(2)}%`,
       `出简重码率: ${result.simplifiedDupRate.toFixed(2)}%`,
-      `动态选重率: ${(result.dynamicSelectionRate * 100).toFixed(2)}%`,
-      `当量: ${result.equivalent.toFixed(3)}`,
+      `动态选重率: ${(result.dynamicSelectionRate * 10000).toFixed(1)}‱`,
+      `动态码长(码长+选重): ${result.equivalent.toFixed(3)}`,
       `速度当量: ${result.speedEquivalent.toFixed(3)}`,
+      `速度指数: ${result.speedIndex.toFixed(2)}`,
       `综合评分: ${result.compositeScore.toFixed(1)}/100`,
       `GB2312覆盖率: ${result.gb2312Coverage.toFixed(1)}%`,
       `通规一二级覆盖率: ${result.tongguiCoverage.toFixed(1)}%`,
       `GBK覆盖率: ${result.gbkCoverage.toFixed(1)}%`,
+      `GB2312静态重码: ${result.gb2312StaticDup}`,
+      `GBK静态重码: ${result.gbkStaticDup}`,
+      `通规一二级静态重码: ${result.tonggui12StaticDup}`,
+      `通规全部静态重码: ${result.tongguiAllStaticDup}`,
       `最大候选项数: ${result.maxCandidatesPerCode}`,
       `需翻页编码数: ${result.codesNeedingPage}`,
+      ``,
+      `码长-简码效率曲线: ${result.shortCodeCurve.map(p => `N=${p.n}:${p.avgLen.toFixed(3)}`).join(' ')}`,
       ``,
       `词组测评:`,
       `  二字词: 覆盖${result.phraseEval.twoChar.coverageRate.toFixed(1)}% 码长${result.phraseEval.twoChar.avgCodeLen.toFixed(2)} 重码${result.phraseEval.twoChar.dupRate.toFixed(2)}%`,
@@ -2130,7 +2216,7 @@ export default function EvaluatePage() {
                         {opt.value === 'gb2312' && '(6763字)'}
                         {opt.value === 'gbk' && '(21003字)'}
                         {opt.value === 'tonggui' && '(8105字)'}
-                        {opt.value === 'all' && `(${rawEntries.length.toLocaleString()}字)`}
+                        {opt.value === 'all' && `(${uniqueSingleCharCount.toLocaleString()}字)`}
                       </span>
                     </button>
                   ))}
@@ -2140,6 +2226,47 @@ export default function EvaluatePage() {
                     过滤后 {result.totalChars.toLocaleString()} 字
                   </Badge>
                 )}
+              </div>
+              {/* 字频表：加权码长/选重率/速度当量的计算基准 */}
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3 mt-3 pt-3 border-t border-border/60">
+                <div className="flex items-center gap-2 shrink-0">
+                  <BarChart3 className="h-4 w-4 text-accent" />
+                  <span className="text-sm font-semibold text-foreground">字频表</span>
+                  <Badge variant="outline" className="text-xs shrink-0">{freqTableName}</Badge>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => applyFreqTable(charFrequency, '内置前6000高频字频表')}
+                    className={cn(
+                      'px-3 py-1.5 rounded-lg text-sm font-medium transition-all border',
+                      customFreqTable === null
+                        ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+                        : 'bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground'
+                    )}
+                  >
+                    内置前6000
+                  </button>
+                  <label
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium transition-all border bg-background text-muted-foreground border-border hover:border-primary/40 hover:text-foreground cursor-pointer inline-flex items-center gap-1.5"
+                    title='支持每行「字 频率」/「字,频率」/「字(Tab)频率」，或 JSON 对象 {"字": 频率}'
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    上传自定义字频
+                    <input
+                      type="file"
+                      accept=".txt,.tsv,.csv,.json"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) handleFreqFile(file);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+                <span className="text-[11px] text-muted-foreground/70 sm:ml-auto">
+                  官方数据用北师大25亿/知乎6亿语料——上传同款字频可使数值与官方发布对齐
+                </span>
               </div>
             </CardContent>
           </Card>
@@ -2186,29 +2313,31 @@ export default function EvaluatePage() {
                 return 30;
               })()}
             />
-            {/* 选重率 */}
+            {/* 选重率（社区口径：万分率‱） */}
             <ScoreCard
               icon={<Gauge className="h-4 w-4" />}
               title="动态选重率"
-              value={(result.dynamicSelectionRate * 100).toFixed(2)}
-              unit="%"
+              value={(result.dynamicSelectionRate * 10000).toFixed(result.dynamicSelectionRate * 10000 >= 100 ? 0 : 1)}
+              unit="‱"
               score={(() => {
-                if (result.dynamicSelectionRate < 0.0005) return 100;
-                if (result.dynamicSelectionRate < 0.002) return 85;
-                if (result.dynamicSelectionRate < 0.005) return 65;
+                const per10k = result.dynamicSelectionRate * 10000;
+                if (per10k < 5) return 100;
+                if (per10k < 20) return 85;
+                if (per10k < 50) return 65;
                 return 35;
               })()}
             />
-            {/* 当量 */}
+            {/* 动态码长（码长 + 选重率，即计入选重罚时的等效码长） */}
             <ScoreCard
               icon={<Activity className="h-4 w-4" />}
-              title="当量"
+              title="动态码长"
               value={result.equivalent.toFixed(3)}
               unit=""
               score={(() => {
-                if (result.equivalent < 1.5) return 100;
-                if (result.equivalent < 2.5) return 80;
-                if (result.equivalent < 3.5) return 55;
+                if (result.equivalent < 3.0) return 100;
+                if (result.equivalent < 3.5) return 85;
+                if (result.equivalent < 4.0) return 65;
+                if (result.equivalent < 4.3) return 45;
                 return 30;
               })()}
             />
@@ -2225,18 +2354,19 @@ export default function EvaluatePage() {
                 return 35;
               })()}
             />
-            {/* 速度当量 */}
+            {/* 速度当量（陈一凡键位相关当量，社区官方口径） */}
             <ScoreCard
               icon={<Zap className="h-4 w-4" />}
               title="速度当量"
               value={result.speedEquivalent.toFixed(3)}
               unit=""
               score={(() => {
-                if (result.speedEquivalent < 1.1) return 100;
-                if (result.speedEquivalent < 1.2) return 85;
-                if (result.speedEquivalent < 1.4) return 65;
+                if (result.speedEquivalent < 1.25) return 100;
+                if (result.speedEquivalent < 1.35) return 85;
+                if (result.speedEquivalent < 1.45) return 65;
                 return 35;
               })()}
+              subtext={`速度指数 ${result.speedIndex.toFixed(2)}`}
             />
             {/* 综合评分 */}
             <ScoreCard
@@ -2524,15 +2654,35 @@ export default function EvaluatePage() {
               <div className="text-xs text-muted-foreground mt-1">重码率 <span className="text-[10px] text-primary">点击查看</span></div>
               <div className="text-[10px] text-muted-foreground/60 mt-0.5">重码编码占比</div>
             </div>
-            {/* 选重率（字频加权） */}
+            {/* 选重率（字频加权，社区口径万分率） */}
             <div className="rounded-lg border border-border p-3 text-center">
               <div className="text-2xl font-bold font-mono-stat tabular-nums text-purple-600 dark:text-purple-400">
-                {(result.dynamicSelectionRate * 100).toFixed(2)}
+                {(result.dynamicSelectionRate * 10000).toFixed(result.dynamicSelectionRate * 10000 >= 100 ? 0 : 1)}
               </div>
-              <div className="text-xs text-muted-foreground mt-1">选重率（%）</div>
+              <div className="text-xs text-muted-foreground mt-1">动态选重率（‱）</div>
               <div className="text-[10px] text-muted-foreground/60 mt-0.5">字频加权重码占比</div>
             </div>
           </div>
+
+          {/* ===== 码长-简码效率曲线（码表需含简码与全码之分，平线不渲染） ===== */}
+          {result.shortCodeCurve.length > 1 &&
+           (result.shortCodeCurve[0].avgLen - result.shortCodeCurve[result.shortCodeCurve.length - 1].avgLen) > 0.005 && (
+            <Card>
+              <CardContent className="p-4 sm:p-6">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingDown className="h-5 w-5 text-primary" />
+                  <h3 className="text-base font-bold text-foreground">码长-简码效率曲线</h3>
+                  <span className="text-xs font-normal text-muted-foreground ml-2">记住前 N 高频字的简码后的字频加权码长</span>
+                </div>
+                <p className="text-xs text-muted-foreground/70 mb-4 leading-relaxed">
+                  反映简码的边际效率递减：曲线越陡的前段说明最常用的简码收益越高。
+                  官方数据同款口径（字源 v1.30：N=0 时 4.000 → N=500 时 3.071，知乎简体字频）。
+                  注：码表每字仅一条编码（无全码/简码之分）时不产生曲线。
+                </p>
+                <ShortCodeCurveChart data={result.shortCodeCurve} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* ===== 键盘热力图 ===== */}
           <Card className={cn(expandedSection === 'heatmap' && "fixed inset-0 z-50 bg-background overflow-auto rounded-none border-0 shadow-2xl")}>
@@ -2605,20 +2755,31 @@ export default function EvaluatePage() {
               {/* 手指负担分布 */}
               <div className="mt-5">
                 <h4 className="text-sm font-semibold text-muted-foreground mb-3 text-center">各手指负担分布</h4>
-                <div className="h-56">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={result.fingerChartData} layout="vertical">
-                      <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                      <XAxis type="number" tick={{ fontSize: 11 }} />
-                      <YAxis dataKey="name" type="category" tick={{ fontSize: 11 }} width={72} />
-                      <Tooltip formatter={(value: number) => [`${value.toLocaleString()}次`, '按键次数']} contentStyle={{ fontSize: 12 }} />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]}>
-                        {result.fingerChartData.map((_, i) => (
-                          <Cell key={i} fill={['#3b82f6','#6366f1','#8b5cf6','#a855f7','#ec4899','#f43f5e','#f97316','#eab308','#22c55e','#14b8a6'][i % 10]} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  {(() => {
+                    const maxVal = Math.max(...result.fingerChartData.map(d => d.value), 1);
+                    return result.fingerChartData.map(d => {
+                      const isLeft = d.name.startsWith('左');
+                      const pct = (d.value / maxVal) * 100;
+                      return (
+                        <div key={d.name} className="flex items-center gap-2.5" title={`${d.name}: ${d.value.toLocaleString()}次 (${d.percent.toFixed(2)}%)`}>
+                          <span className={cn('w-14 text-right text-xs shrink-0', isLeft ? 'text-blue-600 dark:text-blue-400' : 'text-purple-600 dark:text-purple-400')}>{d.name}</span>
+                          <div className="flex-1 h-4 rounded-md bg-muted/60 overflow-hidden">
+                            <div
+                              className={cn(
+                                'h-full rounded-md transition-all duration-700 ease-out',
+                                isLeft
+                                  ? 'bg-gradient-to-r from-blue-500/70 to-indigo-500'
+                                  : 'bg-gradient-to-r from-fuchsia-500/70 to-purple-500'
+                              )}
+                              style={{ width: `${Math.max(pct, d.value > 0 ? 2 : 0)}%` }}
+                            />
+                          </div>
+                          <span className="w-20 text-xs font-mono-stat tabular-nums text-muted-foreground shrink-0">{d.percent.toFixed(2)}%</span>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             </CardContent>
@@ -2960,9 +3121,10 @@ export default function EvaluatePage() {
                         { name: '字频加权码长', value: result.weightedAvgCodeLen.toFixed(3), score: result.weightedAvgCodeLen < 3.5 ? 90 : result.weightedAvgCodeLen < 4.5 ? 65 : 40 },
                         { name: '全码重码率', value: `${result.fullDupRate.toFixed(2)}%（${result.staticDupCount}字）`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
                         { name: '出简重码率', value: `${result.simplifiedDupRate.toFixed(2)}%`, score: result.simplifiedDupRate < 5 ? 90 : result.simplifiedDupRate < 10 ? 65 : 35 },
-                        { name: '动态选重率', value: `${(result.dynamicSelectionRate * 100).toFixed(2)}%`, score: result.dynamicSelectionRate < 0.0005 ? 95 : result.dynamicSelectionRate < 0.002 ? 75 : 40 },
-                        { name: '当量', value: result.equivalent.toFixed(3), score: result.equivalent < 1.5 ? 95 : result.equivalent < 2.5 ? 70 : 40 },
-                        { name: '速度当量', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.1 ? 95 : result.speedEquivalent < 1.3 ? 75 : 40 },
+                        { name: '动态选重率', value: `${(result.dynamicSelectionRate * 10000).toFixed(1)}‱`, score: (result.dynamicSelectionRate * 10000) < 5 ? 95 : (result.dynamicSelectionRate * 10000) < 20 ? 75 : 40 },
+                        { name: '动态码长（码长+选重）', value: result.equivalent.toFixed(3), score: result.equivalent < 3.5 ? 95 : result.equivalent < 4.0 ? 70 : 40 },
+                        { name: '速度当量', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.25 ? 95 : result.speedEquivalent < 1.35 ? 75 : 40 },
+                        { name: '速度指数', value: result.speedIndex.toFixed(2), score: result.speedIndex > 80 ? 95 : result.speedIndex > 74 ? 75 : 40 },
                         { name: '综合评分', value: `${result.compositeScore.toFixed(1)}/100`, score: result.compositeScore },
                       ]},
                       { category: '覆盖率', items: [
@@ -2977,6 +3139,8 @@ export default function EvaluatePage() {
                         { name: 'GBK最大候选项', value: result.gbkMaxCandidates.toString(), score: result.gbkMaxCandidates <= 9 ? 95 : result.gbkMaxCandidates <= 18 ? 70 : 35 },
                         { name: 'GB2312静态重码数', value: result.gb2312StaticDup.toString(), score: result.gb2312StaticDup < 300 ? 95 : result.gb2312StaticDup < 600 ? 70 : 35 },
                         { name: 'GBK静态重码数', value: result.gbkStaticDup.toString(), score: result.gbkStaticDup < 3000 ? 95 : result.gbkStaticDup < 6000 ? 70 : 35 },
+                        { name: '通规一二级静态重码', value: result.tonggui12StaticDup.toString(), score: result.tonggui12StaticDup < 500 ? 95 : result.tonggui12StaticDup < 1500 ? 70 : 35 },
+                        { name: '通规全部静态重码', value: result.tongguiAllStaticDup.toString(), score: result.tongguiAllStaticDup < 1500 ? 95 : result.tongguiAllStaticDup < 4000 ? 70 : 35 },
                       ]},
                       { category: '人体工学', items: [
                         { name: '同指连续率', value: `${result.sameFingerRate.toFixed(1)}%`, score: result.sameFingerRate < 15 ? 90 : result.sameFingerRate < 25 ? 65 : 35 },
@@ -3038,7 +3202,7 @@ export default function EvaluatePage() {
         const dupGroups = result.phraseDupGroups!;
         return (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setSelectedDupCode(null)}>
-            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slide-in-up" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
                 <div>
                   <h3 className="font-bold text-foreground">重码词组</h3>
@@ -3087,7 +3251,7 @@ export default function EvaluatePage() {
         const dupes = result.topDupes;
         return (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setShowSingleCharDup(false)}>
-            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slideInUp" onClick={e => e.stopPropagation()}>
+            <div className="w-full max-w-2xl max-h-[85vh] bg-card rounded-xl shadow-2xl border border-border overflow-hidden flex flex-col animate-slide-in-up" onClick={e => e.stopPropagation()}>
               <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card">
                 <div>
                   <h3 className="font-bold text-foreground">单字重码</h3>
@@ -3120,7 +3284,7 @@ export default function EvaluatePage() {
                           )}>
                             <span className="text-base">{ch}</span>
                             <span className="text-[10px] font-mono font-mono-stat text-muted-foreground">
-                              {(charFrequency[ch] ?? 0).toFixed(4)}
+                              {(activeFreqTable[ch] ?? 0).toFixed(4)}
                             </span>
                           </div>
                         ))}
@@ -3144,13 +3308,89 @@ export default function EvaluatePage() {
 // 子组件
 // ========================================
 
-function ScoreCard({ icon, title, value, unit, score, highlight }: {
+/**
+ * 码长-简码效率曲线（手写 SVG，与设计系统统一）
+ * X 轴：记住简码的字数 N；Y 轴：字频加权平均码长。
+ */
+function ShortCodeCurveChart({ data }: { data: Array<{ n: number; avgLen: number }> }) {
+  const W = 720, H = 260;
+  const PAD_L = 56, PAD_R = 20, PAD_T = 16, PAD_B = 34;
+  const innerW = W - PAD_L - PAD_R, innerH = H - PAD_T - PAD_B;
+
+  if (data.length < 2) return null;
+  const maxN = data[data.length - 1].n || 1;
+  const lens = data.map(d => d.avgLen);
+  const yMin = Math.max(0, Math.floor((Math.min(...lens) - 0.15) * 20) / 20);
+  const yMax = Math.ceil((Math.max(...lens) + 0.15) * 20) / 20;
+  const x = (n: number) => PAD_L + (Math.log(n + 1) / Math.log(maxN + 1)) * innerW;
+  const y = (v: number) => PAD_T + (1 - (v - yMin) / Math.max(yMax - yMin, 0.0001)) * innerH;
+
+  const pts = data.map(d => `${x(d.n)},${y(d.avgLen)}`);
+  const line = `M${pts.join(' L')}`;
+  const area = `${line} L${x(maxN)},${y(yMin)} L${x(0)},${y(yMin)} Z`;
+  const yTicks = 4;
+
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[560px]" role="img" aria-label="码长-简码效率曲线">
+        <defs>
+          <linearGradient id="curve-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {/* 网格 + Y 轴刻度 */}
+        {Array.from({ length: yTicks + 1 }, (_, i) => {
+          const v = yMin + ((yMax - yMin) * i) / yTicks;
+          const ty = y(v);
+          return (
+            <g key={i}>
+              <line x1={PAD_L} y1={ty} x2={W - PAD_R} y2={ty} stroke="hsl(var(--border))" strokeDasharray="3 3" strokeWidth="1" />
+              <text x={PAD_L - 8} y={ty + 4} textAnchor="end" className="fill-muted-foreground" fontSize="11" fontFamily="var(--font-mono)">{v.toFixed(2)}</text>
+            </g>
+          );
+        })}
+        {/* X 轴刻度（对数位；标签稀疏化避免挤压） */}
+        {(() => {
+          const maxLabels = 6;
+          const step = Math.max(1, Math.ceil(data.length / maxLabels));
+          return data.map((d, i) => (
+            <text key={d.n} x={x(d.n)} y={H - 12} textAnchor="middle" className="fill-muted-foreground" fontSize="11" fontFamily="var(--font-mono)">
+              {i % step === 0 || i === data.length - 1
+                ? (d.n >= 10000 ? `${Math.round(d.n / 1000)}k` : d.n)
+                : ''}
+            </text>
+          ));
+        })()}
+        <path d={area} fill="url(#curve-fill)" />
+        <path d={line} fill="none" stroke="hsl(var(--primary))" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {data.map(d => (
+          <g key={`p-${d.n}`}>
+            <circle cx={x(d.n)} cy={y(d.avgLen)} r="4" fill="hsl(var(--card))" stroke="hsl(var(--primary))" strokeWidth="2" />
+            <title>{`记住前 ${d.n} 字简码 → 码长 ${d.avgLen.toFixed(4)}`}</title>
+          </g>
+        ))}
+        {/* 端点数值标注 */}
+        <text x={x(data[0].n) + 8} y={y(data[0].avgLen) - 8} fontSize="11" fontWeight="700" fontFamily="var(--font-mono)" className="fill-foreground">
+          {data[0].avgLen.toFixed(3)}
+        </text>
+        <text x={x(maxN) - 8} y={y(lens[lens.length - 1]) - 8} textAnchor="end" fontSize="11" fontWeight="700" fontFamily="var(--font-mono)" className="fill-foreground">
+          {lens[lens.length - 1].toFixed(3)}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
+function ScoreCard({ icon, title, value, unit, score, highlight, subtext }: {
   icon: React.ReactNode;
   title: string;
   value: string;
   unit: string;
   score: number;
   highlight?: boolean;
+  /** 可选副文本（如速度指数），显示在数值行下方 */
+  subtext?: string;
 }) {
   return (
     <div className={cn(
@@ -3168,6 +3408,9 @@ function ScoreCard({ icon, title, value, unit, score, highlight }: {
         </div>
         {getGradeBadge(score)}
       </div>
+      {subtext && (
+        <div className="text-[10px] text-muted-foreground/70 font-mono-stat tabular-nums mt-0.5">{subtext}</div>
+      )}
     </div>
   );
 }

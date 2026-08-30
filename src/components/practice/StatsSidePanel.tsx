@@ -109,7 +109,7 @@ export default function StatsSidePanel({
             {showDetail ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </Button>
           {showDetail && (
-            <div className="card-base p-3 animate-fadeIn">
+            <div className="card-base p-3 animate-fade-in">
               {weakestRoots.slice(0, 5).map((r, i) => {
                 const total = r.correct + r.wrong;
                 const rate = total > 0 ? Math.round((r.correct / total) * 100) : 0;

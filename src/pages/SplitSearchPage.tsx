@@ -184,7 +184,7 @@ export default function SplitSearchPage() {
             </div>
             <div className="text-center">
               <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-mono-stat">{rootMappings.length}</div>
-              <div className="text-[11px] sm:text-xs text-muted-foreground">字根数</div>
+              <div className="text-[11px] sm:text-xs text-muted-foreground">字根数（含变体）</div>
             </div>
             <div className="text-center">
               <div className="text-xl sm:text-2xl lg:text-3xl font-bold text-amber-600 font-mono-stat">{phrasesData ? (phrasesData.PHRASE_COUNTS.total ?? 0).toLocaleString() : '...'}</div>
@@ -405,11 +405,11 @@ export default function SplitSearchPage() {
       {/* ===== 单字详情弹窗 ===== */}
       {selectedDetail && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fadeIn"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
           onClick={() => setSelectedChar(null)}
         >
           <div
-            className="w-full max-w-lg bg-card rounded-lg shadow-2xl border border-border overflow-hidden animate-slideInUp"
+            className="w-full max-w-lg bg-card rounded-lg shadow-2xl border border-border overflow-hidden animate-slide-in-up"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 头部 */}

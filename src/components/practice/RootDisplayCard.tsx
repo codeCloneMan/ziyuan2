@@ -40,7 +40,7 @@ export default function RootDisplayCard({
       <div className="flex flex-col items-center">
         {/* 首次提示 */}
         {showHint && firstTimeHint && !feedbackType && (
-          <div className="mb-4 px-3.5 py-2 rounded-lg bg-primary/8 border-l-2 border-primary/30 text-primary dark:text-primary-foreground text-sm font-medium animate-fadeIn"
+          <div className="mb-4 px-3.5 py-2 rounded-lg bg-primary/8 border-l-2 border-primary/30 text-primary dark:text-primary-foreground text-sm font-medium animate-fade-in"
             style={{ fontFamily: "'Noto Serif SC', serif" }}>
             <Lightbulb className="h-3.5 w-3.5 inline mr-1.5" />{firstTimeHint}
           </div>

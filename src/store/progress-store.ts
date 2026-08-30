@@ -182,18 +182,29 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   if (!validLevels.includes(prefs.charSetRange as PracticeLevel)) prefs.charSetRange = 'beginner';
   if (!validLevels.includes(prefs.phraseMode as PracticeLevel)) prefs.phraseMode = 'beginner';
 
+  // 嵌套字段类型防御：导入文件/localStorage 可能损坏（如 correctCountMap 变成字符串），
+  // 非plain object 的分段一律回退默认值，避免下游 .filter/Object.keys 崩溃
+  const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+    typeof v === 'object' && v !== null && !Array.isArray(v);
+
+  const partialRoot = isPlainObject(partial.root) ? partial.root : {};
+  const partialWholeChar = isPlainObject(partial.wholeChar) ? partial.wholeChar : {};
+  const partialPhrase = isPlainObject(partial.phrase) ? partial.phrase : {};
+  const partialPools = isPlainObject(partial.spacedPools) ? partial.spacedPools : defaults.spacedPools;
+  const partialDaily = isPlainObject(partial.dailyStats) ? partial.dailyStats : defaults.dailyStats;
+
   return {
     ...defaults,
     ...partial,
     version: CURRENT_VERSION,
-    root: { ...defaults.root, ...partial.root },
-    wholeChar: { ...defaults.wholeChar, ...partial.wholeChar },
-    phrase: { ...defaults.phrase, ...partial.phrase },
+    root: { ...defaults.root, ...partialRoot },
+    wholeChar: { ...defaults.wholeChar, ...partialWholeChar },
+    phrase: { ...defaults.phrase, ...partialPhrase },
     preferences: prefs,
-    spacedPools: partial.spacedPools ?? defaults.spacedPools,
-    achievements: partial.achievements ?? defaults.achievements,
-    totalPoints: partial.totalPoints ?? defaults.totalPoints,
-    dailyStats: partial.dailyStats ?? defaults.dailyStats,
+    spacedPools: partialPools,
+    achievements: Array.isArray(partial.achievements) ? partial.achievements : defaults.achievements,
+    totalPoints: typeof partial.totalPoints === 'number' ? partial.totalPoints : defaults.totalPoints,
+    dailyStats: partialDaily,
   };
 }
 

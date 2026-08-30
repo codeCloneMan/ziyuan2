@@ -1,112 +1,184 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ========================================
-   字源形码 - 书卷雅致风设计系统 v5.0
-   Design System: Ziyuan Xingma Scholarly
-   定位: 文化学术工具 · 宋体气质 · 沉静典雅
-   主色: 靛蓝 · 暖琥珀点缀 · 充足留白
-   灵感: shurufa.app 宇浩系列输入法官网
+   字源形码 - 文枢·新中式设计系统 v6.0
+   Design System: Wenshu Neo-Chinese
+   定位: 文化学习工具 · 宋体标题 · 前沿执行
+   主色: 靛青 · 琥珀点缀 · bento 网格 · 柔和渐变
+   趋势: 2026 bento grid + functional depth + soft minimal
    ======================================== */
 
-@layer base {
-  :root {
-    /* === 色彩系统 - 沉静靛蓝 === */
-    --background: 220 20% 98%;
-    --foreground: 222 24% 12%;
+:root {
+  /* === 色彩 - 宣纸白底 · 靛青主色 === */
+  --background: 220 23% 97%;
+  --foreground: 224 30% 11%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222 24% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 224 30% 11%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222 24% 12%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 30% 11%;
 
-    /* 主色：靛蓝 - 沉稳、学术、文化气质 */
-    --primary: 220 58% 46%;
-    --primary-foreground: 0 0% 100%;
+  --primary: 222 62% 45%;
+  --primary-foreground: 0 0% 100%;
 
-    /* 次要色：冷灰偏蓝 */
-    --secondary: 220 14% 96%;
-    --secondary-foreground: 222 24% 12%;
+  --secondary: 220 16% 95%;
+  --secondary-foreground: 224 30% 12%;
 
-    /* 静音色 */
-    --muted: 220 14% 96%;
-    --muted-foreground: 220 10% 44%;
+  --muted: 220 16% 95%;
+  --muted-foreground: 220 10% 44%;
 
-    /* 强调色：暖琥珀 - 文化点缀 */
-    --accent: 35 75% 48%;
-    --accent-foreground: 0 0% 100%;
+  --accent: 35 82% 48%;
+  --accent-foreground: 0 0% 100%;
 
-    /* 功能色 - 柔和不刺眼 */
-    --destructive: 0 62% 50%;
-    --destructive-foreground: 0 0% 98%;
+  --destructive: 0 64% 49%;
+  --destructive-foreground: 0 0% 98%;
 
-    --success: 152 48% 38%;
-    --warning: 35 80% 50%;
-    --info: 205 65% 46%;
+  --success: 152 50% 37%;
+  --warning: 35 84% 48%;
+  --info: 205 68% 45%;
 
-    /* 边框与输入 - 柔和灰蓝 */
-    --border: 220 14% 91%;
-    --input: 220 14% 91%;
-    --ring: 220 58% 46%;
+  --border: 220 15% 90%;
+  --input: 220 15% 90%;
+  --ring: 222 62% 45%;
 
-    /* 圆角系统 - 适度圆润，典雅舒适 */
-    --radius-sm: 0.375rem;
-    --radius: 0.625rem;
-    --radius-lg: 0.75rem;
-    --radius-xl: 1rem;
+  --radius: 0.75rem;
+}
 
-    /* 阴影系统 - 极简层次，雅致不张扬 */
-    --shadow-sm: 0 1px 2px 0 rgb(15 23 42 / 0.03);
-    --shadow: 0 1px 3px 0 rgb(15 23 42 / 0.04), 0 1px 2px -1px rgb(15 23 42 / 0.03);
-    --shadow-md: 0 4px 6px -1px rgb(15 23 42 / 0.05), 0 2px 4px -2px rgb(15 23 42 / 0.03);
-    --shadow-lg: 0 10px 15px -3px rgb(15 23 42 / 0.06), 0 4px 6px -4px rgb(15 23 42 / 0.03);
-    --shadow-xl: 0 20px 25px -5px rgb(15 23 42 / 0.07), 0 8px 10px -6px rgb(15 23 42 / 0.04);
+.dark {
+  /* === 深色 - 玄墨底 · 夜读书卷 === */
+  --background: 224 26% 7%;
+  --foreground: 216 18% 92%;
+
+  --card: 223 22% 11%;
+  --card-foreground: 216 18% 92%;
+
+  --popover: 223 22% 11%;
+  --popover-foreground: 216 18% 92%;
+
+  --primary: 221 66% 62%;
+  --primary-foreground: 228 40% 8%;
+
+  --secondary: 222 18% 16%;
+  --secondary-foreground: 216 18% 92%;
+
+  --muted: 222 18% 16%;
+  --muted-foreground: 217 13% 60%;
+
+  --accent: 35 85% 56%;
+  --accent-foreground: 26 60% 10%;
+
+  --destructive: 0 60% 52%;
+  --destructive-foreground: 0 0% 98%;
+
+  --success: 152 55% 46%;
+  --warning: 35 84% 55%;
+  --info: 205 68% 54%;
+
+  --border: 222 16% 20%;
+  --input: 222 16% 20%;
+  --ring: 221 66% 62%;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-info: hsl(var(--info));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --radius-xs: calc(var(--radius) - 8px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --font-sans:
+    'Inter', 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-serif:
+    'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', 'Noto Sans SC', serif;
+  --font-mono:
+    'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SF Mono', ui-monospace,
+    monospace;
+}
+
+@theme {
+  /* 阴影 - 靛蓝冷调，层次克制 */
+  --shadow-2xs: 0 1px 2px 0 oklch(0 0 0 / 0.03);
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 3px 0 oklch(0 0 0 / 0.05), 0 1px 2px -1px oklch(0 0 0 / 0.03);
+  --shadow-md: 0 4px 8px -2px oklch(0 0 0 / 0.06), 0 2px 4px -2px oklch(0 0 0 / 0.04);
+  --shadow-lg: 0 12px 20px -6px oklch(0 0 0 / 0.08), 0 4px 8px -4px oklch(0 0 0 / 0.05);
+  --shadow-xl: 0 22px 32px -8px oklch(0 0 0 / 0.1), 0 8px 14px -8px oklch(0 0 0 / 0.06);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
+  --animate-fade-in: fadeIn 0.35s ease-out forwards;
+  --animate-slide-in-right: slideInRight 0.3s ease-out forwards;
+  --animate-slide-in-up: slideInUp 0.3s ease-out forwards;
+  --animate-page-enter: pageEnter 0.3s ease-out;
+  --animate-bounce-in: bounce-in 0.35s ease-out forwards;
+  --animate-shake: shake 0.4s ease-out;
+
+  @keyframes accordion-down {
+    from { height: 0; }
+    to { height: var(--radix-accordion-content-height); }
   }
-
-  .dark {
-    /* 深色模式 - 墨色底，夜读书卷 */
-    --background: 222 24% 8%;
-    --foreground: 215 16% 92%;
-
-    --card: 222 20% 12%;
-    --card-foreground: 215 16% 92%;
-
-    --popover: 222 20% 12%;
-    --popover-foreground: 215 16% 92%;
-
-    /* 主色：靛蓝，暗底略提亮 */
-    --primary: 220 58% 58%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 222 16% 16%;
-    --secondary-foreground: 215 16% 92%;
-
-    --muted: 222 16% 16%;
-    --muted-foreground: 215 12% 58%;
-
-    /* 强调色：暖琥珀略提亮 */
-    --accent: 35 75% 55%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 58% 48%;
-    --destructive-foreground: 0 0% 98%;
-
-    --success: 152 52% 46%;
-    --warning: 35 80% 55%;
-    --info: 205 65% 54%;
-
-    --border: 222 14% 20%;
-    --input: 222 14% 20%;
-    --ring: 220 58% 58%;
-
-    /* 深色模式阴影 - 更深沉 */
-    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.18);
-    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.22), 0 1px 2px -1px rgb(0 0 0 / 0.22);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.25), 0 2px 4px -2px rgb(0 0 0 / 0.18);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.28), 0 4px 6px -4px rgb(0 0 0 / 0.22);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.32), 0 8px 10px -6px rgb(0 0 0 / 0.25);
+  @keyframes accordion-up {
+    from { height: var(--radix-accordion-content-height); }
+    to { height: 0; }
+  }
+  @keyframes caret-blink {
+    0%, 70%, 100% { opacity: 1; }
+    20%, 50% { opacity: 0; }
+  }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes slideInRight {
+    from { opacity: 0; transform: translateX(12px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes slideInUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes pageEnter {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes bounce-in {
+    0% { opacity: 0; transform: scale(0.85); }
+    60% { transform: scale(1.03); }
+    100% { opacity: 1; transform: scale(1); }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
+    20%, 40%, 60%, 80% { transform: translateX(2px); }
   }
 }
 
@@ -115,16 +187,13 @@
     @apply border-border;
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply bg-background text-foreground antialiased;
-    font-family:
-      'Inter',
-      'Noto Sans SC',
-      -apple-system,
-      BlinkMacSystemFont,
-      'Segoe UI',
-      system-ui,
-      sans-serif;
+    font-family: var(--font-sans);
     font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -133,18 +202,13 @@
     letter-spacing: -0.005em;
   }
 
-  /* 标题字体 - 宋体气质 */
+  /* 标题 - 宋体气质 + 平衡换行 */
   h1, h2, h3, h4, h5, h6 {
-    font-family:
-      'Noto Serif SC',
-      'SimSun',
-      'STSong',
-      'Noto Sans SC',
-      serif;
+    font-family: var(--font-serif);
     font-weight: 700;
     line-height: 1.3;
     letter-spacing: 0.01em;
-    color: hsl(var(--foreground));
+    text-wrap: balance;
   }
 
   h1 { font-size: 2.25rem; }
@@ -153,286 +217,248 @@
   h4 { font-size: 1.125rem; }
   h5 { font-size: 1rem; }
   h6 { font-size: 0.875rem; }
-}
 
-/* ========================================
-   自定义滚动条 - 柔和风格
-   ======================================== */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--primary) / 0.18);
-  border-radius: 100px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--primary) / 0.35);
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-
-/* ========================================
-   字根字符样式 - 宋体渲染
-   ======================================== */
-.root-char {
-  font-family:
-    'Noto Serif SC',
-    'SimSun',
-    'STSong',
-    'Noto Sans SC',
-    serif;
-  font-weight: 600;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  font-variant-east-asian: traditional;
-}
-
-/* ========================================
-   等宽数字字体 - 统计数字
-   ======================================== */
-.font-mono-stat {
-  font-family:
-    'JetBrains Mono',
-    'Fira Code',
-    'Cascadia Code',
-    'SF Mono',
-    ui-monospace,
-    monospace;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-/* ========================================
-   选择文本样式
-   ======================================== */
-::selection {
-  background-color: hsl(var(--primary) / 0.2);
-  color: hsl(var(--foreground));
-}
-
-/* ========================================
-   焦点样式
-   ======================================== */
-:focus-visible {
-  outline: 2px solid hsl(var(--primary) / 0.6);
-  outline-offset: 2px;
-  border-radius: var(--radius);
-}
-
-/* ========================================
-   移动端触摸优化
-   ======================================== */
-@media (max-width: 640px) {
-  button, a, [role="button"] {
-    -webkit-tap-highlight-color: transparent;
-    touch-action: manipulation;
+  ::selection {
+    background-color: hsl(var(--primary) / 0.2);
+    color: hsl(var(--foreground));
   }
 
-  body {
-    font-size: 16px;
+  :focus-visible {
+    outline: 2px solid hsl(var(--primary) / 0.6);
+    outline-offset: 2px;
+    border-radius: var(--radius);
   }
 
-  h1 { font-size: 1.625rem; }
-  h2 { font-size: 1.375rem; }
-  h3 { font-size: 1.125rem; }
+  /* 柔和滚动条 */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.18);
+    border-radius: 100px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.35);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  @media (max-width: 640px) {
+    button, a, [role="button"] {
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+    body {
+      font-size: 16px;
+    }
+    h1 { font-size: 1.625rem; }
+    h2 { font-size: 1.375rem; }
+    h3 { font-size: 1.125rem; }
+    input, textarea, select {
+      font-size: 16px;
+    }
+  }
 }
 
-/* ========================================
-   动画工具类 - 柔和优雅
-   ======================================== */
+@layer components {
+  /* === 按钮 === */
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-6 py-2.5 text-sm font-medium text-primary-foreground;
+    @apply transition-all duration-200 ease-out hover:brightness-110 hover:shadow-md active:scale-[0.98];
+    @apply focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
 
-/* 悬浮提升 - 极小幅 */
-.hover-lift {
-  transition: transform 0.25s ease, box-shadow 0.25s ease;
-}
-.hover-lift:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
-}
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-border/80 bg-secondary px-5 py-2.5 text-sm font-medium text-secondary-foreground;
+    @apply transition-all duration-200 hover:border-primary/15 hover:bg-muted;
+    @apply focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
 
-/* 渐入动画 - 缓慢优雅 */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-fadeIn {
-  animation: fadeIn 0.35s ease-out forwards;
-}
+  .btn-icon {
+    @apply inline-flex items-center justify-center rounded-lg p-2 text-muted-foreground;
+    @apply transition-colors duration-150 hover:bg-secondary/80 hover:text-foreground;
+    @apply focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background;
+  }
 
-/* 滑入动画 */
-@keyframes slideInRight {
-  from { opacity: 0; transform: translateX(12px); }
-  to { opacity: 1; transform: translateX(0); }
-}
-.animate-slideInRight {
-  animation: slideInRight 0.3s ease-out forwards;
-}
+  /* === 卡片 === */
+  .card-base {
+    @apply rounded-xl border border-border/70 bg-card p-5 shadow-xs;
+    @apply transition-all duration-300 ease-out;
+  }
+  .card-base:hover {
+    @apply border-primary/15;
+  }
 
-@keyframes slideInUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-slideInUp {
-  animation: slideInUp 0.3s ease-out forwards;
-}
+  .card-stats {
+    @apply rounded-xl border border-border/70 bg-card p-5;
+  }
+  .dark .card-stats {
+    @apply border-border/40;
+  }
 
-/* 页面进入动画 */
-@keyframes pageEnter {
-  from { opacity: 0; transform: translateY(4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-.animate-page-enter {
-  animation: pageEnter 0.3s ease-out;
-}
+  .card-interactive {
+    @apply cursor-pointer rounded-xl border border-border/60 bg-card p-4;
+    @apply transition-all duration-300 ease-out;
+  }
+  .card-interactive:hover {
+    @apply -translate-y-0.5 border-primary/20 bg-primary/[0.02] shadow-md;
+  }
+  .card-interactive:active {
+    @apply scale-[0.99];
+  }
 
-/* 脉冲动画 */
-@keyframes pulse-soft {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-.animate-pulse-soft {
-  animation: pulse-soft 2s ease-in-out infinite;
-}
+  /* === 表单 === */
+  .input-search {
+    @apply relative;
+  }
+  .input-search input {
+    @apply w-full rounded-lg border border-border/80 bg-background py-2.5 pl-10 pr-4 text-foreground;
+    @apply transition-all duration-200 placeholder:text-muted-foreground/70;
+    @apply focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15;
+  }
+  .input-search .icon {
+    @apply pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground transition-colors duration-200;
+  }
+  .input-search:focus-within .icon {
+    @apply text-primary;
+  }
 
-/* 成功/错误闪烁 - 更柔和 */
-@keyframes flash-success {
-  0%, 100% { background-color: hsl(var(--success) / 0.08); }
-  50% { background-color: hsl(var(--success) / 0.2); }
-}
-.flash-success {
-  animation: flash-success 0.4s ease-out;
-}
+  /* === 进度 === */
+  .progress-base {
+    @apply h-1.5 w-full overflow-hidden rounded-full bg-muted;
+  }
+  .progress-bar {
+    @apply h-full rounded-full bg-primary transition-all duration-500 ease-out;
+  }
+  .progress-bar-animated {
+    @apply relative h-full overflow-hidden rounded-full bg-primary transition-all duration-500 ease-out;
+  }
+  .progress-bar-animated::after {
+    content: '';
+    @apply absolute inset-0;
+    background: linear-gradient(90deg, transparent, hsl(0 0% 100% / 0.12), transparent);
+    animation: progress-shimmer 2s infinite;
+  }
 
-@keyframes flash-error {
-  0%, 100% { background-color: hsl(var(--destructive) / 0.08); }
-  50% { background-color: hsl(var(--destructive) / 0.2); }
-}
-.flash-error {
-  animation: flash-error 0.4s ease-out;
-}
+  @keyframes progress-shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
 
-/* 弹入动画 */
-@keyframes bounce-in {
-  0% { opacity: 0; transform: scale(0.85); }
-  60% { transform: scale(1.03); }
-  100% { opacity: 1; transform: scale(1); }
-}
-.animate-bounce-in {
-  animation: bounce-in 0.35s ease-out forwards;
-}
+  /* === 数据展示 === */
+  .stat-number {
+    @apply text-3xl font-bold tracking-tight sm:text-4xl;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
 
-/* 抖动动画 */
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
-  20%, 40%, 60%, 80% { transform: translateX(2px); }
-}
-.animate-shake {
-  animation: shake 0.4s ease-out;
-}
+  .stat-label {
+    @apply mt-1 text-sm text-muted-foreground;
+    font-family: var(--font-serif);
+  }
 
-/* ========================================
-   渐变工具 - 靛蓝主色
-   ======================================== */
-.gradient-hero {
-  background: linear-gradient(
-    135deg,
-    hsl(220 58% 46%) 0%,
-    hsl(225 50% 38%) 100%
-  );
-}
+  .empty-state {
+    @apply flex flex-col items-center justify-center py-12 text-center;
+  }
+  .empty-state-icon {
+    @apply mb-4 h-16 w-16 text-muted-foreground/25;
+  }
+  .empty-state-title {
+    @apply mb-2 text-lg font-semibold text-foreground;
+    font-family: var(--font-serif);
+  }
+  .empty-state-desc {
+    @apply max-w-sm text-sm text-muted-foreground;
+  }
 
-/* 渐变文字 - 靛蓝 */
-.text-gradient-primary {
-  color: hsl(var(--primary));
-}
+  /* === 布局 === */
+  .container-page {
+    @apply mx-auto max-w-7xl px-4 sm:px-6 lg:px-8;
+  }
 
-.text-gradient-accent {
-  color: hsl(var(--accent));
-}
+  /* === 视觉效果 === */
+  .glass {
+    backdrop-filter: blur(12px) saturate(1.2);
+    -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  }
+  .glass-nav {
+    backdrop-filter: blur(16px) saturate(1.5);
+    -webkit-backdrop-filter: blur(16px) saturate(1.5);
+  }
 
-/* ========================================
-   柔和阴影
-   ======================================== */
-.shadow-primary-sm {
-  box-shadow: var(--shadow);
-}
-.shadow-primary-md {
-  box-shadow: var(--shadow-md);
-}
-.shadow-accent-sm {
-  box-shadow: var(--shadow);
-}
+  /* 渐变文字 - 靛青→琥珀 */
+  .text-gradient-primary {
+    background: linear-gradient(
+      120deg,
+      hsl(var(--primary)) 20%,
+      hsl(var(--accent)) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
 
-/* ========================================
-   分隔线
-   ======================================== */
-.divider-gradient {
-  height: 1px;
-  background: hsl(var(--border));
-  border: none;
-}
+  /* 柔和网格渐变背景 - 宣纸上的靛雾 */
+  .bg-mesh {
+    background:
+      radial-gradient(60rem 30rem at 85% -10%, hsl(var(--primary) / 0.07), transparent 60%),
+      radial-gradient(50rem 26rem at -15% 20%, hsl(var(--accent) / 0.05), transparent 55%),
+      radial-gradient(40rem 24rem at 50% 110%, hsl(var(--primary) / 0.05), transparent 60%);
+  }
+  .dark .bg-mesh {
+    background:
+      radial-gradient(60rem 30rem at 85% -10%, hsl(var(--primary) / 0.12), transparent 60%),
+      radial-gradient(50rem 26rem at -15% 20%, hsl(var(--accent) / 0.06), transparent 55%),
+      radial-gradient(40rem 24rem at 50% 110%, hsl(265 60% 60% / 0.06), transparent 60%);
+  }
 
-/* ========================================
-   毛玻璃效果
-   ======================================== */
-.glass {
-  backdrop-filter: blur(12px) saturate(1.2);
-  -webkit-backdrop-filter: blur(12px) saturate(1.2);
-}
-.glass-nav {
-  backdrop-filter: blur(16px) saturate(1.4);
-  -webkit-backdrop-filter: blur(16px) saturate(1.4);
-}
+  /* === 字符渲染 === */
+  .root-char {
+    font-family: var(--font-serif);
+    font-weight: 600;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-variant-east-asian: traditional;
+  }
 
-/* ========================================
-   移动端虚拟键盘适配
-   ======================================== */
-@media (max-width: 640px) {
+  .font-mono-stat {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-weight: 700;
+  }
+
+  /* === 交错动画 === */
+  .stagger-item {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: slideInUp 0.3s ease-out forwards;
+  }
+  .stagger-item:nth-child(1) { animation-delay: 0ms; }
+  .stagger-item:nth-child(2) { animation-delay: 40ms; }
+  .stagger-item:nth-child(3) { animation-delay: 80ms; }
+  .stagger-item:nth-child(4) { animation-delay: 120ms; }
+  .stagger-item:nth-child(5) { animation-delay: 160ms; }
+  .stagger-item:nth-child(6) { animation-delay: 200ms; }
+
+  /* === 移动端 === */
   .mobile-keyboard {
     touch-action: manipulation;
     -webkit-user-select: none;
     user-select: none;
   }
 
-  /* 输入框聚焦时放大字号，避免 iOS Safari 自动缩放 */
-  input, textarea, select {
-    font-size: 16px;
-  }
-}
-
-/* ========================================
-   刘海屏/灵动岛安全区适配
-   ======================================== */
-@supports (padding: env(safe-area-inset-top)) {
-  .safe-top {
-    padding-top: env(safe-area-inset-top);
-  }
-  .safe-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .safe-x {
-    padding-left: env(safe-area-inset-left);
-    padding-right: env(safe-area-inset-right);
-  }
-}
-
-/* ========================================
-   打印样式
-   ======================================== */
-@media print {
-  body {
-    background: white !important;
-    color: black !important;
-  }
-
-  .no-print {
-    display: none !important;
+  @supports (padding: env(safe-area-inset-top)) {
+    .safe-top {
+      padding-top: env(safe-area-inset-top);
+    }
+    .safe-bottom {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
   }
 }

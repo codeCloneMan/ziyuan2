@@ -1,13 +1,13 @@
 /* ========================================
    字源形码 - Service Worker
    策略：
-   - 预缓存应用壳（index.html、SVG 图标、manifest）
+   - 页面导航 network-first（保证发版后拿到新壳），离线兜底缓存
    - 静态资源（构建产物带 hash）缓存优先，网络回退
    - 数据 JSON（3.6MB 码表）stale-while-revalidate，
      刷新时静默更新缓存，离线时直接用缓存
    - 仅同源 GET 请求，跳过跨域字体（由浏览器处理）
    ======================================== */
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const SHELL_CACHE = `ziyuan-shell-${CACHE_VERSION}`;
 const DATA_CACHE = 'ziyuan-data-v1'; // 与 data-loader.ts 保持一致
 
@@ -73,27 +73,37 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // ============ 应用壳与静态资源：缓存优先，网络回退 ============
-  event.respondWith(
-    caches.match(request).then((cached) => {
-      if (cached) return cached;
-
-      return fetch(request)
+  // ============ 页面导航：网络优先，缓存兜底 ============
+  // 必须 network-first：发新版后旧 index.html 引用的 hash 资源已不存在，
+  // 缓存优先会让老用户永远停留在旧应用壳。
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
         .then((resp) => {
-          // 只缓存同源成功的响应（构建产物 hash 不变，可长期缓存）
-          if (resp && resp.ok && request.url.startsWith(self.location.origin)) {
+          if (resp && resp.ok) {
             const clone = resp.clone();
             caches.open(SHELL_CACHE).then((cache) => cache.put(request, clone));
           }
           return resp;
         })
-        .catch(() => {
-          // 离线时页面导航回退到缓存首页
-          if (request.mode === 'navigate') {
-            return caches.match('./index.html');
-          }
-          return new Response('', { status: 408, statusText: 'Request Timeout' });
-        });
+        .catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // ============ 静态资源（带 hash）：缓存优先，网络回退 ============
+  event.respondWith(
+    caches.match(request).then((cached) => {
+      if (cached) return cached;
+
+      return fetch(request).then((resp) => {
+        // 只缓存同源成功的响应（构建产物 hash 不变，可长期缓存）
+        if (resp && resp.ok && request.url.startsWith(self.location.origin)) {
+          const clone = resp.clone();
+          caches.open(SHELL_CACHE).then((cache) => cache.put(request, clone));
+        }
+        return resp;
+      });
     })
   );
 });

@@ -52,7 +52,7 @@ export default function AchievementToast() {
           className={cn(
             'pointer-events-auto flex items-center gap-3 pl-3 pr-2 py-2.5 rounded-xl border border-amber-500/40',
             'bg-gradient-to-r from-amber-500/15 to-orange-500/10 backdrop-blur-sm shadow-xl',
-            'animate-slideInUp max-w-xs'
+            'animate-slide-in-up max-w-xs'
           )}
         >
           <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500/20 text-xl shrink-0">

@@ -198,7 +198,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* 导航栏 - 毛玻璃质感 */}
-      <header className="sticky top-0 z-50 border-b border-border/60 glass-nav bg-background/80 safe-top">
+      <header className="sticky top-0 z-50 border-b border-border/60 glass-nav bg-background/98 safe-top">
         <div className="mx-auto flex h-14 items-center justify-between px-4 sm:px-6 max-w-[1600px]">
           {/* Logo - 更精致 */}
           <Link
@@ -209,7 +209,7 @@ export default function Layout() {
               setSearchOpen(false);
             }}
           >
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-white transition-all duration-300 shadow-sm">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[hsl(230_60%_38%)] text-white transition-all duration-300 shadow-sm group-hover:shadow-md group-hover:scale-105 group-hover:rotate-3">
               <span className="text-sm font-bold root-char">字</span>
             </div>
             <div className="hidden sm:block">
@@ -226,9 +226,9 @@ export default function Layout() {
                 <Link key={item.path} to={item.path}>
                   <button
                     className={cn(
-                      'relative px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200',
+                      'relative px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200',
                       isActive
-                        ? 'text-primary bg-primary/8'
+                        ? 'text-primary bg-primary/[0.08] shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.18)]'
                         : 'text-muted-foreground hover:text-foreground hover:bg-secondary/60'
                     )}
                   >
@@ -236,10 +236,6 @@ export default function Layout() {
                       <Icon className="h-3.5 w-3.5" />
                       {item.label}
                     </span>
-
-                    {isActive && (
-                      <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 rounded-full bg-primary/70" />
-                    )}
                   </button>
                 </Link>
               );
@@ -261,15 +257,15 @@ export default function Layout() {
                 <ChevronDown className={cn('h-3 w-3 transition-transform', navToolsOpen && 'rotate-180')} />
               </button>
               {navToolsOpen && (
-                <div className="absolute top-full left-0 mt-1.5 w-40 py-1 bg-popover border border-border/70 rounded-lg shadow-xl animate-fadeIn z-50">
+                <div className="absolute top-full left-0 mt-2 w-44 py-1.5 bg-popover/95 glass border border-border/70 rounded-xl shadow-xl animate-fade-in z-50">
                   {toolItems.map((item) => {
                     const Icon = item.icon;
                     const isActive = location.pathname === item.path;
                     return (
                       <Link key={item.path} to={item.path} onClick={() => setNavToolsOpen(false)}>
                         <div className={cn(
-                          'flex items-center gap-2 px-3 py-2 text-sm transition-colors',
-                          isActive ? 'text-primary bg-primary/5' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                          'flex items-center gap-2 px-3 py-2 mx-1 rounded-lg text-sm transition-colors',
+                          isActive ? 'text-primary bg-primary/[0.07]' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/40'
                         )}>
                           <Icon className="h-3.5 w-3.5" />
                           {item.label}
@@ -333,7 +329,7 @@ export default function Layout() {
               </button>
 
               {toolsOpen && (
-                <div className="absolute right-0 top-full mt-1.5 z-50 w-60 rounded-lg border border-border/70 bg-popover shadow-xl animate-fadeIn overflow-hidden">
+                <div className="absolute right-0 top-full mt-1.5 z-50 w-60 rounded-lg border border-border/70 bg-popover shadow-xl animate-fade-in overflow-hidden">
                   <div className="p-1.5 max-h-[400px] overflow-y-auto">
                     <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
                       外部资源
@@ -372,7 +368,7 @@ export default function Layout() {
 
         {/* 搜索栏 */}
         {searchOpen && (
-          <div className="border-t border-border/50 bg-background/90 glass animate-fadeIn">
+          <div className="border-t border-border/50 bg-background/90 glass animate-fade-in">
             <div className="mx-auto max-w-2xl px-4 py-4" ref={searchRef}>
               <div className="input-search mb-3">
                 <Search className="icon" />
@@ -498,7 +494,7 @@ export default function Layout() {
 
         {/* 移动端菜单 */}
         {mobileMenuOpen && (
-          <div className="border-t border-border/50 lg:hidden bg-background/90 glass animate-slideInUp">
+          <div className="border-t border-border/50 lg:hidden bg-background/90 glass animate-slide-in-up">
             <nav className="max-h-[60vh] overflow-y-auto p-3 space-y-1">
               <div className="space-y-0.5 mb-3">
                 {navItems.map((item, idx) => {

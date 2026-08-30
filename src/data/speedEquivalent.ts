@@ -1,135 +1,70 @@
-interface FingerInfo {
-  hand: 'left' | 'right'
-  finger: number
-  row: number
-  col: number
-}
+/**
+ * 速度当量计算（对标社区官方口径）
+ *
+ * 当量表使用陈一凡键位相关速度当量矩阵（见 speed-table.gen.ts 头注），
+ * 与宇浩测码 / 虎测评等社区工具发布的「全码速度当量」同源同口径，
+ * 测得数值可与官方发布数据直接对比（如字源 v1.30 = 1.3473）。
+ */
 
-const KEY_MAP: Record<string, FingerInfo> = {
-  q: { hand: 'left', finger: 0, row: 0, col: 0 },
-  a: { hand: 'left', finger: 0, row: 1, col: 0 },
-  z: { hand: 'left', finger: 0, row: 2, col: 0 },
-  w: { hand: 'left', finger: 1, row: 0, col: 0 },
-  s: { hand: 'left', finger: 1, row: 1, col: 0 },
-  x: { hand: 'left', finger: 1, row: 2, col: 0 },
-  e: { hand: 'left', finger: 2, row: 0, col: 0 },
-  d: { hand: 'left', finger: 2, row: 1, col: 0 },
-  c: { hand: 'left', finger: 2, row: 2, col: 0 },
-  r: { hand: 'left', finger: 3, row: 0, col: 0 },
-  f: { hand: 'left', finger: 3, row: 1, col: 0 },
-  v: { hand: 'left', finger: 3, row: 2, col: 0 },
-  t: { hand: 'left', finger: 3, row: 0, col: 1 },
-  g: { hand: 'left', finger: 3, row: 1, col: 1 },
-  b: { hand: 'left', finger: 3, row: 2, col: 1 },
-  y: { hand: 'right', finger: 3, row: 0, col: 1 },
-  h: { hand: 'right', finger: 3, row: 1, col: 1 },
-  n: { hand: 'right', finger: 3, row: 2, col: 1 },
-  u: { hand: 'right', finger: 3, row: 0, col: 0 },
-  j: { hand: 'right', finger: 3, row: 1, col: 0 },
-  m: { hand: 'right', finger: 3, row: 2, col: 0 },
-  i: { hand: 'right', finger: 2, row: 0, col: 0 },
-  k: { hand: 'right', finger: 2, row: 1, col: 0 },
-  o: { hand: 'right', finger: 1, row: 0, col: 0 },
-  l: { hand: 'right', finger: 1, row: 1, col: 0 },
-  p: { hand: 'right', finger: 0, row: 0, col: 0 },
-}
+import { SPEED_EQUIVALENT_SOURCE, TABLE } from './speed-table.gen';
 
-function computeSpeedEquivalent(k1: string, k2: string): number {
-  if (k1 === k2) return 1.0
+export { SPEED_EQUIVALENT_SOURCE };
 
-  const i1 = KEY_MAP[k1]
-  const i2 = KEY_MAP[k2]
-  if (!i1 || !i2) return 1.5
+export const speedEquivalentTable: Record<string, number> = TABLE;
 
-  const rowDist = Math.abs(i1.row - i2.row)
-  const sameHand = i1.hand === i2.hand
-  const sameFinger = sameHand && i1.finger === i2.finger
-
-  if (sameFinger) {
-    let base = 1.2 + rowDist * 0.15
-    if (i1.col !== i2.col) base += 0.1
-    if (i1.finger === 0) base += 0.15
-    if (i1.finger === 0 && rowDist === 2) base += 0.1
-    return Math.round(base * 100) / 100
-  }
-
-  if (sameHand) {
-    const fingerDist = Math.abs(i1.finger - i2.finger)
-    let base = 0.95 + fingerDist * 0.08 + rowDist * 0.12
-    if (i1.row === 2 || i2.row === 2) base += 0.05
-    return Math.round(base * 100) / 100
-  }
-
-  let base = 0.9
-  if (i1.row !== 1) base += 0.05
-  if (i2.row !== 1) base += 0.05
-  if (i1.row === 2) base += 0.05
-  if (i2.row === 2) base += 0.05
-  if (i1.finger === 0 && i2.finger === 0) base += 0.6
-  else if (i1.finger === 0 || i2.finger === 0) base += 0.08
-  return Math.round(base * 100) / 100
-}
-
-const LETTERS = 'abcdefghijklmnopqrstuvwxyz'
-
-function buildTable(): Record<string, number> {
-  const table: Record<string, number> = {}
-  for (const a of LETTERS) {
-    for (const b of LETTERS) {
-      table[a + b] = computeSpeedEquivalent(a, b)
-    }
-  }
-  return table
-}
-
-export const speedEquivalentTable: Record<string, number> = buildTable()
-
+/** 查询键对当量；未知键对（如含标点/通配符）按最慢档 2.1 处理 */
 export function getSpeedEquivalent(key1: string, key2: string): number {
-  const k1 = key1.toLowerCase()
-  const k2 = key2.toLowerCase()
-  return speedEquivalentTable[k1 + k2] ?? computeSpeedEquivalent(k1, k2)
+  const k1 = key1.toLowerCase();
+  const k2 = key2.toLowerCase();
+  return TABLE[k1 + k2] ?? 2.1;
 }
 
 /**
- * 计算字频加权速度当量（宇浩官方算法）
+ * 速度指数 = 100 / 速度当量（社区通用换算），
+ * 直观反映相对理论速度上限（纯当量 1.0 时为 100）。
+ */
+export function calcSpeedIndex(speedEquivalent: number): number {
+  if (speedEquivalent <= 0) return 0;
+  return Math.round((100 / speedEquivalent) * 100) / 100;
+}
+
+/**
+ * 计算字频加权速度当量（宇浩官方算法口径）
  *
- * 与旧版的关键区别：
- * - 不再用空格（_）补齐码长到 fullLen
- * - 仅使用编码中实际存在的字母二元组计算速度当量
+ * - 不用空格补齐码长，仅统计编码中实际存在的字母二元组
  * - 跳过非字母字符（数字、通配符等）组成的二元组
- *
- * 参考：https://shurufa.app/ 宇浩系列输入法测评标准
+ * - 参考：https://shurufa.app/docs/statistics
  */
 export function calcWeightedSpeedEquivalent(
   entries: Array<{ char: string; code: string }>,
   charFrequency: Record<string, number>,
 ): number {
-  let totalWeight = 0
-  let weightedSum = 0
+  let totalWeight = 0;
+  let weightedSum = 0;
 
   for (const entry of entries) {
-    const freq = charFrequency[entry.char] || 0
-    if (freq === 0) continue
+    const freq = charFrequency[entry.char] || 0;
+    if (freq === 0) continue;
 
-    const code = entry.code.toLowerCase()
+    const code = entry.code.toLowerCase();
     // 提取编码中的纯字母序列（过滤数字和通配符等非字母字符）
-    const letters: string[] = []
+    const letters: string[] = [];
     for (const ch of code) {
       if (ch >= 'a' && ch <= 'z') {
-        letters.push(ch)
+        letters.push(ch);
       }
     }
 
     // 至少需要 2 个字母才能构成二元组
-    if (letters.length < 2) continue
+    if (letters.length < 2) continue;
 
     // 仅计算实际字母相邻对的速度当量，跳过非字母间隔
     for (let i = 0; i < letters.length - 1; i++) {
-      const eq = getSpeedEquivalent(letters[i], letters[i + 1])
-      weightedSum += eq * freq
-      totalWeight += freq
+      const eq = getSpeedEquivalent(letters[i], letters[i + 1]);
+      weightedSum += eq * freq;
+      totalWeight += freq;
     }
   }
 
-  return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 10000) / 10000 : 0
+  return totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 10000) / 10000 : 0;
 }

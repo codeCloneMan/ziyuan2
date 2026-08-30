@@ -40,7 +40,7 @@ export default function UserLevelBadge() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-border bg-popover shadow-xl animate-fadeIn overflow-hidden">
+        <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-xl border border-border bg-popover shadow-xl animate-fade-in overflow-hidden">
           {/* 等级头部 */}
           <div className="p-4 bg-gradient-to-br from-amber-500/10 to-orange-500/10 border-b border-border">
             <div className="flex items-center gap-3">

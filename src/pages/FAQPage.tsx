@@ -42,12 +42,12 @@ export default function FAQPage() {
             帮助中心
           </Badge>
           
-          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slideInUp">
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-4 animate-slide-in-up">
             常见
             <span className="text-gradient-primary"> 问题</span>
           </h1>
           
-          <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fadeIn" style={{ animationDelay: '0.1s' }}>
+          <p className="text-lg text-muted-foreground max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s' }}>
             快速找到你需要的答案，解决学习中的疑惑
           </p>
         </div>

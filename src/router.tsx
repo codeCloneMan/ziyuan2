@@ -4,20 +4,6 @@ import { lazy, Suspense } from 'react';
 // Layout 保持静态导入（首屏必需）
 import Layout from '@/components/Layout';
 
-// ========================================
-// 路由级代码分割：所有页面组件懒加载
-// ========================================
-const HomePage = lazy(() => import('@/pages/HomePage'));
-const PracticePage = lazy(() => import('@/pages/PracticePage'));
-const WholeCharPracticePage = lazy(() => import('@/pages/WholeCharPracticePage'));
-const PhrasePracticePage = lazy(() => import('@/pages/PhrasePracticePage'));
-const TablePage = lazy(() => import('@/pages/TablePage'));
-const ChartPage = lazy(() => import('@/pages/ChartPage'));
-const FAQPage = lazy(() => import('@/pages/FAQPage'));
-const EvaluatePage = lazy(() => import('@/pages/EvaluatePage'));
-const SplitSearchPage = lazy(() => import('@/pages/SplitSearchPage'));
-const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'));
-
 /** 路由加载骨架屏 */
 function PageSkeleton() {
   return (
@@ -38,6 +24,44 @@ function lazyElement(Component: React.LazyExoticComponent<React.ComponentType>) 
     </Suspense>
   );
 }
+
+/**
+ * 懒加载页面 + 部署更新自愈。
+ * 发新版后，用户手里旧页面引用的 chunk hash 已失效，动态 import 会失败
+ * （"Failed to fetch dynamically imported module"）。检测到此类失败时
+ * 整页刷新一次：刷新后拿到新 index.html 与新资源，导航即恢复。
+ * sessionStorage 标记防止「新页面仍失败」时无限刷新循环。
+ */
+function lazyPage(loader: () => Promise<{ default: React.ComponentType }>) {
+  return lazy(() =>
+    loader()
+      .then(mod => {
+        sessionStorage.removeItem('ziyuan-chunk-reload');
+        return mod;
+      })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        const isChunkError =
+          /failed to fetch dynamically imported module|importing a module script|error loading dynamically imported module|chunkloaderror/i.test(msg);
+        if (isChunkError && !sessionStorage.getItem('ziyuan-chunk-reload')) {
+          sessionStorage.setItem('ziyuan-chunk-reload', '1');
+          window.location.reload();
+        }
+        throw err;
+      }),
+  );
+}
+
+const HomePage = lazyPage(() => import('@/pages/HomePage'));
+const PracticePage = lazyPage(() => import('@/pages/PracticePage'));
+const WholeCharPracticePage = lazyPage(() => import('@/pages/WholeCharPracticePage'));
+const PhrasePracticePage = lazyPage(() => import('@/pages/PhrasePracticePage'));
+const TablePage = lazyPage(() => import('@/pages/TablePage'));
+const ChartPage = lazyPage(() => import('@/pages/ChartPage'));
+const FAQPage = lazyPage(() => import('@/pages/FAQPage'));
+const EvaluatePage = lazyPage(() => import('@/pages/EvaluatePage'));
+const SplitSearchPage = lazyPage(() => import('@/pages/SplitSearchPage'));
+const NotFoundPage = lazyPage(() => import('@/pages/NotFoundPage'));
 
 const routes: RouteObject[] = [
   {

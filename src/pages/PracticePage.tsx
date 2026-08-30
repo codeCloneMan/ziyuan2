@@ -84,7 +84,6 @@ export default function PracticePage() {
   const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
-  const [showSettings, setShowSettings] = useState(true);
   // 重新练习时 isPlaying 可能已是 true（完成弹窗内），setState 相同值会被 React bail out，
   // 不会触发下方首题 effect；用 nonce 强制 effect 重跑
   const [restartNonce, setRestartNonce] = useState(0);
@@ -346,100 +345,112 @@ export default function PracticePage() {
   // ============ 非练习态：首页 ============
   if (!isPlaying) {
     return (
-      <div className="min-h-screen bg-background">
-        <section className="py-12 sm:py-20 lg:py-28">
-          <div className="container-page text-center max-w-xl mx-auto">
-            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-              字根<span className="text-gradient-primary">练习</span>
-            </h1>
-            <p className="text-muted-foreground mb-10">
-              {isBeginner
-                ? '每次引入 5 个新字根，答对 3 次即掌握，遗忘自动复习'
-                : '全部字根高速轮转，答对答错都秒切下一题'
-              }
-            </p>
+      <div className="min-h-screen bg-background bg-mesh">
+        <section className="container-page py-10 sm:py-16">
+          <div className="max-w-4xl mx-auto">
+            <header className="text-center mb-8 sm:mb-10">
+              <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
+                字根<span className="text-gradient-primary">练习</span>
+              </h1>
+              <p className="text-muted-foreground max-w-lg mx-auto">
+                {isBeginner
+                  ? '每次引入 5 个新字根，答对 3 次即掌握，遗忘自动复习'
+                  : '全部字根高速轮转，答对答错都秒切下一题'
+                }
+              </p>
+            </header>
 
-            <Button size="lg" onClick={startPractice} className="btn-primary text-lg px-12 py-4 mb-6">
-              <Play className="h-5 w-5 mr-2" />开始练习
-            </Button>
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5">
+              {/* 左：开始 + 进度 */}
+              <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
+                <div className="flex-1 flex items-center justify-center py-2 mb-6">
+                  <button
+                    onClick={startPractice}
+                    className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98]"
+                  >
+                    <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
+                    开始练习
+                  </button>
+                </div>
 
-            {(masteredCount > 0 || practicedCount > 0) && (
-              <div className={cn(
-                "card-base p-4 text-left max-w-sm mx-auto mb-8",
-                masteredCount === totalRoots && "border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20"
-              )}>
-                <div className="flex justify-between items-center text-sm mb-2">
-                  {masteredCount === totalRoots ? (
-                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
-                      <Trophy className="h-4 w-4" />已全部掌握
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">已掌握字根</span>
-                  )}
-                  <span className="font-bold font-mono-stat">{masteredCount}/{totalRoots}</span>
-                </div>
-                <div className="progress-base relative overflow-hidden">
+                {!isBeginner && (
+                  <p className="text-center text-xs text-muted-foreground/70 mb-4">
+                    {totalRoots} 个字根随机洗牌高速轮转 · 今日已练 {todayStats.attempts} 题
+                  </p>
+                )}
+
+                {(masteredCount > 0 || practicedCount > 0) && (
                   <div className={cn(
-                    "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
-                    masteredCount === totalRoots ? "bg-emerald-500/30"
-                      : practicedCount === totalRoots ? "bg-amber-500/25"
-                      : "bg-primary/20"
-                  )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRoots) * 100))}%` }} />
-                  <div className={cn(
-                    "progress-bar-animated transition-colors relative",
-                    masteredCount === totalRoots ? "bg-emerald-500" : "bg-primary"
-                  )} style={{ width: `${Math.round((masteredCount / totalRoots) * 100)}%` }} />
-                </div>
-                <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/60">
-                  <span>已练习 {practicedCount}/{totalRoots}</span>
-                  {masteredCount === totalRoots && (
-                    <span className="text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
-                  )}
-                </div>
-                {masteredCount === totalRoots && (
-                  <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>太棒了！你已经掌握了所有字根</span>
+                    "rounded-xl border p-4 text-left",
+                    masteredCount === totalRoots
+                      ? "border-emerald-300/60 bg-emerald-50/50 dark:border-emerald-800/50 dark:bg-emerald-950/20"
+                      : "border-border/60 bg-muted/20"
+                  )}>
+                    <div className="flex justify-between items-center text-sm mb-2">
+                      {masteredCount === totalRoots ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                          <Trophy className="h-4 w-4" />已全部掌握
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">已掌握字根</span>
+                      )}
+                      <span className="font-bold font-mono-stat">{masteredCount}/{totalRoots}</span>
+                    </div>
+                    <div className="progress-base relative overflow-hidden">
+                      <div className={cn(
+                        "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
+                        masteredCount === totalRoots ? "bg-emerald-500/30"
+                          : practicedCount === totalRoots ? "bg-amber-500/25"
+                          : "bg-primary/20"
+                      )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRoots) * 100))}%` }} />
+                      <div className={cn(
+                        "progress-bar-animated transition-colors relative",
+                        masteredCount === totalRoots ? "bg-emerald-500" : "bg-primary"
+                      )} style={{ width: `${Math.round((masteredCount / totalRoots) * 100)}%` }} />
+                    </div>
+                    <div className="mt-1.5 flex justify-between text-[10px] text-muted-foreground/60">
+                      <span>已练习 {practicedCount}/{totalRoots}</span>
+                      {masteredCount === totalRoots && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
+                      )}
+                    </div>
+                    {masteredCount === totalRoots && (
+                      <div className="mt-3 text-xs text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>太棒了！你已经掌握了所有字根</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
 
-            {!isBeginner && (
-              <p className="text-xs text-muted-foreground mb-8">
-                {totalRoots} 个字根随机洗牌高速轮转 · 今日已练 {todayStats.attempts} 题
-              </p>
-            )}
-
-            <details open={showSettings} onToggle={e => setShowSettings(e.currentTarget.open)} className="text-left max-w-sm mx-auto">
-              <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground transition-colors text-center">
-                练习模式与设置
-              </summary>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="text-xs font-semibold text-foreground mb-2">练习方式</div>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(Object.entries(practiceStyleConfig) as [PracticeLevel, typeof practiceStyleConfig.beginner][]).map(([key, config]) => {
-                      const Icon = config.icon;
-                      const isActive = practiceStyle === key;
-                      return (
-                        <button key={key} onClick={() => setPref('rootMode', key)}
-                          className={cn('p-3 rounded-lg border text-left text-xs transition-all',
-                            isActive ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border/50 hover:border-primary/30')}>
-                          <div className="flex items-center gap-2 mb-1">
-                            <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')} />
-                            <span className={cn('font-semibold', isActive ? 'text-foreground' : 'text-muted-foreground')}>{config.label}</span>
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">{config.description}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
+              {/* 右：模式与设置 */}
+              <div className="lg:col-span-2 card-base !rounded-2xl p-6">
+                <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">练习方式</h2>
+                <div className="space-y-2 mb-5">
+                  {(Object.entries(practiceStyleConfig) as [PracticeLevel, typeof practiceStyleConfig.beginner][]).map(([key, config]) => {
+                    const Icon = config.icon;
+                    const isActive = practiceStyle === key;
+                    return (
+                      <button key={key} onClick={() => setPref('rootMode', key)}
+                        className={cn('w-full p-3.5 rounded-xl border text-left transition-all duration-200',
+                          isActive
+                            ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                            : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                        <div className="flex items-center gap-2 mb-1">
+                          <Icon className={cn('h-4 w-4 shrink-0', isActive ? 'text-primary' : 'text-muted-foreground')} />
+                          <span className={cn('text-sm font-semibold font-serif', isActive ? 'text-foreground' : 'text-muted-foreground')}>{config.label}</span>
+                          {isActive && <span className="ml-auto h-1.5 w-1.5 rounded-full bg-primary" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground/70">{config.description}</div>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                <div className="flex items-center justify-between p-2 rounded-lg bg-muted/30">
+                <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 mb-4">
                   <span className="text-xs text-muted-foreground">新字根自动显示答案提示</span>
-                  <button onClick={() => setPref('showHint', !showHint)}
+                  <button onClick={() => setPref('showHint', !showHint)} aria-label="切换答案提示"
                     className={cn('w-9 h-5 rounded-full transition-colors relative',
                       showHint ? 'bg-primary' : 'bg-muted-foreground/30')}>
                     <div className={cn('absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
@@ -453,7 +464,7 @@ export default function PracticePage() {
                   </Button>
                 )}
               </div>
-            </details>
+            </div>
           </div>
         </section>
       </div>
@@ -518,7 +529,7 @@ export default function PracticePage() {
       {/* 进度完成弹窗 */}
       {showCompletionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="card-base p-8 max-w-sm w-full mx-4 text-center animate-fadeIn">
+          <div className="card-base p-8 max-w-sm w-full mx-4 text-center animate-fade-in">
             <div className={cn(
               "w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center",
               masteredCount === totalRoots ? "bg-emerald-100 dark:bg-emerald-950/50" : "bg-amber-100 dark:bg-amber-950/50"
