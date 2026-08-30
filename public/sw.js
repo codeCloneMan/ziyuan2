@@ -7,7 +7,10 @@
      刷新时静默更新缓存，离线时直接用缓存
    - 仅同源 GET 请求，跳过跨域字体（由浏览器处理）
    ======================================== */
-const CACHE_VERSION = 'v2';
+/* v3：静态资源分支不再缓存 text/html（Cloudflare Pages 会把缺失路径
+   fallback 成 text/html 的 index.html，若混入资源缓存会让旧 hash 分块
+   永远拿到 HTML）；v3 激活时同时清空 v1/v2 的旧壳缓存。 */
+const CACHE_VERSION = 'v3';
 const SHELL_CACHE = `ziyuan-shell-${CACHE_VERSION}`;
 const DATA_CACHE = 'ziyuan-data-v1'; // 与 data-loader.ts 保持一致
 
@@ -97,8 +100,14 @@ self.addEventListener('fetch', (event) => {
       if (cached) return cached;
 
       return fetch(request).then((resp) => {
-        // 只缓存同源成功的响应（构建产物 hash 不变，可长期缓存）
-        if (resp && resp.ok && request.url.startsWith(self.location.origin)) {
+        // 只缓存同源成功的「真实资源」响应；缺失路径的 SPA fallback 是
+        // text/html 的 index.html，缓存它会让该 URL 永远拿不到真资源
+        const type = resp ? resp.headers.get('content-type') || '' : '';
+        if (
+          resp && resp.ok &&
+          request.url.startsWith(self.location.origin) &&
+          !type.includes('text/html')
+        ) {
           const clone = resp.clone();
           caches.open(SHELL_CACHE).then((cache) => cache.put(request, clone));
         }

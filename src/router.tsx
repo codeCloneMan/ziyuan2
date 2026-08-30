@@ -1,8 +1,11 @@
-import { createHashRouter, type RouteObject } from 'react-router-dom';
+import { createHashRouter, useRouteError, type RouteObject } from 'react-router-dom';
 import { lazy, Suspense } from 'react';
 
 // Layout 保持静态导入（首屏必需）
 import Layout from '@/components/Layout';
+
+/** 各家浏览器动态 import 失败的报错文案（Chrome/Firefox/Safari/webpack） */
+const CHUNK_ERROR_RE = /failed to fetch dynamically imported module|importing a module script|error loading dynamically imported module|chunkloaderror/i;
 
 /** 路由加载骨架屏 */
 function PageSkeleton() {
@@ -26,11 +29,71 @@ function lazyElement(Component: React.LazyExoticComponent<React.ComponentType>) 
 }
 
 /**
+ * 部署更新自愈（v2）：清空本地所有缓存并注销全部 Service Worker，然后整页刷新。
+ *
+ * 单纯 location.reload() 不够：发新版后的过渡期里，旧版 SW（缓存优先策略）
+ * 仍可能控制页面，刷新拿到的还是旧 index.html，旧壳继续引用已 404 的旧 hash
+ * 分块，自愈就失效了。清掉 Cache Storage 与 SW 后刷新，必定从网络拿到新壳。
+ *
+ * 先用带随机参数的请求探测网络：离线时刷新只会得到浏览器离线错误页，
+ * 此时不清缓存（保住离线兜底能力），把错误抛给 RouteErrorElement 处理。
+ */
+async function recoverFromStaleDeploy(): Promise<void> {
+  await fetch(`/?__stale-check=${Date.now()}`, { cache: 'no-store' });
+  if ('caches' in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(key => caches.delete(key)));
+  }
+  if ('serviceWorker' in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map(reg => reg.unregister()));
+  }
+  window.location.reload();
+}
+
+/** 路由级错误兜底页（替代 React Router 默认的英文开发者报错页） */
+function RouteErrorElement() {
+  const error = useRouteError();
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const isChunkError = CHUNK_ERROR_RE.test(message);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="card-base w-full max-w-md text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-500/15 text-2xl">
+          🔄
+        </div>
+        <h1 className="mb-2 text-xl font-bold text-foreground">页面加载失败</h1>
+        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+          {isChunkError
+            ? '网站刚发布了新版本，本地缓存的旧页面已失效，点击刷新即可恢复。'
+            : '页面出错了，请刷新重试。'}
+        </p>
+        <button
+          type="button"
+          className="btn-primary w-full"
+          onClick={() => {
+            try { sessionStorage.removeItem('ziyuan-chunk-reload'); } catch { /* 隐私模式下忽略 */ }
+            window.location.reload();
+          }}
+        >
+          刷新页面
+        </button>
+        <p className="mt-4 text-xs text-muted-foreground/70">
+          若反复出现，请检查网络或清除浏览器缓存
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/**
  * 懒加载页面 + 部署更新自愈。
  * 发新版后，用户手里旧页面引用的 chunk hash 已失效，动态 import 会失败
- * （"Failed to fetch dynamically imported module"）。检测到此类失败时
- * 整页刷新一次：刷新后拿到新 index.html 与新资源，导航即恢复。
- * sessionStorage 标记防止「新页面仍失败」时无限刷新循环。
+ * （"Failed to fetch dynamically imported module"）。检测到此类失败时执行
+ * recoverFromStaleDeploy（清缓存+注销 SW+刷新）；离线时自愈无法进行，
+ * 抛给 errorElement 展示友好错误页。
+ * sessionStorage 标记保证每个会话最多自愈一次，防止刷新循环。
  */
 function lazyPage(loader: () => Promise<{ default: React.ComponentType }>) {
   return lazy(() =>
@@ -39,13 +102,15 @@ function lazyPage(loader: () => Promise<{ default: React.ComponentType }>) {
         sessionStorage.removeItem('ziyuan-chunk-reload');
         return mod;
       })
-      .catch((err: unknown) => {
+      .catch(async (err: unknown) => {
         const msg = err instanceof Error ? err.message : String(err);
-        const isChunkError =
-          /failed to fetch dynamically imported module|importing a module script|error loading dynamically imported module|chunkloaderror/i.test(msg);
-        if (isChunkError && !sessionStorage.getItem('ziyuan-chunk-reload')) {
+        if (CHUNK_ERROR_RE.test(msg) && !sessionStorage.getItem('ziyuan-chunk-reload')) {
           sessionStorage.setItem('ziyuan-chunk-reload', '1');
-          window.location.reload();
+          try {
+            await recoverFromStaleDeploy();
+          } catch {
+            // 离线等场景：放弃自愈，落到 errorElement 的友好错误页
+          }
         }
         throw err;
       }),
@@ -67,6 +132,7 @@ const routes: RouteObject[] = [
   {
     path: '/',
     element: <Layout />,
+    errorElement: <RouteErrorElement />,
     children: [
       { index: true, element: lazyElement(HomePage) },
       { path: 'practice', element: lazyElement(PracticePage) },
