@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   BarChart3, Target, CheckCircle2, Flame, AlertTriangle,
-  Trophy, Lightbulb, ChevronDown, ChevronUp,
+  Trophy, Lightbulb, ChevronDown, ChevronUp, Repeat,
 } from 'lucide-react';
 import type { PracticeStats } from '@/types';
 import { rootImagePath } from '@/data/root-images';
@@ -28,6 +28,12 @@ interface StatsSidePanelProps {
   weakestRoots: WeakestRoot[];
   /** 累计答题（跨轮次/跨天），让第二轮练习也有可见进度 */
   cumulative?: { attempts: number; correct: number };
+  /** 已完成轮数（持久化记录） */
+  completedRounds?: number;
+  /** 当前这一轮已答题数 */
+  roundSeen?: number;
+  /** 当前这一轮的题目总数 */
+  roundTotal?: number;
 }
 
 export default function StatsSidePanel({
@@ -37,6 +43,9 @@ export default function StatsSidePanel({
   totalRootsCount,
   weakestRoots,
   cumulative,
+  completedRounds,
+  roundSeen,
+  roundTotal,
 }: StatsSidePanelProps) {
   const [showDetail, setShowDetail] = useState(false);
 
@@ -96,6 +105,17 @@ export default function StatsSidePanel({
           </span>
           <span className="text-xs font-bold font-mono-stat">{masteredCount}/{totalRootsCount}</span>
         </div>
+        {completedRounds !== undefined && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-foreground flex items-center gap-1.5" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+              <Repeat className="h-3 w-3 text-sky-500/70" />轮次
+            </span>
+            <span className="text-xs font-bold font-mono-stat">
+              已完成 {completedRounds} 轮
+              {roundTotal ? <span className="text-muted-foreground/60 font-normal"> · 本轮 {roundSeen ?? 0}/{roundTotal}</span> : null}
+            </span>
+          </div>
+        )}
         <p className="text-[10px] text-muted-foreground/50 leading-relaxed" style={{ fontFamily: "'Noto Serif SC', serif" }}>
           单张图累计答对 3 次计入掌握，多轮练习逐步积累
         </p>

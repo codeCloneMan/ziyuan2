@@ -7,9 +7,10 @@ import { top500Chars } from '@/data/commonChars';
 import { common5000 } from '@/data/builtinCharSets';
 import { buildFullCodeIndex } from '@/lib/full-codes';
 import type { PracticeLevel } from '@/types';
-import { PracticeKeyboard } from '@/components/practice';
+import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
+import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   useWholeCharProgress,
   usePreferences,
@@ -114,6 +115,9 @@ export default function WholeCharPracticePage() {
 
   const isBeginner = level === 'beginner';
 
+  // 轮次记录：一轮 = 当前池每个字都答过至少一次；答完自动重开下一轮
+  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(modeKey, learningPool.length);
+
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
   // ============================================
@@ -168,6 +172,7 @@ export default function WholeCharPracticePage() {
   const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [userWrongSplit, setUserWrongSplit] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [roundToast, setRoundToast] = useState<number | null>(null);
   // 重新练习时 isPlaying 可能已是 true（完成弹窗内），setState 相同值会被 React bail out，
   // 不会触发下方 generateNext effect；用 nonce 强制 effect 重跑
   const [restartNonce, setRestartNonce] = useState(0);
@@ -273,10 +278,12 @@ export default function WholeCharPracticePage() {
       wrongQueueRef.current = [];
     }
     reset();
+    // 新一轮练习：本轮已答集合清零（已完成轮数是持久记录，保留）
+    resetRound();
     start();
     // 强制 generateNext effect 重跑（isPlaying 可能已是 true，start() 不触发重渲染）
     setRestartNonce(n => n + 1);
-  }, [isBeginner, learningPool, reset, start, spacedResetProgress]);
+  }, [isBeginner, learningPool, reset, resetRound, start, spacedResetProgress]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -316,21 +323,32 @@ export default function WholeCharPracticePage() {
 
     // 该字的全部全码：打出任意一个即正确；输入只要是某个全码的前缀就继续
     const accepted = fullCodeIndex.get(currentItem.char)?.accepted ?? [currentItem.code];
-    if (accepted.some(code => code.startsWith(newCode))) {
-      if (accepted.includes(newCode)) {
-        recordAnswer(modeKey, currentItem.char, true);
-        if (isBeginner) spacedRecordResult(currentItem.char, true);
-        submit(true, key);
-      }
+    const isPrefix = accepted.some(code => code.startsWith(newCode));
+    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
+    if (isPrefix && !accepted.includes(newCode)) return;
+
+    const isCorrect = accepted.includes(newCode);
+    if (isCorrect) {
+      recordAnswer(modeKey, currentItem.char, true);
+      if (isBeginner) spacedRecordResult(currentItem.char, true);
     } else {
       recordAnswer(modeKey, currentItem.char, false);
       if (isBeginner) spacedRecordResult(currentItem.char, false);
       setUserWrongSplit(newCode);
       setShowSplitViz(true);
       setSplitAnimationStep(splitParts.length);
-      submit(false, key);
     }
-  }, [isPlaying, feedbackType, inputCode, currentItem, fullCodeIndex, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult]);
+
+    // 轮次：答完池内最后一个字即完成一轮 —— 记录轮次、本轮统计归零，
+    // 下一题自动进入新一轮。先 reset 再 submit，最后一题计入新一轮不丢。
+    const roundDone = markSeen(currentItem.char);
+    if (roundDone) {
+      reset();
+      setRoundToast(completedRounds + 1);
+    }
+
+    submit(isCorrect, key);
+  }, [isPlaying, feedbackType, inputCode, currentItem, fullCodeIndex, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult, markSeen, reset, completedRounds]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -480,6 +498,13 @@ export default function WholeCharPracticePage() {
                     )}
                   </div>
                 )}
+
+                {completedRounds > 0 && (
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground/60">
+                    已完成 <span className="font-mono-stat font-semibold text-foreground/70">{completedRounds}</span> 轮
+                    <span className="text-muted-foreground/40">（每轮 {learningPool.length} 个字各答一次）</span>
+                  </p>
+                )}
               </div>
 
               {/* 右：难度与设置 */}
@@ -572,14 +597,17 @@ export default function WholeCharPracticePage() {
                 已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
                 {' · '}已练习 <span className="font-mono-stat">{practicedCount}</span>
                 <span className="text-muted-foreground/40"> / {learningPool.length}</span>
-                {practicedCount === learningPool.length && masteredCount < learningPool.length && (
-                  <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已完成一轮</span>
+                {completedRounds > 0 && (
+                  <span className="ml-1 text-sky-600 dark:text-sky-400 font-semibold">已完成 {completedRounds} 轮</span>
                 )}
                 {masteredCount === learningPool.length && (
                   <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
                 )}
               </span>
-              <span>今日 {todayStats.attempts}题</span>
+              <span className="flex items-center gap-2">
+                <span>第 {completedRounds + 1} 轮 · 本轮 <span className="font-mono-stat text-foreground/70">{roundSeen}</span>/{learningPool.length}</span>
+                <span>今日 {todayStats.attempts}题</span>
+              </span>
             </div>
             <div className="progress-base h-1.5 relative overflow-hidden">
               <div className={cn(
@@ -805,6 +833,8 @@ export default function WholeCharPracticePage() {
       </div>
 
       {/* 进度完成弹窗 */}
+      <RoundCompleteToast roundNo={roundToast} onClose={() => setRoundToast(null)} />
+
       {showCompletionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="card-base p-8 max-w-sm w-full mx-4 text-center animate-fade-in">

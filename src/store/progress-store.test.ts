@@ -75,4 +75,22 @@ describe('progress-store 导入防御', () => {
     const result = importProgressFromJSON(JSON.stringify({ root: {} }));
     expect(result.success).toBe(false);
   });
+
+  it('轮次记录：合法轮数保留，非法值被清洗', () => {
+    const withRounds = {
+      ...createDefaultState(),
+      rounds: { 'root:beginner': 2, 'whole:advanced': 1, bad: -3, worse: 'x' },
+    };
+    const result = importProgressFromJSON(JSON.stringify(withRounds));
+    expect(result.success).toBe(true);
+
+    const imported = JSON.parse(exportProgress());
+    expect(imported.rounds).toEqual({ 'root:beginner': 2, 'whole:advanced': 1 });
+  });
+
+  it('轮次记录缺失或损坏时回退空对象，不崩溃', () => {
+    const result = importProgressFromJSON(JSON.stringify({ version: 4, rounds: 'bad' }));
+    expect(result.success).toBe(true);
+    expect(JSON.parse(exportProgress()).rounds).toEqual({});
+  });
 });

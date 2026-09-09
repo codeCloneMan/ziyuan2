@@ -8,8 +8,9 @@ import { useCharCodeData } from '@/lib/data-loader';
 import { calcMasteredRootCount } from '@/lib/mastered-count';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
+import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useRootProgress, usePreferences, useDailyStats } from '@/store/progress-store';
-import { PracticeKeyboard, StatsSidePanel, PracticeStatusBar, RootDisplayCard } from '@/components/practice';
+import { PracticeKeyboard, StatsSidePanel, PracticeStatusBar, RootDisplayCard, RoundCompleteToast } from '@/components/practice';
 import { Play, Sparkles, GraduationCap, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
 
 const practiceStyleConfig: Record<PracticeLevel, { label: string; icon: typeof Sparkles; description: string }> = {
@@ -71,6 +72,10 @@ export default function PracticePage() {
   const practiceStyle: PracticeLevel = preferences.rootMode;
   const isBeginner = practiceStyle === 'beginner';
 
+  // 轮次记录：一轮 = 390 张图每张都答过至少一次；答完自动重开下一轮
+  const roundKey = `root:${practiceStyle}`;
+  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(roundKey, allRootIds.length);
+
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
   //     每次引入 5 个新字根，答对 3 次即掌握，
@@ -97,6 +102,7 @@ export default function PracticePage() {
   const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
+  const [roundToast, setRoundToast] = useState<number | null>(null);
   // 重新练习时 isPlaying 可能已是 true（完成弹窗内），setState 相同值会被 React bail out，
   // 不会触发下方首题 effect；用 nonce 强制 effect 重跑
   const [restartNonce, setRestartNonce] = useState(0);
@@ -240,13 +246,15 @@ export default function PracticePage() {
       wrongQueueRef.current = [];
     }
     reset();
+    // 新一轮练习：本轮已答集合清零（已完成轮数是持久记录，保留）
+    resetRound();
     start();
     // 强制首题 effect 重跑（isPlaying 可能已是 true，start() 不触发重渲染）
     setRestartNonce(n => n + 1);
     // 首题由下方 useEffect 在渲染后生成：startPractice 内同步调用 nextRoot 会读到
     // 本次渲染的旧池（dispatch 后 store 状态在事件处理器内不更新），
     // 上一轮全部掌握时会导致立即重弹完成弹窗、无法重开练习。
-  }, [isBeginner, reset, start, spacedResetProgress]);
+  }, [isBeginner, reset, resetRound, start, spacedResetProgress]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -308,9 +316,18 @@ export default function PracticePage() {
       spacedRecordResult(current.file, isCorrect);
     }
 
+    // 轮次：答完池内最后一张图即完成一轮 —— 记录轮次、本轮统计归零，
+    // 下一题自动进入新一轮（不弹窗、不中断）。先 reset 再 submit，
+    // 让这最后一题的作答计入新一轮而不是丢掉。
+    const roundDone = markSeen(current.file);
+    if (roundDone) {
+      reset();
+      setRoundToast(completedRounds + 1);
+    }
+
     // 交由统一状态机处理反馈着色、计分与切题
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, recordAnswer, isBeginner, submit, spacedRecordResult]);
+  }, [isPlaying, feedbackType, recordAnswer, isBeginner, submit, spacedRecordResult, markSeen, reset, completedRounds]);
 
   // 全局键盘监听
   useEffect(() => {
@@ -435,6 +452,13 @@ export default function PracticePage() {
                     )}
                   </div>
                 )}
+
+                {completedRounds > 0 && (
+                  <p className="mt-3 text-center text-[11px] text-muted-foreground/60">
+                    已完成 <span className="font-mono-stat font-semibold text-foreground/70">{completedRounds}</span> 轮
+                    <span className="text-muted-foreground/40">（每轮 {totalRoots} 张图各答一次）</span>
+                  </p>
+                )}
               </div>
 
               {/* 右：模式与设置 */}
@@ -498,6 +522,9 @@ export default function PracticePage() {
         todayAttempts={todayStats.attempts}
         cumulativeAttempts={progress.totalAttempts}
         cumulativeAccuracy={progress.totalAttempts > 0 ? Math.round((progress.totalCorrect / progress.totalAttempts) * 100) : undefined}
+        completedRounds={completedRounds}
+        roundSeen={roundSeen}
+        roundTotal={totalRoots}
         showHint={showHint}
         isSpeedMode={!isBeginner}
         onStop={stopPractice}
@@ -540,9 +567,14 @@ export default function PracticePage() {
             totalRootsCount={totalRoots}
             weakestRoots={weakestRoots}
             cumulative={{ attempts: progress.totalAttempts, correct: progress.totalCorrect }}
+            completedRounds={completedRounds}
+            roundSeen={roundSeen}
+            roundTotal={totalRoots}
           />
         </div>
       </div>
+
+      <RoundCompleteToast roundNo={roundToast} onClose={() => setRoundToast(null)} />
 
       {/* 进度完成弹窗 */}
       {showCompletionModal && (

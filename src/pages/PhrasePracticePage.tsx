@@ -3,8 +3,9 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, useBuiltinPhrases, type CharCodeItem, type BuiltinPhrasesData } from '@/lib/data-loader';
-import { PracticeKeyboard } from '@/components/practice';
+import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
+import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   usePhraseProgress,
   usePreferences,
@@ -173,6 +174,7 @@ export default function PhrasePracticePage() {
   const [showStats, setShowStats] = useState(false);
   const [phraseQueue, setPhraseQueue] = useState<PhraseItem[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [roundToast, setRoundToast] = useState<number | null>(null);
 
   const answerStartTime = useRef<number>(0);
   const phraseInputRef = useRef<HTMLInputElement>(null);
@@ -190,6 +192,10 @@ export default function PhrasePracticePage() {
   }, [level, charCodeData, phrasesData, charToFullCodes]);
   const poolReady = phrasePool.length > 0;
   const poolCount = phrasePool.length;
+
+  // 轮次记录：一轮 = 当前词库每个词都答过至少一次；答完自动重开下一轮
+  const roundKey = `phrase:${level}`;
+  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(roundKey, poolCount);
 
   const advancePhrase = useCallback(() => {
     // 优先取错题（已隔 ≥3 步）；原地修改队列避免重新赋值 ref.current
@@ -270,8 +276,10 @@ export default function PhrasePracticePage() {
     setSessionResults([]);
     answerStartTime.current = Date.now();
     reset();
+    // 新一轮练习：本轮已答集合清零（已完成轮数是持久记录，保留）
+    resetRound();
     start();
-  }, [phrasePool, level, setStoreMode, reset, start]);
+  }, [phrasePool, level, setStoreMode, reset, resetRound, start]);
 
   const handleLevelChange = useCallback((lvl: PracticeLevel) => {
     setPref('phraseMode', lvl);
@@ -288,19 +296,30 @@ export default function PhrasePracticePage() {
     const time = Date.now() - answerStartTime.current;
     const result = { phrase: currentPhrase.phrase, input: newCode, time, fullCode: correctCode };
 
-    if (correctCode.startsWith(newCode)) {
-      if (newCode === correctCode) {
-        recordAnswer(true);
-        setSessionResults(prev => [...prev, { ...result, correct: true }]);
-        submit(true, key);
-      }
-      return;
+    const isPrefix = correctCode.startsWith(newCode);
+    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
+    if (isPrefix && newCode !== correctCode) return;
+
+    const isCorrect = newCode === correctCode;
+    if (isCorrect) {
+      recordAnswer(true);
+      setSessionResults(prev => [...prev, { ...result, correct: true }]);
+    } else {
+      recordAnswer(false);
+      setSessionResults(prev => [...prev, { ...result, correct: false }]);
     }
 
-    recordAnswer(false);
-    setSessionResults(prev => [...prev, { ...result, correct: false }]);
-    submit(false, key);
-  }, [isPlaying, feedbackType, inputCode, currentPhrase, recordAnswer, submit]);
+    // 轮次：答完词库最后一个词即完成一轮 —— 记录轮次、本轮统计归零，
+    // 下一题自动进入新一轮。先 reset 再 submit，最后一题计入新一轮不丢。
+    const roundDone = markSeen(currentPhrase.phrase);
+    if (roundDone) {
+      reset();
+      setSessionResults([]);
+      setRoundToast(completedRounds + 1);
+    }
+
+    submit(isCorrect, key);
+  }, [isPlaying, feedbackType, inputCode, currentPhrase, recordAnswer, submit, markSeen, reset, completedRounds]);
 
   /** 虚拟键盘退格 */
   const handleBackspace = useCallback(() => {
@@ -331,8 +350,8 @@ export default function PhrasePracticePage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isPlaying, feedbackType, handleKeyPress, stopPractice]);
 
-  const progress = phraseQueue.length > 0
-    ? ((currentIndex + 1) / phraseQueue.length) * 100 : 0;
+  // 本轮进度 = 本轮已答词数 / 词库总数（与轮次记录同一口径，不再用队列下标）
+  const progress = poolCount > 0 ? (roundSeen / poolCount) * 100 : 0;
 
   if (dataLoading || !charCodeData) {
     return (
@@ -375,7 +394,9 @@ export default function PhrasePracticePage() {
                       {poolReady ? '开始练习' : '加载中...'}
                     </button>
                     <p className="text-xs text-muted-foreground/70 mt-4">
-                      {poolCount.toLocaleString()} 个词组 · 完整循环随机练习 · 今日 {todayStats.attempts} 题
+                      {poolCount.toLocaleString()} 个词组 · 完整循环随机练习
+                      {completedRounds > 0 && <> · 已完成 {completedRounds} 轮</>}
+                      {' · '}今日 {todayStats.attempts} 题
                     </p>
                   </div>
 
@@ -439,7 +460,10 @@ export default function PhrasePracticePage() {
             <div className="mb-6">
               <div className="flex justify-between text-sm items-center mb-2">
                 <span className="text-muted-foreground">
-                  {currentIndex + 1} / {phraseQueue.length}
+                  第 {completedRounds + 1} 轮 · 本轮 <span className="font-mono-stat text-foreground/70">{roundSeen}</span>/{poolCount}
+                  {completedRounds > 0 && (
+                    <span className="ml-2 text-sky-600 dark:text-sky-400 font-semibold text-xs">已完成 {completedRounds} 轮</span>
+                  )}
                 </span>
                 <span className="flex items-center gap-1 text-muted-foreground">
                   <Flame className={cn('h-3.5 w-3.5', stats.streak >= 10 ? 'text-orange-500' : 'text-muted-foreground')} />
@@ -671,6 +695,8 @@ export default function PhrasePracticePage() {
           </div>
         </section>
       )}
+
+      <RoundCompleteToast roundNo={roundToast} onClose={() => setRoundToast(null)} />
     </div>
   );
 }

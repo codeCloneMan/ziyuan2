@@ -3,3 +3,4 @@ export type { KeyboardDisplayMode, PracticeKeyboardProps } from './PracticeKeybo
 export { default as StatsSidePanel } from './StatsSidePanel';
 export { default as PracticeStatusBar } from './PracticeStatusBar';
 export { default as RootDisplayCard } from './RootDisplayCard';
+export { default as RoundCompleteToast } from './RoundCompleteToast';

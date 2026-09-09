@@ -16,6 +16,12 @@ interface PracticeStatusBarProps {
   cumulativeAttempts?: number;
   /** 累计正确率（0~100） */
   cumulativeAccuracy?: number;
+  /** 已完成轮数（持久化记录：每答完池内所有题一轮 +1） */
+  completedRounds?: number;
+  /** 当前这一轮已答题数 */
+  roundSeen?: number;
+  /** 当前这一轮的题目总数 */
+  roundTotal?: number;
   showHint: boolean;
   speedModeTimeLeft?: number;
   isSpeedMode: boolean;
@@ -34,6 +40,9 @@ export default function PracticeStatusBar({
   todayAttempts,
   cumulativeAttempts,
   cumulativeAccuracy,
+  completedRounds,
+  roundSeen,
+  roundTotal,
   showHint,
   speedModeTimeLeft,
   isSpeedMode,
@@ -50,6 +59,11 @@ export default function PracticeStatusBar({
             <Badge variant="secondary" className="bg-primary/8 text-primary font-medium px-2.5 py-1 text-xs">
               {modeLabel}
             </Badge>
+            {completedRounds !== undefined && (
+              <Badge variant="outline" className="text-xs px-2 py-0.5 border-border/50 text-muted-foreground">
+                第 {completedRounds + 1} 轮
+              </Badge>
+            )}
             {stageModeLabel && (
               <Badge variant="outline" className="text-xs px-2 py-0.5 border-border/50">
                 {stageModeLabel}
@@ -101,14 +115,17 @@ export default function PracticeStatusBar({
                 <> · 已练习 <span className="font-mono-stat">{practicedCount}</span></>
               )}
               <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
-              {practicedCount !== undefined && practicedCount >= totalRootsCount && masteredCount < totalRootsCount && (
-                <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已练过全部</span>
+              {completedRounds !== undefined && completedRounds > 0 && (
+                <span className="ml-1 text-sky-600 dark:text-sky-400 font-semibold">已完成 {completedRounds} 轮</span>
               )}
               {masteredCount === totalRootsCount && (
                 <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
               )}
             </span>
             <span className="flex items-center gap-2">
+              {roundTotal !== undefined && roundTotal > 0 && (
+                <span>本轮 <span className="font-mono-stat text-foreground/70">{roundSeen ?? 0}</span>/{roundTotal}</span>
+              )}
               {cumulativeAttempts !== undefined && cumulativeAttempts > 0 && (
                 <span>累计 <span className="font-mono-stat text-foreground/70">{cumulativeAttempts}</span> 题
                   {cumulativeAccuracy !== undefined && <> · 正确率 <span className="font-mono-stat text-foreground/70">{cumulativeAccuracy}%</span></>}

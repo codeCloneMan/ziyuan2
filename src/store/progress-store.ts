@@ -16,6 +16,7 @@
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { imagePoolSet } from '@/data/root-images';
+import { sanitizeRounds } from '@/lib/practice-round';
 
 // ========================================
 // Schema 类型定义
@@ -108,6 +109,12 @@ export interface ProgressState {
   wholeChar: WholeCharProgress;
   phrase: PhraseProgress;
   spacedPools: Record<string, SpacedPool>;
+  /**
+   * 各练习池已完成轮数（poolKey → 轮数）。
+   * 一轮 = 该池每道题都至少作答过一次；答完最后一题即 +1 并自动重开下一轮。
+   * 与进行中的累计计数分开记录，避免"题再次出现"时统计口径混淆。
+   */
+  rounds: Record<string, number>;
   achievements: string[];
   preferences: Preferences;
   totalPoints: number;
@@ -163,6 +170,7 @@ export function createDefaultState(): ProgressState {
     wholeChar: { ...defaultWholeChar },
     phrase: { ...defaultPhrase },
     spacedPools: {},
+    rounds: {},
     achievements: [],
     preferences: { ...defaultPreferences },
     totalPoints: 0,
@@ -223,6 +231,7 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
     phrase: { ...defaults.phrase, ...partialPhrase },
     preferences: prefs,
     spacedPools: partialPools,
+    rounds: sanitizeRounds(partial.rounds),
     achievements: Array.isArray(partial.achievements) ? partial.achievements : defaults.achievements,
     totalPoints: typeof partial.totalPoints === 'number' ? partial.totalPoints : defaults.totalPoints,
     dailyStats: partialDaily,
@@ -279,6 +288,7 @@ export type ProgressAction =
   | { type: 'PHRASE_SET_MODE'; mode: string }
   | { type: 'SPACED_RECORD'; poolKey: string; itemId: string; isCorrect: boolean; allItemIds: string[] }
   | { type: 'SPACED_RESET'; poolKey: string; allItemIds: string[] }
+  | { type: 'ROUND_COMPLETE'; poolKey: string }
   | { type: 'ACHIEVE'; achievement: string }
   | { type: 'SET_PREF'; key: keyof Preferences; value: Preferences[keyof Preferences] }
   | { type: 'HYDRATE'; state: ProgressState }
@@ -514,6 +524,15 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
       const pools = { ...state.spacedPools };
       pools[poolKey] = createDefaultPool(allItemIds);
       return { ...state, spacedPools: pools };
+    }
+
+    case 'ROUND_COMPLETE': {
+      // 轮次记录只增不减：答完一轮就留痕，下一轮统计从零开始互不干扰
+      const { poolKey } = action;
+      return {
+        ...state,
+        rounds: { ...state.rounds, [poolKey]: (state.rounds[poolKey] || 0) + 1 },
+      };
     }
 
     case 'ACHIEVE': {
