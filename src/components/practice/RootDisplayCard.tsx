@@ -1,11 +1,15 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import RootCharDisplay from '@/components/RootCharDisplay';
+import { rootImagePath } from '@/data/root-images';
 import { CheckCircle2, XCircle, Lightbulb } from 'lucide-react';
-import type { RootMapping } from '@/data/roots';
 
 interface RootDisplayCardProps {
-  currentRoot: RootMapping;
+  /** 题目：官方字根图文件名（public/roots/ 下） */
+  imageFile: string;
+  /** 本图的答案键位 */
+  answerKey: string;
+  /** 本图对应的可渲染字符（仅部分图能对应到码表字根；用于答错后的音托提示） */
+  hintChar?: string;
   keyFeedback: string | null;
   feedbackType: 'correct' | 'wrong' | null;
   showHint: boolean;
@@ -19,7 +23,9 @@ interface RootDisplayCardProps {
 }
 
 export default function RootDisplayCard({
-  currentRoot,
+  imageFile,
+  answerKey,
+  hintChar,
   keyFeedback,
   feedbackType,
   showHint,
@@ -30,6 +36,13 @@ export default function RootDisplayCard({
   onNativeFocusChange,
 }: RootDisplayCardProps) {
   const [focused, setFocused] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
+  // 切题时重置图片加载失败标记
+  const [lastFile, setLastFile] = useState(imageFile);
+  if (lastFile !== imageFile) {
+    setLastFile(imageFile);
+    setImgFailed(false);
+  }
 
   return (
     <div className={cn(
@@ -46,19 +59,26 @@ export default function RootDisplayCard({
           </div>
         )}
 
-        {/* 当前字根 - 印章/宣纸感 */}
+        {/* 当前字根图 - 印章/宣纸感。注意 alt/title 不得含文件名与键位，否则悬停即泄露答案 */}
         <div className={cn(
-          "relative flex items-center justify-center h-28 w-28 sm:h-36 sm:w-36 rounded-xl border-2 transition-all duration-300 mb-4",
+          "relative flex items-center justify-center h-28 w-28 sm:h-36 sm:w-36 rounded-xl border-2 transition-all duration-300 mb-4 overflow-hidden",
           feedbackType === 'correct'
             ? "border-emerald-300 bg-emerald-50/50 dark:bg-emerald-950/20 scale-105"
             : feedbackType === 'wrong'
             ? "border-red-300 bg-red-50/50 dark:bg-red-950/20 scale-95"
             : "border-border/50 bg-gradient-to-b from-amber-50/20 to-transparent dark:from-amber-950/10"
         )}>
-          <RootCharDisplay root={currentRoot} size="xl" showDesc={true}
-            className={cn("border-0 bg-transparent",
-              feedbackType === 'correct' && "text-emerald-600 dark:text-emerald-400",
-              feedbackType === 'wrong' && "text-red-600 dark:text-red-400")} />
+          {imgFailed ? (
+            <span className="text-xs text-muted-foreground/70 px-2 text-center">字根图加载失败</span>
+          ) : (
+            <img
+              src={rootImagePath(imageFile)}
+              alt="字根图"
+              draggable={false}
+              className="max-h-full max-w-full object-contain p-1 select-none"
+              onError={() => setImgFailed(true)}
+            />
+          )}
           {feedbackType === 'correct' && (
             <div className="absolute -top-1.5 -right-1.5 animate-bounce-in"><CheckCircle2 className="h-6 w-6 text-emerald-500" /></div>
           )}
@@ -130,18 +150,18 @@ export default function RootDisplayCard({
                 <XCircle className="h-4 w-4" />
                 <span>正确键位：</span>
                 <span className="inline-flex items-center justify-center h-6 w-6 rounded bg-red-100/60 dark:bg-red-900/30 font-mono text-xs font-bold text-red-600 dark:text-red-400">
-                  {currentRoot.key.toUpperCase()}
+                  {answerKey.toUpperCase()}
                 </span>
               </>
             )}
           </div>
         )}
 
-        {/* 音托提示 */}
-        {phoneticHint && feedbackType === 'wrong' && showHint && (
+        {/* 音托提示（仅当本图能对应到码表可渲染字根时才有） */}
+        {phoneticHint && hintChar && feedbackType === 'wrong' && showHint && (
           <div className="mt-2 px-3 py-1.5 rounded-lg bg-amber-500/8 border-l-2 border-amber-500/25 text-amber-700 dark:text-amber-300 text-xs"
             style={{ fontFamily: "'Noto Serif SC', serif" }}>
-            <Lightbulb className="h-3 w-3 inline mr-1" />音托提示：{currentRoot.char} ({phoneticHint})
+            <Lightbulb className="h-3 w-3 inline mr-1" />音托提示：{hintChar} ({phoneticHint})
           </div>
         )}
       </div>

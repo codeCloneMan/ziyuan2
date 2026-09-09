@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { practiceRootMappings } from '@/data/roots';
-import type { RootMapping } from '@/data/roots';
+import { ROOT_IMAGE_POOL, allImageIds, type RootImage } from '@/data/root-images';
+import { ROOT_IMAGE_MANIFEST, rootMappings } from '@/data/roots';
 import type { PracticeLevel } from '@/types';
 import { useCharCodeData } from '@/lib/data-loader';
 import { calcMasteredRootCount } from '@/lib/mastered-count';
@@ -13,16 +13,29 @@ import { PracticeKeyboard, StatsSidePanel, PracticeStatusBar, RootDisplayCard } 
 import { Play, Sparkles, GraduationCap, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
 
 const practiceStyleConfig: Record<PracticeLevel, { label: string; icon: typeof Sparkles; description: string }> = {
-  beginner: { label: '入门', icon: Sparkles, description: '所有字根 · 科学循序渐进' },
-  advanced: { label: '进阶', icon: GraduationCap, description: '所有字根 · 高速循环反馈' },
+  beginner: { label: '入门', icon: Sparkles, description: '所有字根图 · 科学循序渐进' },
+  advanced: { label: '进阶', icon: GraduationCap, description: '所有字根图 · 高速循环反馈' },
 };
 
-/** 所有可练习的字根 ID（入门和进阶都用全量） */
-const allRootIds = practiceRootMappings.map(r => r.char);
+/**
+ * 练习题库 = 官方图集（390 张字根图）。
+ * 练习单元是一张图，答案键位 = 文件名首字母（官方命名规则），
+ * 统计（correctCountMap/wrongCountMap）也以图片文件名为键。
+ */
+const allRootIds = allImageIds;
 
-/** 预建 char → RootMapping 索引，避免 nextRoot 中每次 .find() 做线性搜索 */
-const rootByChar = new Map<string, RootMapping>();
-practiceRootMappings.forEach(r => rootByChar.set(r.char, r));
+/** file → 题目索引 */
+const imageById = new Map<string, RootImage>(ROOT_IMAGE_POOL.map(i => [i.file, i]));
+
+/** file → 码表字根（仅部分图能对应上；用于答错后的音托提示） */
+const rootByFile = (() => {
+  const map = new Map<string, string>();
+  for (const [cpHex, file] of Object.entries(ROOT_IMAGE_MANIFEST)) {
+    const root = rootMappings.find(r => r.codePoint === Number(cpHex));
+    if (root && !map.has(file)) map.set(file, root.char);
+  }
+  return map;
+})();
 
 const phoneticHintMap: Record<string, string> = {
   '高': 'Gāo → g', '古': 'Gǔ → g', '工': 'Gōng → g', '广': 'Guǎng → g',
@@ -80,7 +93,7 @@ export default function PracticePage() {
   // ============================================
   // UI 状态（先声明，避免下方 nextRoot / usePracticeSession 引用未初始化变量）
   // ============================================
-  const [currentRoot, setCurrentRoot] = useState<RootMapping>(practiceRootMappings[0]);
+  const [currentImage, setCurrentImage] = useState<RootImage>(ROOT_IMAGE_POOL[0]);
   const [firstTimeHint, setFirstTimeHint] = useState<string | null>(null);
   const [phoneticHint, setPhoneticHint] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
@@ -93,11 +106,11 @@ export default function PracticePage() {
   // 避免 Android 上每次切题强制 focus 导致软键盘反复弹出、遮挡虚拟键盘
   const nativeInputActiveRef = useRef(false);
 
-  // 用 ref 持有最新 currentRoot，避免 usePracticeSession 的 onWrong 闭包
-  // 把 currentRoot.char 放入 deps 导致 session 频繁重建（每次切题都会重建）
-  const currentRootRef = useRef<RootMapping>(currentRoot);
+  // 用 ref 持有最新 currentImage，避免 usePracticeSession 的 onWrong 闭包
+  // 把 currentImage.file 放入 deps 导致 session 频繁重建（每次切题都会重建）
+  const currentRootRef = useRef<RootImage>(currentImage);
   useEffect(() => {
-    currentRootRef.current = currentRoot;
+    currentRootRef.current = currentImage;
   });
 
   // ============================================
@@ -107,8 +120,8 @@ export default function PracticePage() {
   // ============================================
   const shuffleQueueRef = useRef<string[]>([]);
   const shuffleIndexRef = useRef(0);
-  // 进阶模式错题重练队列：答错的字根在 3 步后重新出现
-  const wrongQueueRef = useRef<{ char: string; step: number }[]>([]);
+  // 进阶模式错题重练队列：答错的图在 3 步后重新出现
+  const wrongQueueRef = useRef<{ id: string; step: number }[]>([]);
 
   // 切题函数：根据模式选择不同的下一题策略
   // 注意：spaced.getNextItem 通过 ref 读取 pool，引用已永久稳定
@@ -123,29 +136,29 @@ export default function PracticePage() {
       return;
     }
 
-    let nextChar: string | null = null;
+    let nextId: string | null = null;
 
     if (isBeginner) {
-      nextChar = spacedGetNextItem();
+      nextId = spacedGetNextItem();
     } else {
       // 优先取错题（已隔 ≥3 步）
       wrongQueueRef.current = wrongQueueRef.current.map(w => ({ ...w, step: w.step + 1 }));
       const dueWrong = wrongQueueRef.current.find(w => w.step >= 3);
       if (dueWrong) {
         wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
-        nextChar = dueWrong.char;
+        nextId = dueWrong.id;
       } else {
         shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
         // 回绕到 0 时重新洗牌，避免每轮顺序相同导致强行记忆
         if (shuffleIndexRef.current === 0) {
           shuffleQueueRef.current = shuffleInPlace([...shuffleQueueRef.current]);
         }
-        nextChar = shuffleQueueRef.current[shuffleIndexRef.current];
+        nextId = shuffleQueueRef.current[shuffleIndexRef.current];
       }
     }
 
-    if (nextChar) {
-      setCurrentRoot(rootByChar.get(nextChar) ?? practiceRootMappings[0]);
+    if (nextId) {
+      setCurrentImage(imageById.get(nextId) ?? ROOT_IMAGE_POOL[0]);
     }
   }, [isBeginner, spacedGetNextItem, spaced.pool]); // spacedGetNextItem/pool 均稳定，仅池变化时重建
 
@@ -161,9 +174,9 @@ export default function PracticePage() {
     wrongClearDelay: isBeginner ? 2500 : 1500,
     onCorrect: nextRoot,
     onWrong: () => {
-      // 通过 ref 读取最新 currentRoot，避免闭包捕获 + 避免把 currentRoot.char 放入 deps
-      if (!isBeginner && currentRootRef.current.char) {
-        wrongQueueRef.current.push({ char: currentRootRef.current.char, step: 0 });
+      // 通过 ref 读取最新 currentImage，避免闭包捕获 + 避免把 currentImage.file 放入 deps
+      if (!isBeginner && currentRootRef.current.file) {
+        wrongQueueRef.current.push({ id: currentRootRef.current.file, step: 0 });
       }
       nextRoot();
     },
@@ -193,14 +206,14 @@ export default function PracticePage() {
     return seen.size;
   }, [progress.correctCountMap, progress.wrongCountMap]);
 
-  // 弱项字根完整列表（按正确率升序），weakRootsCount 取总数
+  // 弱项字根图完整列表（按正确率升序），weakRootsCount 取总数
   const weakRootsAll = useMemo(() => {
-    return practiceRootMappings
-      .map(r => ({
-        char: r.char,
-        key: r.key,
-        wrong: progress.wrongCountMap[r.char] || 0,
-        correct: progress.correctCountMap[r.char] || 0,
+    return ROOT_IMAGE_POOL
+      .map(img => ({
+        file: img.file,
+        key: img.key,
+        wrong: progress.wrongCountMap[img.file] || 0,
+        correct: progress.correctCountMap[img.file] || 0,
       }))
       .filter(r => r.wrong > 0)
       .sort((a, b) => {
@@ -261,18 +274,18 @@ export default function PracticePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 首题生成依赖 store 重渲染后的池状态，由 restartNonce 控制重触发
   }, [isPlaying, restartNonce]);
 
-  // 新字根首次出现时，显示答案提示（仅入门模式）
+  // 新图首次出现时，显示答案提示（仅入门模式）
   useEffect(() => {
     if (showHint && isPlaying && !feedbackType) {
-      const seenCount = progress.correctCountMap[currentRoot.char] || 0;
+      const seenCount = progress.correctCountMap[currentImage.file] || 0;
       if (seenCount === 0) {
-        setFirstTimeHint(`答案是 ${currentRoot.key.toUpperCase()}`);
+        setFirstTimeHint(`答案是 ${currentImage.key.toUpperCase()}`);
         const timer = setTimeout(() => setFirstTimeHint(null), 3000);
         return () => clearTimeout(timer);
       }
     }
     setFirstTimeHint(null);
-  }, [currentRoot.char, currentRoot.key, isPlaying, showHint, feedbackType, progress.correctCountMap]);
+  }, [currentImage.file, currentImage.key, isPlaying, showHint, feedbackType, progress.correctCountMap]);
 
   // ============================================
   // 键盘交互
@@ -281,25 +294,27 @@ export default function PracticePage() {
   const handleKeyPress = useCallback((key: string) => {
     if (!isPlaying || feedbackType) return;
 
-    const isCorrect = key === currentRoot.key;
+    const current = currentRootRef.current;
+    const isCorrect = key === current.key;
 
-    // 答错时显示音托提示
+    // 答错时显示音托提示（仅当该图能对应到码表字根）
     if (!isCorrect) {
-      const phonetic = phoneticHintMap[currentRoot.char];
+      const hintChar = rootByFile.get(current.file);
+      const phonetic = hintChar ? phoneticHintMap[hintChar] : undefined;
       if (phonetic) setPhoneticHint(phonetic);
     }
 
-    // 持久化进度
-    recordAnswer(currentRoot.char, isCorrect);
+    // 持久化进度（以图片文件名为键）
+    recordAnswer(current.file, isCorrect);
 
     // 入门模式：同步更新间隔学习池（recordResult 引用稳定）
     if (isBeginner) {
-      spacedRecordResult(currentRoot.char, isCorrect);
+      spacedRecordResult(current.file, isCorrect);
     }
 
     // 交由统一状态机处理反馈着色、计分与切题
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, currentRoot, recordAnswer, isBeginner, submit, spacedRecordResult]);
+  }, [isPlaying, feedbackType, recordAnswer, isBeginner, submit, spacedRecordResult]);
 
   // 全局键盘监听
   useEffect(() => {
@@ -325,7 +340,7 @@ export default function PracticePage() {
     if (isPlaying && inputRef.current && nativeInputActiveRef.current) {
       inputRef.current.focus();
     }
-  }, [isPlaying, currentRoot]);
+  }, [isPlaying, currentImage]);
 
   // ============================================
   // 渲染
@@ -356,8 +371,8 @@ export default function PracticePage() {
               </h1>
               <p className="text-muted-foreground max-w-lg mx-auto">
                 {isBeginner
-                  ? '每次引入 5 个新字根，答对 3 次即掌握，遗忘自动复习'
-                  : '全部字根高速轮转，答对答错都秒切下一题'
+                  ? '每次引入 5 张新字根图，答对 3 次即掌握，遗忘自动复习'
+                  : '全部字根图高速轮转，答对答错都秒切下一题'
                 }
               </p>
             </header>
@@ -377,7 +392,7 @@ export default function PracticePage() {
 
                 {!isBeginner && (
                   <p className="text-center text-xs text-muted-foreground/70 mb-4">
-                    {totalRoots} 个字根随机洗牌高速轮转 · 今日已练 {todayStats.attempts} 题
+                    {totalRoots} 张字根图随机洗牌高速轮转 · 今日已练 {todayStats.attempts} 题
                   </p>
                 )}
 
@@ -495,7 +510,9 @@ export default function PracticePage() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 lg:gap-6">
           <div className="lg:col-span-3 space-y-3 sm:space-y-4">
             <RootDisplayCard
-              currentRoot={currentRoot}
+              imageFile={currentImage.file}
+              answerKey={currentImage.key}
+              hintChar={rootByFile.get(currentImage.file)}
               keyFeedback={keyFeedback}
               feedbackType={feedbackType}
               showHint={showHint}
@@ -508,7 +525,8 @@ export default function PracticePage() {
 
             <PracticeKeyboard
               mode="roots"
-              currentRoot={currentRoot}
+              answerKey={currentImage.key}
+              currentRootChar={rootByFile.get(currentImage.file)}
               keyFeedback={keyFeedback}
               feedbackType={feedbackType}
               isPlaying={isPlaying}
@@ -548,7 +566,7 @@ export default function PracticePage() {
             <p className="text-muted-foreground mb-6">
               {masteredCount === totalRoots
                 ? "你已经掌握了所有字根！"
-                : `你已经练习完所有 ${totalRoots} 个字根，已掌握 ${masteredCount} 个。继续加油！`}
+                : `你已经练习完所有 ${totalRoots} 张字根图，已掌握 ${masteredCount} 张。继续加油！`}
             </p>
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="p-3 rounded-lg bg-muted/50">

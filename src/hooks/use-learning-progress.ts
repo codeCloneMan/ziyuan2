@@ -8,6 +8,7 @@
 import { useMemo } from 'react';
 import { useProgressStore } from '@/store/progress-store';
 import { practiceRootMappings } from '@/data/roots';
+import { allImageIds } from '@/data/root-images';
 
 export interface LearningStage {
   id: string;
@@ -61,9 +62,9 @@ export function useLearningProgress() {
   const { state } = useProgressStore();
 
   const stages = useMemo<LearningStage[]>(() => {
-    // 字根进度：correctCountMap 中 >=3 的占比
+    // 字根进度：correctCountMap 中 >=3 的占比（练习单元 = 官方图集图片，键为图片文件名）
     const rootCorrect = state.root.correctCountMap;
-    const totalRoots = practiceRootMappings.length;
+    const totalRoots = allImageIds.length;
     const rootMastered = Object.values(rootCorrect).filter(c => c >= 3).length;
     const rootProgress = Math.min(Math.round((rootMastered / totalRoots) * 100), 100);
 

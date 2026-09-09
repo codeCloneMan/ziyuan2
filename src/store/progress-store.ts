@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import { practiceRootMappings } from '@/data/roots';
+import { imagePoolSet } from '@/data/root-images';
 
 // ========================================
 // Schema 类型定义
@@ -195,15 +195,14 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   const partialDaily = isPlainObject(partial.dailyStats) ? partial.dailyStats : defaults.dailyStats;
 
   // ============================================
-  // 字根进度自愈式清洗：剔除不在当前练习池的字根。
-  // correctCountMap/wrongCountMap 是永久累计的，练习池调整（如扩展区
-  // 字根判定的修正、变体去重）会让历史残留滞留其中，导致"已掌握/已练习"
-  // 各页面口径不一、甚至超过池总数。在所有数据入口统一清洗一次，
-  // 首页/成就/练习页天然同口径，未来池再调整也会自愈。
+  // 字根进度自愈式清洗：剔除不在当前练习池的记录。
+  // 字根练习的练习单元 = 官方图集图片（root.correctCountMap/wrongCountMap
+  // 以图片文件名为键），练习池调整时历史残留会滞留其中，导致"已掌握/已练习"
+  // 各页面口径不一。在所有数据入口统一清洗一次，首页/成就/练习页天然同口径。
   // ============================================
   const mergedRoot = { ...defaults.root, ...partialRoot };
   {
-    const pool = new Set(practiceRootMappings.map(r => r.char));
+    const pool = imagePoolSet;
     const prune = (m: Record<string, number>) => {
       const out: Record<string, number> = {};
       for (const [k, v] of Object.entries(m)) {

@@ -5,9 +5,10 @@ import {
   Trophy, Lightbulb, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import type { PracticeStats } from '@/types';
+import { rootImagePath } from '@/data/root-images';
 
 interface WeakestRoot {
-  char: string;
+  file: string;
   key: string;
   wrong: number;
   correct: number;
@@ -114,9 +115,10 @@ export default function StatsSidePanel({
                 const total = r.correct + r.wrong;
                 const rate = total > 0 ? Math.round((r.correct / total) * 100) : 0;
                 return (
-                  <div key={r.char} className="flex items-center gap-2 text-xs py-1">
+                  <div key={r.file} className="flex items-center gap-2 text-xs py-1">
                     <span className="w-3 text-muted-foreground/50 font-mono">{i + 1}</span>
-                    <span className="root-char text-sm w-5 text-center">{r.char}</span>
+                    <img src={rootImagePath(r.file)} alt="字根图" className="h-6 w-6 rounded border border-border/40 bg-muted/30 object-contain p-0.5" draggable={false} />
+                    <span className="w-3 text-center font-mono font-bold text-muted-foreground/70">{r.key.toUpperCase()}</span>
                     <div className="flex-1 progress-base h-1">
                       <div className="h-full rounded-full bg-red-400/70 transition-all" style={{ width: `${100 - rate}%` }} />
                     </div>

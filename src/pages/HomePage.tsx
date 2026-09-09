@@ -7,6 +7,7 @@ import {
 import {
   keyboardRows, keyRootsMap, practiceRootMappings,
 } from '@/data/roots';
+import { ROOT_IMAGE_POOL } from '@/data/root-images';
 import { useLearningProgress } from '@/hooks/use-learning-progress';
 import { cn } from '@/lib/utils';
 
@@ -113,7 +114,7 @@ export default function HomePage() {
             </div>
 
             <p className="text-xs text-muted-foreground/50 font-mono-stat tracking-wide">
-              {practiceRootMappings.length} 字根 · 26 键位 · 4 种练习模式
+              {ROOT_IMAGE_POOL.length} 张官方字根图 · 26 键位 · 4 种练习模式
             </p>
           </div>
         </div>

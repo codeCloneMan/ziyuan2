@@ -229,12 +229,14 @@ describe('SPACED_RESET 只重置池、保留累计进度（开始练习不再清
   });
 
   it('HYDRATE 导入缺字段 JSON 时走 normalizeState 补齐，不崩溃', () => {
-    // 模拟损坏/旧版导入文件：只有 version 和部分字段
-    const partial = { version: 4, root: { correctCountMap: { '白': 5 } } };
+    // 模拟损坏/旧版导入文件：只有 version 和部分字段。
+    // 字根练习以图片文件名为键；池外的键（如旧的码点字符键）会被清洗剔除。
+    const partial = { version: 4, root: { correctCountMap: { 'a (1).png': 5, '白': 5 } } };
     const newState = reducer(createDefaultState(), { type: 'HYDRATE', state: partial as never });
     expect(newState.preferences).toBeDefined();
     expect(newState.preferences.phraseMode).toBe('beginner');
-    expect(newState.root.correctCountMap['白']).toBe(5);
+    expect(newState.root.correctCountMap['a (1).png']).toBe(5);
+    expect(newState.root.correctCountMap['白']).toBeUndefined();
     expect(newState.phrase.totalAttempts).toBe(0);
   });
 });

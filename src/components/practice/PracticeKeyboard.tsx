@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { keyboardRows, keyRootsMap } from '@/data/roots';
-import type { RootMapping } from '@/data/roots';
+import { imagesByKey } from '@/data/root-images';
 import { Keyboard, Delete } from 'lucide-react';
 
 // ====== 触觉反馈（移动端振动） ======
@@ -35,8 +35,10 @@ export interface PracticeKeyboardProps {
   /** 是否正在练习（roots 模式下用于控制点击交互） */
   isPlaying?: boolean;
   // ===== roots 模式专属 =====
-  currentRoot?: RootMapping;
-  /** 每个键上字根的掌握状态（char -> correctCount），用于淡化已掌握键 */
+  answerKey?: string;
+  /** 当前题对应的码表字根（仅部分图能对应；用于键位详情弹窗高亮） */
+  currentRootChar?: string;
+  /** 每张图的掌握状态（imageFile -> correctCount），用于淡化已掌握键 */
   correctCountMap?: Record<string, number>;
   // ===== codes 模式专属 =====
   onBackspace?: () => void;
@@ -55,7 +57,8 @@ export default function PracticeKeyboard({
   keyFeedback,
   onKeyPress,
   isPlaying = false,
-  currentRoot,
+  answerKey,
+  currentRootChar,
   correctCountMap,
   onBackspace,
   headerLeft,
@@ -124,7 +127,7 @@ export default function PracticeKeyboard({
           <div key={rowIndex} className="flex gap-[3px] sm:gap-1 w-full" style={{ paddingLeft: `${rowIndex * 4}px` }}>
             {row.map((key) => {
               const isFeedback = keyFeedback === key;
-              const isCorrectKey = showRootsExtras && currentRoot ? key === currentRoot.key : false;
+              const isCorrectKey = showRootsExtras && answerKey ? key === answerKey : false;
               const rootsOnKey = keyRootsMap[key] || [];
               const isCurrentRootKey = isCorrectKey && !feedbackType;
 
@@ -134,8 +137,9 @@ export default function PracticeKeyboard({
               else if (showRootsExtras && feedbackType === 'wrong' && isCorrectKey) colorClass = KEY_COLORS.highlight;
 
               // 字根模式下：该键上所有字根均已掌握则淡化
+              const imagesOnKey = imagesByKey[key] || [];
               const keyMastered = showRootsExtras && correctCountMap
-                ? rootsOnKey.every(r => (correctCountMap[r.char] || 0) >= 3)
+                ? imagesOnKey.length > 0 && imagesOnKey.every(img => (correctCountMap[img.file] || 0) >= 3)
                 : false;
 
               return (
@@ -178,7 +182,7 @@ export default function PracticeKeyboard({
                         {rootsOnKey.map(r => (
                           <span key={r.char} className={cn(
                             'px-1 py-0.5 rounded text-[10px]',
-                            r.char === currentRoot?.char ? 'bg-amber-100/60 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-medium' : 'bg-muted/50 text-foreground/70'
+                            r.char === currentRootChar ? 'bg-amber-100/60 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-medium' : 'bg-muted/50 text-foreground/70'
                           )}>
                             {r.displayChar}
                           </span>
