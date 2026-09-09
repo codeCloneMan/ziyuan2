@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import type { RootMapping } from '@/data/roots';
-import { getRootImagePath } from '@/data/roots';
+import { getRootImagePath, isRenderableRoot } from '@/data/roots';
 
 interface RootCharDisplayProps {
   root: RootMapping;
@@ -47,7 +47,15 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
     );
   }
 
-  // 不可渲染字符：优先使用字根图，加载失败再回退到描述文本
+  // 语义描述（"老变"、"𧘇上"这类）：基础字能正常渲染时大字显示基础字、
+  // 小字显示"变/上"后缀，比整串描述更接近真实字根的提示效果；
+  // 基础字本身不可渲染（如 𧘇 属扩展B区）或描述是裸码（"U+E16B"）则整串显示。
+  const isCodeDesc = /^U\+/.test(root.displayChar);
+  const base = isCodeDesc ? '' : [...root.displayChar][0];
+  const suffix = isCodeDesc ? '' : root.displayChar.slice(base.length);
+  const baseRenderable = base !== '' && isRenderableRoot(base.codePointAt(0) ?? 0);
+  const bigBase = baseRenderable && (size === 'lg' || size === 'xl');
+
   return (
     <span
       className={cn(
@@ -68,6 +76,20 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
           className="max-h-full max-w-full object-contain p-0.5"
           onError={() => setImgFailed(true)}
         />
+      ) : bigBase ? (
+        <>
+          <span className={cn(
+            'font-semibold text-amber-700 dark:text-amber-300 leading-none',
+            size === 'xl' ? 'text-5xl sm:text-6xl' : 'text-3xl'
+          )}>
+            {base}
+          </span>
+          {suffix && (
+            <span className="text-xs sm:text-sm text-amber-500 dark:text-amber-400 mt-1" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+              {suffix}
+            </span>
+          )}
+        </>
       ) : (
         <span className={cn(
           'font-semibold text-amber-700 dark:text-amber-300 leading-tight',
@@ -76,7 +98,9 @@ export default function RootCharDisplay({ root, size = 'md', className, showDesc
           {root.displayChar}
         </span>
       )}
-      {showDesc && size !== 'sm' && (
+      {/* 码点小字只给配图字根（字根表详细模式的文档信息）；
+          文本回退时不显示——描述本身已是答案，裸码只会造成"老变 U+E431"这类噪音 */}
+      {showDesc && size !== 'sm' && imageUrl && (
         <span className="text-[10px] text-amber-500 dark:text-amber-400 mt-0.5">
           U+{hex}
         </span>

@@ -55,11 +55,14 @@ describe('字根图显式映射', () => {
 });
 
 describe('扩展区字根判定', () => {
-  it('CJK 扩展G及以后的代理对字根不可渲染，不得进入练习池', () => {
+  it('CJK 扩展G及以后的代理对字根不可渲染；U+32FE3 有图入池，U+475F3 无图不入池', () => {
     // U+32FE3（键s，扩展G）、U+475F3（键j，平面4）
     expect(isRenderableRoot(0x32FE3)).toBe(false);
     expect(isRenderableRoot(0x475F3)).toBe(false);
-    expect(practiceRootMappings.some(r => r.codePoint === 0x32FE3)).toBe(false);
+    // s 键裁剪 6 图 = 6 字根穷举指认 U+32FE3 → s (3).png，可作答故入池
+    expect(ROOT_IMAGE_MANIFEST[0x32FE3]).toBe('s (3).png');
+    expect(practiceRootMappings.some(r => r.codePoint === 0x32FE3)).toBe(true);
+    // U+475F3 无图且描述为裸码，用户无法作答，不入池
     expect(practiceRootMappings.some(r => r.codePoint === 0x475F3)).toBe(false);
   });
 
@@ -102,6 +105,7 @@ describe('同键同形字根去重', () => {
     const list = [fake('老变', 'd', 0xE431), fake('老变', 'u', 0xE478)];
     expect(dedupeRootsByDisplay(list)).toHaveLength(2);
   });
+});
 
 describe('练习池（虎码模式：全部字根入练）', () => {
   it('每个练习池字根都可作答：有配图或有语义描述', () => {
@@ -141,5 +145,4 @@ describe('calcMasteredRootCount 池过滤', () => {
     expect(calcMasteredRootCount(map)).toBe(2); // 不传池：按旧口径
     expect(calcMasteredRootCount(map, ['白'])).toBe(1); // 传池：legacy 不计
   });
-});
 });
