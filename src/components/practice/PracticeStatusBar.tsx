@@ -95,7 +95,7 @@ export default function PracticeStatusBar({
                 <> · 已练习 <span className="font-mono-stat">{practicedCount}</span></>
               )}
               <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
-              {practicedCount !== undefined && practicedCount === totalRootsCount && masteredCount < totalRootsCount && (
+              {practicedCount !== undefined && practicedCount >= totalRootsCount && masteredCount < totalRootsCount && (
                 <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已完成一轮</span>
               )}
               {masteredCount === totalRootsCount && (
@@ -110,7 +110,7 @@ export default function PracticeStatusBar({
               <div className={cn(
                 "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
                 masteredCount === totalRootsCount ? "bg-emerald-500/30"
-                  : practicedCount === totalRootsCount ? "bg-amber-500/25"
+                  : practicedCount >= totalRootsCount ? "bg-amber-500/25"
                   : "bg-primary/20"
               )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRootsCount) * 100))}%` }} />
             )}

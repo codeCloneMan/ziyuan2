@@ -15,6 +15,7 @@
  */
 
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { practiceRootMappings } from '@/data/roots';
 
 // ========================================
 // Schema 类型定义
@@ -193,11 +194,32 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   const partialPools = isPlainObject(partial.spacedPools) ? partial.spacedPools : defaults.spacedPools;
   const partialDaily = isPlainObject(partial.dailyStats) ? partial.dailyStats : defaults.dailyStats;
 
+  // ============================================
+  // 字根进度自愈式清洗：剔除不在当前练习池的字根。
+  // correctCountMap/wrongCountMap 是永久累计的，练习池调整（如扩展区
+  // 字根判定的修正、变体去重）会让历史残留滞留其中，导致"已掌握/已练习"
+  // 各页面口径不一、甚至超过池总数。在所有数据入口统一清洗一次，
+  // 首页/成就/练习页天然同口径，未来池再调整也会自愈。
+  // ============================================
+  const mergedRoot = { ...defaults.root, ...partialRoot };
+  {
+    const pool = new Set(practiceRootMappings.map(r => r.char));
+    const prune = (m: Record<string, number>) => {
+      const out: Record<string, number> = {};
+      for (const [k, v] of Object.entries(m)) {
+        if (pool.has(k)) out[k] = v;
+      }
+      return out;
+    };
+    mergedRoot.correctCountMap = prune(mergedRoot.correctCountMap ?? {});
+    mergedRoot.wrongCountMap = prune(mergedRoot.wrongCountMap ?? {});
+  }
+
   return {
     ...defaults,
     ...partial,
     version: CURRENT_VERSION,
-    root: { ...defaults.root, ...partialRoot },
+    root: mergedRoot,
     wholeChar: { ...defaults.wholeChar, ...partialWholeChar },
     phrase: { ...defaults.phrase, ...partialPhrase },
     preferences: prefs,
@@ -676,7 +698,8 @@ function loadFromStorage(): ProgressState {
     } catch { /* ignore */ }
   }
   if (Object.keys(oldData).length > 0) {
-    return migrateFromOld(oldData);
+    // 旧 key 迁移结果同样过 normalizeState，确保字根进度被清洗到当前练习池
+    return normalizeState(migrateFromOld(oldData));
   }
 
   return createDefaultState();

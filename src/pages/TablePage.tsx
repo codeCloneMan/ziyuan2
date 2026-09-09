@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { renderableKeyGroups, keyboardRows } from '@/data/roots';
+import { practiceKeyGroups, keyboardRows } from '@/data/roots';
 import { getExamplesByRoot } from '@/data/rootExamples';
 import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import RootCharDisplay from '@/components/RootCharDisplay';
@@ -37,11 +37,11 @@ export default function TablePage() {
 
   const filteredGroups = useMemo(() => {
     if (selectedKey) {
-      return renderableKeyGroups.filter((g) => g.key === selectedKey);
+      return practiceKeyGroups.filter((g) => g.key === selectedKey);
     }
     if (searchQuery.trim()) {
       const query = searchQuery.trim().toLowerCase();
-      return renderableKeyGroups
+      return practiceKeyGroups
         .map((g) => ({
           ...g,
           roots: g.roots.filter(
@@ -54,14 +54,14 @@ export default function TablePage() {
         }))
         .filter((g) => g.roots.length > 0);
     }
-    return renderableKeyGroups;
+    return practiceKeyGroups;
   }, [searchQuery, selectedKey]);
 
-  const totalRoots = renderableKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
+  const totalRoots = practiceKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
 
   const renderableRootCountBykey = useMemo(() => {
     const map: Record<string, number> = {};
-    renderableKeyGroups.forEach((g) => {
+    practiceKeyGroups.forEach((g) => {
       map[g.key] = g.roots.length;
     });
     return map;

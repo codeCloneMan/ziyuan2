@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { practiceRootMappings, renderableKeyGroups, type RootMapping } from '@/data/roots';
+import { practiceRootMappings, practiceKeyGroups, type RootMapping } from '@/data/roots';
 import { calcMasteredRootCount } from './mastered-count';
 
 describe('计数问题排查', () => {
@@ -8,8 +8,8 @@ describe('计数问题排查', () => {
     const allRootIds = practiceRootMappings.map(r => r.char);
     const practiceTotal = allRootIds.length;
     
-    // TablePage 使用 renderableKeyGroups.reduce
-    const tableTotal = renderableKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
+    // TablePage 使用 practiceKeyGroups.reduce
+    const tableTotal = practiceKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
     
     // 正确的唯一字根数（去重后）
     const uniqueChars = new Set(practiceRootMappings.map(r => r.char));
@@ -63,11 +63,11 @@ describe('计数问题排查', () => {
     expect(mastered).toBe(3);
   });
 
-  it('检查 renderableKeyGroups 是否也有重复', () => {
+  it('检查 practiceKeyGroups 是否也有重复', () => {
     const charSet = new Set<string>();
     const duplicates: string[] = [];
     
-    renderableKeyGroups.forEach(group => {
+    practiceKeyGroups.forEach(group => {
       group.roots.forEach(r => {
         if (charSet.has(r.char)) {
           duplicates.push(r.char);
@@ -76,7 +76,7 @@ describe('计数问题排查', () => {
       });
     });
     
-    console.log('\nrenderableKeyGroups 重复字根数:', duplicates.length);
+    console.log('\npracticeKeyGroups 重复字根数:', duplicates.length);
     if (duplicates.length > 0) {
       console.log('重复字符:', duplicates);
     }

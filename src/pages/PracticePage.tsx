@@ -175,19 +175,21 @@ export default function PracticePage() {
 
   // 统计已掌握字根数：
   //   按累计答对 ≥3 次统计（与首页进度/成就/键盘淡化同一口径）。
-  //   入门模式曾用 spaced.stats.mastered（本次会话掌握池），但该池在每次
-  //   startPractice 时被 resetProgress 清空，导致重启练习后即便用户已掌握
-  //   多个字根仍显示 "已掌握 0/329"。现统一改为累计口径，与会话无关。
+  //   只统计当前练习池内的字根——correctCountMap 是永久累计的，
+  //   会残留早已移出练习池的字根（如扩展区字根调整前练过的），
+  //   不剔除会让"已掌握"虚高、甚至超过池总数。
   const masteredCount = useMemo(
-    () => calcMasteredRootCount(progress.correctCountMap),
+    () => calcMasteredRootCount(progress.correctCountMap, allRootIds),
     [progress.correctCountMap],
   );
 
-  // 已练习字根数（至少答过一次，对或错都算）——让用户区分"练过多少"与"掌握多少"
+  // 已练习字根数（至少答过一次，对或错都算）——让用户区分"练过多少"与"掌握多少"。
+  // 同样只统计当前池内字根，历史残留不计。
   const practicedCount = useMemo(() => {
+    const pool = new Set(allRootIds);
     const seen = new Set<string>();
-    for (const c of Object.keys(progress.correctCountMap)) seen.add(c);
-    for (const c of Object.keys(progress.wrongCountMap)) seen.add(c);
+    for (const c of Object.keys(progress.correctCountMap)) if (pool.has(c)) seen.add(c);
+    for (const c of Object.keys(progress.wrongCountMap)) if (pool.has(c)) seen.add(c);
     return seen.size;
   }, [progress.correctCountMap, progress.wrongCountMap]);
 
@@ -400,7 +402,7 @@ export default function PracticePage() {
                       <div className={cn(
                         "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
                         masteredCount === totalRoots ? "bg-emerald-500/30"
-                          : practicedCount === totalRoots ? "bg-amber-500/25"
+                          : practicedCount >= totalRoots ? "bg-amber-500/25"
                           : "bg-primary/20"
                       )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRoots) * 100))}%` }} />
                       <div className={cn(

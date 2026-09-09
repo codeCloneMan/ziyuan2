@@ -9,8 +9,10 @@
    ======================================== */
 /* v3：静态资源分支不再缓存 text/html（Cloudflare Pages 会把缺失路径
    fallback 成 text/html 的 index.html，若混入资源缓存会让旧 hash 分块
-   永远拿到 HTML）；v3 激活时同时清空 v1/v2 的旧壳缓存。 */
-const CACHE_VERSION = 'v3';
+   永远拿到 HTML）；v3 激活时同时清空 v1/v2 的旧壳缓存。
+   v4：字根图改用显式映射（roots.ts ROOT_IMAGE_MANIFEST），清掉旧位置
+   映射时代可能残留在资源缓存里的 roots/*.png，避免继续展示错图。 */
+const CACHE_VERSION = 'v4';
 const SHELL_CACHE = `ziyuan-shell-${CACHE_VERSION}`;
 const DATA_CACHE = 'ziyuan-data-v1'; // 与 data-loader.ts 保持一致
 

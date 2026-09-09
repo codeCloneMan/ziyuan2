@@ -88,6 +88,10 @@ export const PUA_ROOTS: Record<number, { key: string; desc: string }> = {
   0xE836: { key: 't', desc: '竹变' },
   0xE839: { key: 'w', desc: '犬变' },
   0xE848: { key: 'g', desc: '走变' },
+  // CJK 扩展区代理对字根（U+32FE3 扩展G / U+475F3，字形无法渲染，回退为码点文本；
+  // 若无此条目 displayChar 会退成 "□"）
+  0x32FE3: { key: 's', desc: 'U+32FE3' },
+  0x475F3: { key: 'j', desc: 'U+475F3' },
 };
 
 const rawRoots: [string, string][] = [
@@ -165,13 +169,13 @@ export interface KeyGroup {
 function isPUARoot(cp: number): boolean {
   return (cp >= 0xE000 && cp <= 0xF8FF) || // Private Use Area
          (cp >= 0x3400 && cp <= 0x4DBF) || // CJK Extension A
-         (cp >= 0x20000 && cp <= 0x2A6DF); // CJK Extension B
+         cp >= 0x20000; // CJK 扩展B及以后（B/C/D/E/F/G/H…，含表内 U+32FE3、U+475F3）
 }
 
-/** 判断字根是否可在浏览器中正常渲染（PUA区字根和扩展B区字根无法渲染） */
+/** 判断字根是否可在浏览器中正常渲染（PUA区字根和CJK扩展B区及以后字根无法渲染） */
 export function isRenderableRoot(cp: number): boolean {
   return !(cp >= 0xE000 && cp <= 0xF8FF) && // Private Use Area
-         !(cp >= 0x20000 && cp <= 0x2A6DF); // CJK Extension B
+         cp < 0x20000; // 扩展B区及以后：主流字体基本无覆盖，必显示为豆腐块
 }
 
 /** 所有字根映射列表 */
@@ -191,8 +195,116 @@ export const rootMappings: RootMapping[] = rawRoots.map(([char, key]) => {
   };
 });
 
-/** 可练习字根列表（排除PUA区不可渲染字根） */
-export const practiceRootMappings: RootMapping[] = rootMappings.filter(r => isRenderableRoot(r.codePoint));
+/** 字根图所在目录（public/roots/），用于渲染浏览器无法显示的 PUA/扩展区字根 */
+export const ROOT_IMAGE_DIR = 'roots';
+
+/**
+ * 字根图显式映射（码点 → public/roots/ 下文件名）。
+ *
+ * 历史教训：旧实现按"键位内字根表顺序 → <key> (<idx>).png"做位置推算，
+ * 但字根图的裁剪编号存在跳号/重号/重名（如 t(5) 出现两次、i(7) 缺空格、
+ * r.png 与 r (7).png 内容完全相同），且图集与字根表的键内顺序并不一致，
+ * 位置推算会产生缺图与错图。因此改为人工核验过的显式映射。
+ *
+ * 核验方式（2026-09）：用 SimSun 渲染描述中的基础字（如"氵变"渲染"氵"）
+ * 作为锚点，对同键位全部裁剪图做 16x16 灰度余弦相似度排名，再逐个目视
+ * 确认候选字形确实属于该字根家族。所有候选都来自同一键位，即使字形
+ * 指派有偏差，练习答案（键位）也不会错；无法确认家族归属的字根
+ * 保持文本描述回退，宁缺毋错。
+ *
+ * 无图回退：立变×2、髟上、老变×2、𧘇上、礻变、歹变(i)、氵变、耒变、
+ * 力变、天变、㐄、㐫、㡀、䶹、U+E16B、U+E472、U+E51A、U+32FE3、U+475F3。
+ */
+export const ROOT_IMAGE_MANIFEST: Record<number, string> = {
+  0x353E: 'j (4).png', // 㔾：与字体渲染比对确认
+  0x382F: 'b.png',     // 㠯：与字体渲染比对确认
+  0x39AE: 'z (15).png', // 㦮：弋+丿 形裁剪，高相似
+  0xE019: 'o (1).png', // 食变
+  0xE102: 'f (6).png', // 攵变
+  0xE136: 'r (1).png', // 艹变
+  0xE137: 'r (4).png', // 业变
+  0xE5BD: 'r (4).png', // 业变（同形）
+  0xE162: 'o (11).png', // 米变
+  0xE53B: 'o (11).png', // 米变（同形）
+  0xE16F: 'o (7).png', // 缶变
+  0xE17E: 'h (4).png', // 父变
+  0xE18C: 'a (1).png', // 女变
+  0xE401: 'o (3).png', // 灬变(o)
+  0xE440: 'p (2).png', // 衤变
+  0xE444: 'j (10).png', // 骨变
+  0xE447: 'j (21).png', // 齿变
+  0xE44B: 'i (5).png', // 冫变
+  0xE44F: 'z (10).png', // 钅变
+  0xE450: 'z (10).png', // 釒变（同族简体形）
+  0xE451: 'g (11).png', // 辶变（手写"云"形）
+  0xE554: 'g (11).png', // 辶变（同形）
+  0xE45E: 'e (7).png', // 鳥变（鸟形）
+  0xE460: 'w (1).png', // 犬变
+  0xE839: 'w (1).png', // 犬变（同形）
+  0xE462: 'w (21).png', // 鹿变
+  0xE46F: 'i (11).png', // 凵变
+  0xE48A: 'c.png', // 頁变（页形）
+  0xE491: 'c.png', // 頁变（同形）
+  0xE50F: 'c.png', // 頁变（同形）
+  0xE490: 'c (3).png', // 貝变（贝形）
+  0xE492: 'c (3).png', // 見变（草书近贝形）
+  0xE494: 'b (5).png', // 臼变
+  0xE498: 'u (18).png', // 糹变（纟形）
+  0xE540: 'u (18).png', // 糹变（同形）
+  0xE4A1: 't (12).png', // 竹变
+  0xE836: 't (12).png', // 竹变（同形）
+  0xE4A9: 'l (3).png', // 竖变（丨形）
+  0xE4B5: 'g (10).png', // 走变
+  0xE848: 'g (10).png', // 走变（同形）
+  0xE4BB: 'd (3).png', // 丁变
+  0xE4C5: 'y (16).png', // 氏变
+  0xE4C8: 'y (1).png', // 衣变
+  0xE4CE: 'i (13).png', // 穴变
+  0xE506: 'v (1).png', // 火变
+  0xE507: 'v (11).png', // 灬变(v)
+  0xE524: 'm (7).png', // 月变
+  0xE52A: 't (5).png', // 禾变
+  0xE545: 'c (5).png', // 巛变
+  0xE54A: 'y (10).png', // 方变
+  0xE56B: 'e (2).png', // 虫变
+  0xE56F: 'k (1).png', // 口变
+  0xE599: 'i (15).png', // 阝变
+  0xE5C9: 'z (5).png', // 矛变
+  0xE816: 'f (11).png', // 大变
+  0xE81C: 'a (2).png', // 欠变
+  0xE822: 'i (1).png', // 山变
+  0xE823: 'j (16).png', // 歹变(j)
+  0xE831: 'e (13).png', // 非变
+};
+
+/**
+ * 获取不可渲染字根对应的字根图路径（相对站点根，如 "roots/b.png"）。
+ * 仅返回显式核验过的映射；无映射时返回 null，调用方应回退到文本描述。
+ */
+export function getRootImagePath(root: RootMapping): string | null {
+  const file = ROOT_IMAGE_MANIFEST[root.codePoint];
+  return file ? `${ROOT_IMAGE_DIR}/${file}` : null;
+}
+
+/**
+ * 可练习字根列表（虎码模式：全部字根都练）。
+ *
+ * - 同键位共享同一张图/同一描述的变体（如 3 个"頁变"都在 c 键）只保留
+ *   一个——它们答案相同、字形相同，重复练没有信息量；
+ * - 显示为裸码（U+E16B 这类）且无图的字根不入练：用户无法从显示推断
+ *   答案，练了只会挫败；它们仍出现在字根表与搜索里；
+ * - 有语义描述的文本回退字根（如"老变"）照常入练，显示描述即可作答。
+ */
+export const practiceRootMappings: RootMapping[] = (() => {
+  const seen = new Set<string>();
+  return rootMappings.filter(r => {
+    if (/^U\+[0-9A-Fa-f]{4,6}$/.test(r.displayChar) && !ROOT_IMAGE_MANIFEST[r.codePoint]) return false;
+    const label = `${r.key}|${ROOT_IMAGE_MANIFEST[r.codePoint] ?? r.displayChar}`;
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
+})();
 
 /** 按键分组的字根映射（包含所有字根，用于字根总表） */
 export const keyGroups: KeyGroup[] = Object.entries(
@@ -205,8 +317,8 @@ export const keyGroups: KeyGroup[] = Object.entries(
   .sort(([a], [b]) => a.localeCompare(b))
   .map(([key, roots]) => ({ key, roots }));
 
-/** 可渲染字根的按键分组（排除PUA和扩展B区不可渲染字根，用于字根总表展示） */
-export const renderableKeyGroups: KeyGroup[] = Object.entries(
+/** 按键位分组的练习字根（= 练习池的字根，供字根总表/键盘展示），名称沿用旧称 */
+export const practiceKeyGroups: KeyGroup[] = Object.entries(
   practiceRootMappings.reduce<Record<string, RootMapping[]>>((acc, root) => {
     if (!acc[root.key]) acc[root.key] = [];
     acc[root.key].push(root);
@@ -274,33 +386,19 @@ export const keyRootsMap: Record<string, RootMapping[]> = (() => {
   return map;
 })();
 
-/** 按键位索引的全部字根映射表（含 PUA 不可渲染字根） */
-export const allKeyRootsMap: Record<string, RootMapping[]> = (() => {
-  const map: Record<string, RootMapping[]> = {};
-  for (const r of rootMappings) {
-    if (!map[r.key]) map[r.key] = [];
-    map[r.key].push(r);
-  }
-  return map;
-})();
-
-/** 字根图所在目录（public/roots/），用于渲染浏览器无法显示的 PUA/扩展区字根 */
-export const ROOT_IMAGE_DIR = 'roots';
-
 /**
- * 获取不可渲染字根对应的字根图路径（相对站点根，如 "roots/a (7).png"）。
+ * 按"显示文本 + 键位"去重字根列表，保持原顺序。
  *
- * 映射规则（与"字源1.32字根图"一致）：同一键位下按字根表顺序排列，
- * 第 idx 个字根 → `<key>.png`（idx=0）或 `<key> (<idx>).png`。
- *
- * 注意：字根图只绘制了部分字根，若某位置没有对应图片文件，
- * 调用方应通过 <img onError> 回退到文本描述。
+ * 数据中存在多个码点共用同一字形变体的情况（如 3 个"頁变"都在 c 键），
+ * 在键位详情、搜索结果等场景重复展示没有信息量，还会让人误以为映射有误。
+ * 同名但键位不同的变体（如"老变"在 d 和 u）保留，由键位徽标区分。
  */
-export function getRootImagePath(root: RootMapping): string | null {
-  const list = allKeyRootsMap[root.key];
-  if (!list || list.length === 0) return null;
-  const idx = list.findIndex(r => r.codePoint === root.codePoint && r.key === root.key);
-  if (idx < 0) return null;
-  const fileName = idx === 0 ? `${root.key}.png` : `${root.key} (${idx}).png`;
-  return `${ROOT_IMAGE_DIR}/${fileName}`;
+export function dedupeRootsByDisplay(roots: RootMapping[]): RootMapping[] {
+  const seen = new Set<string>();
+  return roots.filter(r => {
+    const label = `${r.displayChar}|${r.key}`;
+    if (seen.has(label)) return false;
+    seen.add(label);
+    return true;
+  });
 }

@@ -162,7 +162,7 @@ export default function PracticeKeyboard({
                   <span className={cn(showRootsExtras ? "text-[11px] sm:text-xs font-bold leading-none" : "")}>{key.toUpperCase()}</span>
                   {showRootsExtras && displayMode === 'roots' && (
                     <span className="text-[7px] sm:text-[9px] leading-tight text-center mt-0.5 line-clamp-2 text-muted-foreground/70 root-char">
-                      {rootsOnKey.slice(0, 3).map(r => r.char).join('')}
+                      {rootsOnKey.slice(0, 3).map(r => r.displayChar).join('')}
                     </span>
                   )}
                   {showRootsExtras && displayMode === 'codes' && (
@@ -180,7 +180,7 @@ export default function PracticeKeyboard({
                             'px-1 py-0.5 rounded text-[10px]',
                             r.char === currentRoot?.char ? 'bg-amber-100/60 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-medium' : 'bg-muted/50 text-foreground/70'
                           )}>
-                            {r.isPUA && r.desc ? r.desc : r.char}
+                            {r.displayChar}
                           </span>
                         ))}
                       </div>

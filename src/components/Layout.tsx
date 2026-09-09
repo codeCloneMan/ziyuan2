@@ -9,7 +9,7 @@ import {
   HelpCircle, PenTool, BarChart3, TextQuote,
   Download, Upload, ChevronDown,
 } from 'lucide-react';
-import { rootMappings } from '@/data/roots';
+import { rootMappings, dedupeRootsByDisplay } from '@/data/roots';
 import { useCharCodeData, buildCharCodeIndex, type CharCodeIndex } from '@/lib/data-loader';
 import { flatFAQs } from '@/data/faqData';
 import { downloadProgress, importProgressFromFile } from '@/store/progress-store';
@@ -81,6 +81,7 @@ export default function Layout() {
     code?: string;
     desc?: string;
     isPUA?: boolean;
+    displayChar?: string;
     q?: string;
     a?: string;
     category?: string;
@@ -123,10 +124,12 @@ export default function Layout() {
       : [];
 
     return [
-      ...rootMappings
-        .filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
+      // 同键同形变体（如 3 个"頁变"都在 c 键）只保留一个，避免重复结果挤占搜索位
+      ...dedupeRootsByDisplay(
+        rootMappings.filter(r => r.char.includes(q) || r.key === q || r.key.toUpperCase() === q.toUpperCase() || (r.desc && r.desc.includes(q)))
+      )
         .slice(0, 3)
-        .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA })),
+        .map(r => ({ type: 'root' as const, char: r.char, key: r.key, desc: r.desc, isPUA: r.isPUA, displayChar: r.displayChar })),
       ...charResults,
       ...flatFAQs
         .filter(faq => faq.q.toLowerCase().includes(q) || faq.a.toLowerCase().includes(q))
@@ -400,7 +403,7 @@ export default function Layout() {
                         >
                           <div className="flex items-center gap-2 min-w-0">
                             <span className="font-medium text-popover-foreground root-char text-base">
-                              {r.isPUA && r.desc ? r.desc : r.char}
+                              {r.displayChar ?? (r.isPUA && r.desc ? r.desc : r.char)}
                             </span>
                             <Badge variant="secondary" className="shrink-0 text-xs bg-primary/8 text-primary">
                               字根
