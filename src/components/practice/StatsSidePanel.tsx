@@ -22,63 +22,83 @@ interface DailyStat {
 
 interface StatsSidePanelProps {
   stats: PracticeStats;
-  weakRootsCount: number;
   todayStats: DailyStat;
   masteredCount: number;
   totalRootsCount: number;
   weakestRoots: WeakestRoot[];
+  /** 累计答题（跨轮次/跨天），让第二轮练习也有可见进度 */
+  cumulative?: { attempts: number; correct: number };
 }
 
 export default function StatsSidePanel({
   stats,
-  weakRootsCount,
   todayStats,
   masteredCount,
   totalRootsCount,
   weakestRoots,
+  cumulative,
 }: StatsSidePanelProps) {
   const [showDetail, setShowDetail] = useState(false);
 
   return (
     <div className="space-y-2.5">
-      {/* 本轮统计 - 更精致 */}
+      {/* 本轮统计：未开始时不再显示一排 0，避免"练了却像没统计"的误导 */}
       <div className="card-stats p-4">
         <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-1.5" style={{ fontFamily: "'Noto Serif SC', serif" }}>
           <BarChart3 className="h-3.5 w-3.5 text-primary/70" />本轮统计
         </h3>
-        <div className="grid grid-cols-2 gap-1.5">
-          {[
-            { label: '题数', value: stats.totalAttempts, icon: Target },
-            { label: '正确', value: stats.correctAttempts, icon: CheckCircle2 },
-            { label: '连击', value: stats.streak, icon: Flame },
-            { label: '弱项', value: weakRootsCount, icon: AlertTriangle },
-          ].map((item) => {
-            const Icon = item.icon;
-            return (
-              <div key={item.label} className="text-center p-2 rounded-md bg-muted/30">
-                <Icon className="h-3 w-3 mx-auto mb-1 text-muted-foreground/50" />
-                <div className="text-base font-bold font-mono-stat">{item.value}</div>
-                <div className="text-[10px] text-muted-foreground/60" style={{ fontFamily: "'Noto Serif SC', serif" }}>{item.label}</div>
-              </div>
-            );
-          })}
-        </div>
+        {stats.totalAttempts === 0 ? (
+          <p className="text-xs text-muted-foreground/60 text-center py-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+            本轮尚未答题
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            {[
+              { label: '题数', value: stats.totalAttempts, icon: Target },
+              { label: '正确', value: stats.correctAttempts, icon: CheckCircle2 },
+              { label: '连击', value: stats.streak, icon: Flame },
+              { label: '正确率', value: `${Math.round((stats.correctAttempts / Math.max(stats.totalAttempts, 1)) * 100)}%`, icon: BarChart3 },
+            ].map((item) => {
+              const Icon = item.icon;
+              return (
+                <div key={item.label} className="text-center p-2 rounded-md bg-muted/30">
+                  <Icon className="h-3 w-3 mx-auto mb-1 text-muted-foreground/50" />
+                  <div className="text-base font-bold font-mono-stat">{item.value}</div>
+                  <div className="text-[10px] text-muted-foreground/60" style={{ fontFamily: "'Noto Serif SC', serif" }}>{item.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* 今日进度 */}
-      <div className="card-base p-3.5">
-        <div className="flex items-center justify-between mb-2">
+      {/* 今日 / 累计 / 掌握 */}
+      <div className="card-base p-3.5 space-y-2">
+        <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-foreground flex items-center gap-1.5" style={{ fontFamily: "'Noto Serif SC', serif" }}>
             <Flame className="h-3 w-3 text-orange-500/70" />今日
           </span>
           <span className="text-xs font-bold font-mono-stat">{todayStats.attempts}题 / {todayStats.correct}对</span>
         </div>
+        {cumulative && cumulative.attempts > 0 && (
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-foreground flex items-center gap-1.5" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+              <Target className="h-3 w-3 text-sky-500/70" />累计
+            </span>
+            <span className="text-xs font-bold font-mono-stat">
+              {cumulative.attempts}题 / {Math.round((cumulative.correct / Math.max(cumulative.attempts, 1)) * 100)}%
+            </span>
+          </div>
+        )}
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-foreground flex items-center gap-1.5" style={{ fontFamily: "'Noto Serif SC', serif" }}>
             <Trophy className="h-3 w-3 text-emerald-500/70" />已掌握
           </span>
           <span className="text-xs font-bold font-mono-stat">{masteredCount}/{totalRootsCount}</span>
         </div>
+        <p className="text-[10px] text-muted-foreground/50 leading-relaxed" style={{ fontFamily: "'Noto Serif SC', serif" }}>
+          单张图累计答对 3 次计入掌握，多轮练习逐步积累
+        </p>
       </div>
 
       {/* 快捷键 */}
@@ -106,7 +126,7 @@ export default function StatsSidePanel({
       {weakestRoots.length > 0 && (
         <>
           <Button variant="outline" size="sm" onClick={() => setShowDetail(!showDetail)} className="w-full gap-1 text-xs border-border/50">
-            <AlertTriangle className="h-3 w-3" />弱项字根
+            <AlertTriangle className="h-3 w-3" />累计弱项
             {showDetail ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
           </Button>
           {showDetail && (
@@ -119,10 +139,8 @@ export default function StatsSidePanel({
                     <span className="w-3 text-muted-foreground/50 font-mono">{i + 1}</span>
                     <img src={rootImagePath(r.file)} alt="字根图" className="h-6 w-6 rounded border border-border/40 bg-muted/30 object-contain p-0.5" draggable={false} />
                     <span className="w-3 text-center font-mono font-bold text-muted-foreground/70">{r.key.toUpperCase()}</span>
-                    <div className="flex-1 progress-base h-1">
-                      <div className="h-full rounded-full bg-red-400/70 transition-all" style={{ width: `${100 - rate}%` }} />
-                    </div>
-                    <span className="text-muted-foreground/60 w-8 text-right font-mono-stat">{rate}%</span>
+                    <span className="flex-1 text-red-500/80 font-medium">错 {r.wrong} 次</span>
+                    <span className="text-muted-foreground/60 w-9 text-right font-mono-stat">{rate}%</span>
                   </div>
                 );
               })}

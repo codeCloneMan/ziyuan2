@@ -13,6 +13,7 @@ import { rootMappings, dedupeRootsByDisplay } from '@/data/roots';
 import { useCharCodeData, buildCharCodeIndex, type CharCodeIndex } from '@/lib/data-loader';
 import { flatFAQs } from '@/data/faqData';
 import { downloadProgress, importProgressFromFile } from '@/store/progress-store';
+import { preloadRootImages } from '@/lib/preload-root-images';
 import UserLevelBadge from '@/components/UserLevelBadge';
 import AchievementToast from '@/components/AchievementToast';
 
@@ -63,6 +64,8 @@ function useTheme() {
 
 export default function Layout() {
   const location = useLocation();
+  // 空闲时全量预热官方字根图（练习/字根表切图秒出）
+  useEffect(() => { preloadRootImages(); }, []);
   const { theme, toggle } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');

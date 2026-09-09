@@ -9,8 +9,8 @@
  */
 
 import { GB2312_CHARS, GBK_CHARS } from './standardCharsets';
-import { tongguiAll } from './tongguiChars';
 import { charFrequency } from './charFrequency';
+import { tongguiAll } from './tongguiChars';
 
 // ========================================
 // 字集校验工具函数
@@ -394,13 +394,25 @@ export const gb2312Level2: string[] = gb2312All.slice(3755);
 /** GBK 全部汉字（来自 gbk.txt 国标文件） */
 export const gbk: string[] = [...GBK_CHARS];
 
-/** 通用规范汉字表（8105字） - 基于 charFrequency 字频排序，优先练习高频字 */
-export const commonStandard: string[] = [...tongguiAll].sort((a, b) => {
-  const freqA = charFrequency[a] || 0;
-  const freqB = charFrequency[b] || 0;
-  // 按字频降序排列，高频字在前
-  return freqB - freqA;
-});
+/**
+ * 常用前 5000 字（整字练习·进阶题库）。
+ *
+ * 口径：按真实语料字频降序（charFrequency，6000 字实测统计）取前 5000，
+ * 且限定在 GB2312 国标字集内——GB2312 是 1980 年制定的国标常用汉字集
+ * （6763 字，覆盖日常用字 99.7%），用它把字频表尾部的生僻字/异体字
+ * （如 镕/箓/鋆/龢 等 10 个非国标字）挡在题库之外。
+ *
+ * 与旧口径的区别：旧"常用8000"基于 tongguiChars（自述为"近似字集"），
+ * 尾部混有大量字频为 0 的凑数字，练了没有价值。
+ */
+export const common5000: string[] = (() => {
+  const gbSet = new Set(GB2312_CHARS);
+  return Object.entries(charFrequency)
+    .sort(([, a], [, b]) => b - a)
+    .map(([ch]) => ch)
+    .filter(ch => gbSet.has(ch))
+    .slice(0, 5000);
+})();
 
 /** 常用前五百字 */
 export const common500: string[] = top500Chars;

@@ -12,6 +12,10 @@ interface PracticeStatusBarProps {
   practicedCount?: number;
   totalRootsCount: number;
   todayAttempts: number;
+  /** 累计答题数（跨轮次、跨天累计，让第二轮的练习也有可见进度） */
+  cumulativeAttempts?: number;
+  /** 累计正确率（0~100） */
+  cumulativeAccuracy?: number;
   showHint: boolean;
   speedModeTimeLeft?: number;
   isSpeedMode: boolean;
@@ -28,6 +32,8 @@ export default function PracticeStatusBar({
   practicedCount,
   totalRootsCount,
   todayAttempts,
+  cumulativeAttempts,
+  cumulativeAccuracy,
   showHint,
   speedModeTimeLeft,
   isSpeedMode,
@@ -96,13 +102,20 @@ export default function PracticeStatusBar({
               )}
               <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
               {practicedCount !== undefined && practicedCount >= totalRootsCount && masteredCount < totalRootsCount && (
-                <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已完成一轮</span>
+                <span className="ml-1 text-amber-600 dark:text-amber-400 font-semibold">已练过全部</span>
               )}
               {masteredCount === totalRootsCount && (
                 <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
               )}
             </span>
-            <span>今日 {todayAttempts}题</span>
+            <span className="flex items-center gap-2">
+              {cumulativeAttempts !== undefined && cumulativeAttempts > 0 && (
+                <span>累计 <span className="font-mono-stat text-foreground/70">{cumulativeAttempts}</span> 题
+                  {cumulativeAccuracy !== undefined && <> · 正确率 <span className="font-mono-stat text-foreground/70">{cumulativeAccuracy}%</span></>}
+                </span>
+              )}
+              <span>今日 {todayAttempts}题</span>
+            </span>
           </div>
           <div className="progress-base h-1 relative overflow-hidden">
             {/* 已练习（浅色底层） */}

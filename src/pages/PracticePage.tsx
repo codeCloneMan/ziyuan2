@@ -216,11 +216,7 @@ export default function PracticePage() {
         correct: progress.correctCountMap[img.file] || 0,
       }))
       .filter(r => r.wrong > 0)
-      .sort((a, b) => {
-        const rateA = a.correct / Math.max(a.correct + a.wrong, 1);
-        const rateB = b.correct / Math.max(b.correct + b.wrong, 1);
-        return rateA - rateB;
-      });
+      .sort((a, b) => b.wrong - a.wrong || (a.correct / Math.max(a.correct + a.wrong, 1)) - (b.correct / Math.max(b.correct + b.wrong, 1)));
   }, [progress]); // 依赖整个 progress 对象，满足 lint 且答题时正确重算
 
   // 展示用：仅前 10 个最弱
@@ -500,6 +496,8 @@ export default function PracticePage() {
         practicedCount={practicedCount}
         totalRootsCount={totalRoots}
         todayAttempts={todayStats.attempts}
+        cumulativeAttempts={progress.totalAttempts}
+        cumulativeAccuracy={progress.totalAttempts > 0 ? Math.round((progress.totalCorrect / progress.totalAttempts) * 100) : undefined}
         showHint={showHint}
         isSpeedMode={!isBeginner}
         onStop={stopPractice}
@@ -537,11 +535,11 @@ export default function PracticePage() {
 
           <StatsSidePanel
             stats={stats}
-            weakRootsCount={weakRootsAll.length}
             todayStats={todayStats}
             masteredCount={masteredCount}
             totalRootsCount={totalRoots}
             weakestRoots={weakestRoots}
+            cumulative={{ attempts: progress.totalAttempts, correct: progress.totalCorrect }}
           />
         </div>
       </div>

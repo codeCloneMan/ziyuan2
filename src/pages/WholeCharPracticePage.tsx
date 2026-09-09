@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars } from '@/data/commonChars';
-import { commonStandard } from '@/data/builtinCharSets';
+import { common5000 } from '@/data/builtinCharSets';
+import { buildFullCodeIndex } from '@/lib/full-codes';
 import type { PracticeLevel } from '@/types';
 import { PracticeKeyboard } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -17,7 +18,7 @@ import {
 import { getCharSplit } from '@/data/splitData';
 import {
   Play, RotateCcw, Trash2, Star, Trophy, CheckCircle2, XCircle,
-  Lightbulb, BarChart3, Target, AlertTriangle, ChevronUp, ChevronDown,
+  Lightbulb, BarChart3, Target, ChevronUp, ChevronDown,
   Eye, EyeOff, SplitSquareHorizontal, Flame, GraduationCap,
 } from 'lucide-react';
 
@@ -32,7 +33,7 @@ function shuffleInPlace<T>(arr: T[]): T[] {
 
 const levelConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof Star }> = {
   beginner: { label: '入门', description: '常用 500 高频字', icon: Star },
-  advanced: { label: '进阶', description: '常用 8000+ 字，科学记忆', icon: GraduationCap },
+  advanced: { label: '进阶', description: '常用 5000 字，科学记忆', icon: GraduationCap },
 };
 
 type CodeRule = 'A' | 'AB' | 'ABb' | 'ABCc' | 'ABCD' | 'ABCZ';
@@ -78,6 +79,8 @@ function isMustSplitChar(char: string): boolean {
 
 export default function WholeCharPracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
+  // 全码索引：一个字可能有多个全码（如 了 = hle/hli），打出任意一个即判正确
+  const fullCodeIndex = useMemo(() => buildFullCodeIndex(charCodeData ?? []), [charCodeData]);
   const { progress, recordAnswer, resetMode } = useWholeCharProgress();
   const { preferences, setPref } = usePreferences();
   const todayStats = useDailyStats();
@@ -91,12 +94,11 @@ export default function WholeCharPracticePage() {
   const currentConfig = levelConfig[level];
   const showHint = preferences.wholeCharShowHint;
 
-  // 入门=500高频，进阶=常用8000字（通用规范汉字表）
+  // 入门=500高频，进阶=常用前5000字（按语料字频降序，限定 GB2312 国标字集）
   const learningPool = useMemo(() => {
     if (!charCodeData) return [];
     if (level === 'beginner') return top500Chars;
-    // 使用通用规范汉字表（8105字），控制在常用8000字内循环
-    return commonStandard;
+    return common5000;
   }, [charCodeData, level]);
 
   const modeKey = `whole:${level}`;
@@ -191,10 +193,10 @@ export default function WholeCharPracticePage() {
     if (!charCodeData) return [];
     return charCodeData
       .filter(d => (modeProgress.wrongCountMap[d.char] || 0) > 0)
-      .map(d => ({ char: d.char, code: d.code, wrong: modeProgress.wrongCountMap[d.char] || 0 }))
+      .map(d => ({ char: d.char, code: fullCodeIndex.get(d.char)?.fullCode ?? d.code, wrong: modeProgress.wrongCountMap[d.char] || 0 }))
       .sort((a, b) => b.wrong - a.wrong)
       .slice(0, 10);
-  }, [modeProgress.wrongCountMap, charCodeData]);
+  }, [modeProgress.wrongCountMap, charCodeData, fullCodeIndex]);
 
   const masteredCount = useMemo(() => {
     return learningPool.filter(ch => (modeProgress.correctCountMap[ch] || 0) >= 3).length;
@@ -250,14 +252,14 @@ export default function WholeCharPracticePage() {
     }
 
     if (nextId) {
-      const found = charCodeData.find(d => d.char === nextId) ?? charCodeData[0];
-      setCurrentItem(found);
+      const info = fullCodeIndex.get(nextId);
+      setCurrentItem(info ? { char: nextId, code: info.fullCode } : charCodeData[0]);
       setInputCode('');
     }
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [charCodeData, learningPool, isBeginner, spacedGetNextItem, spaced.pool]);
+  }, [charCodeData, fullCodeIndex, learningPool, isBeginner, spacedGetNextItem, spaced.pool]);
 
   const startPractice = useCallback(() => {
     // 只重置间隔学习池（会话从空池重新循序渐进），不清当前模式的累计进度：
@@ -312,9 +314,10 @@ export default function WholeCharPracticePage() {
     const newCode = inputCode + key;
     setInputCode(newCode);
 
-    const correctCode = currentItem.code;
-    if (correctCode.startsWith(newCode)) {
-      if (newCode === correctCode) {
+    // 该字的全部全码：打出任意一个即正确；输入只要是某个全码的前缀就继续
+    const accepted = fullCodeIndex.get(currentItem.char)?.accepted ?? [currentItem.code];
+    if (accepted.some(code => code.startsWith(newCode))) {
+      if (accepted.includes(newCode)) {
         recordAnswer(modeKey, currentItem.char, true);
         if (isBeginner) spacedRecordResult(currentItem.char, true);
         submit(true, key);
@@ -327,7 +330,7 @@ export default function WholeCharPracticePage() {
       setSplitAnimationStep(splitParts.length);
       submit(false, key);
     }
-  }, [isPlaying, feedbackType, inputCode, currentItem, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult]);
+  }, [isPlaying, feedbackType, inputCode, currentItem, fullCodeIndex, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -729,12 +732,15 @@ export default function WholeCharPracticePage() {
               <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
                 <BarChart3 className="h-4 w-4 text-primary" />本轮统计
               </h3>
+              {stats.totalAttempts === 0 ? (
+                <p className="text-xs text-muted-foreground/60 text-center py-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>本轮尚未答题</p>
+              ) : (
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { label: '题数', value: stats.totalAttempts, icon: Target },
                   { label: '正确', value: stats.correctAttempts, icon: CheckCircle2 },
                   { label: '连击', value: stats.streak, icon: Flame },
-                  { label: '弱项', value: weakestChars.length, icon: AlertTriangle },
+                  { label: '正确率', value: `${Math.round((stats.correctAttempts / Math.max(stats.totalAttempts, 1)) * 100)}%`, icon: BarChart3 },
                 ].map((item) => {
                   const Icon = item.icon;
                   return (
@@ -746,6 +752,7 @@ export default function WholeCharPracticePage() {
                   );
                 })}
               </div>
+              )}
             </div>
 
             <div className="card-base p-3">
