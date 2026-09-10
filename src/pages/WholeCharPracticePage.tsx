@@ -6,7 +6,7 @@ import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars } from '@/data/commonChars';
 import { common5000 } from '@/data/builtinCharSets';
 import { buildFullCodeIndex } from '@/lib/full-codes';
-import { needsSpaceToCommit, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
+import { commitMode, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
 import type { PracticeLevel } from '@/types';
 import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -207,8 +207,8 @@ export default function WholeCharPracticePage() {
       : currentItem.code ? [currentItem.code] : []),
     [currentItem],
   );
-  // 已够码但未满 4 码 → 停在原地等空格上屏（模拟输入法简码上屏）
-  const awaitingCommit = !feedbackType && needsSpaceToCommit(inputCode, acceptedCodes);
+  // 打出简码（比全码短的那条）→ 停在原地等空格上屏；打满全码则自动走
+  const awaitingCommit = !feedbackType && commitMode(inputCode, acceptedCodes) === 'space';
 
   const hintLevel = useMemo(() => {
     const seen = modeProgress.correctCountMap[currentItem.char] || 0;
@@ -367,11 +367,13 @@ export default function WholeCharPracticePage() {
     const newCode = inputCode + key;
     setInputCode(newCode);
 
-    // 该字的全部编码（码表里列出的都算对）：打出任意一个即正确；
-    // 输入只要是某个编码的前缀就继续
+    // 该字的全部编码（码表里列出的都算对）
     const accepted = acceptedCodes;
+    const mode = commitMode(newCode, accepted);
 
-    if (!accepted.some(code => code.startsWith(newCode))) {
+    if (mode === 'none') {
+      // 还是某条编码的前缀 → 继续输入
+      if (accepted.some(code => code.startsWith(newCode))) return;
       // 前缀断裂 → 判错（显示正确拆分与全部写法）
       setUserWrongSplit(newCode);
       setShowSplitViz(true);
@@ -380,20 +382,17 @@ export default function WholeCharPracticePage() {
       return;
     }
 
-    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
-    if (!accepted.includes(newCode)) return;
+    // 简码（比全码短）→ 不自动跳题，等空格上屏；仍可继续补全成全码
+    if (mode === 'space') return;
 
-    // 已够码但没到 4 码（简码）→ 不自动跳题，等空格上屏；仍可继续补全更长编码
-    if (newCode.length < AUTO_COMMIT_LENGTH) return;
-
-    // 满 4 码命中 → 自动上屏，直接切下一题
+    // 打满全码 → 自动上屏，直接切下一题
     finishAnswer(true, key);
   }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, splitParts.length, finishAnswer]);
 
-  /** 空格上屏：仅在"已够码未满 4 码"时生效，返回是否消费了这次空格 */
+  /** 空格上屏：仅在"打出简码"时生效，返回是否消费了这次空格 */
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || feedbackType || !currentItem.char) return false;
-    if (!needsSpaceToCommit(inputCode, acceptedCodes)) return false;
+    if (commitMode(inputCode, acceptedCodes) !== 'space') return false;
     finishAnswer(true, ' ');
     return true;
   }, [isPlaying, feedbackType, currentItem.char, inputCode, acceptedCodes, finishAnswer]);
@@ -786,9 +785,9 @@ export default function WholeCharPracticePage() {
 
                   {awaitingCommit && (
                     <div className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-                      已够码 · 按
+                      打出简码 · 按
                       <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                      上屏
+                      上屏（也可继续打满全码）
                     </div>
                   )}
 

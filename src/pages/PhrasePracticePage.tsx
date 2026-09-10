@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 import { useCharCodeData, useBuiltinPhrases, type BuiltinPhrasesData } from '@/lib/data-loader';
 import { buildFullCodeIndex, fullCodesOf, type FullCodeInfo } from '@/lib/full-codes';
 import { getPhraseCodes } from '@/lib/phrase-codes';
-import { needsSpaceToCommit, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
+import { commitMode } from '@/lib/code-commit';
 import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { usePracticeRound } from '@/hooks/use-practice-round';
@@ -268,8 +268,8 @@ export default function PhrasePracticePage() {
     submit(isCorrect, key);
   }, [recordAnswer, markSeen, reset, completedRounds, submit]);
 
-  // 逐键累加编码：命中任一合法码的前缀继续等待；满 4 码命中自动上屏；
-  // 未到 4 码命中停在原地等空格上屏；前缀断裂判错
+  // 逐键累加编码：命中任一合法码的前缀继续等待；打满全码自动上屏；
+  // 只打出简码则停在原地等空格；前缀断裂判错
   const handleKeyPress = useCallback((key: string) => {
     if (!isPlaying || feedbackType || !currentPhrase) return;
 
@@ -277,25 +277,24 @@ export default function PhrasePracticePage() {
     setInputCode(newCode);
 
     const accepted = currentPhrase.accepted;
+    const mode = commitMode(newCode, accepted);
 
-    if (!accepted.some(c => c.startsWith(newCode))) {
+    if (mode === 'none') {
+      if (accepted.some(c => c.startsWith(newCode))) return; // 还在输入
       finishPhraseAnswer(false, key, newCode);
       return;
     }
 
-    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
-    if (!accepted.includes(newCode)) return;
-
-    // 已够码但没到 4 码 → 不自动跳题，等空格上屏；仍可继续补全更长编码
-    if (newCode.length < AUTO_COMMIT_LENGTH) return;
+    // 简码 → 等空格上屏；仍可继续补全成全码
+    if (mode === 'space') return;
 
     finishPhraseAnswer(true, key, newCode);
   }, [isPlaying, feedbackType, inputCode, currentPhrase, finishPhraseAnswer]);
 
-  /** 空格上屏：仅在"已够码未满 4 码"时生效，返回是否消费了这次空格 */
+  /** 空格上屏：仅在"打出简码"时生效，返回是否消费了这次空格 */
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || feedbackType || !currentPhrase) return false;
-    if (!needsSpaceToCommit(inputCode, currentPhrase.accepted)) return false;
+    if (commitMode(inputCode, currentPhrase.accepted) !== 'space') return false;
     finishPhraseAnswer(true, ' ', inputCode);
     return true;
   }, [isPlaying, feedbackType, currentPhrase, inputCode, finishPhraseAnswer]);
@@ -337,8 +336,8 @@ export default function PhrasePracticePage() {
 
   // 本轮进度 = 本轮已答词数 / 词库总数（与轮次记录同一口径，不再用队列下标）
   const progress = poolCount > 0 ? (roundSeen / poolCount) * 100 : 0;
-  // 已够码未满 4 码 → 停在原地等空格上屏（词组码均为 4 码，此处是统一规则的兜底）
-  const awaitingCommit = !feedbackType && needsSpaceToCommit(inputCode, currentPhrase?.accepted ?? []);
+  // 打出简码（比全码短的那条）→ 停在原地等空格上屏
+  const awaitingCommit = !feedbackType && commitMode(inputCode, currentPhrase?.accepted ?? []) === 'space';
 
   if (dataLoading || !charCodeData) {
     return (
@@ -559,7 +558,7 @@ export default function PhrasePracticePage() {
 
               {awaitingCommit && (
                 <div className="mb-3 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
-                  已够码 · 按
+                  打出简码 · 按
                   <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
                   上屏
                 </div>
