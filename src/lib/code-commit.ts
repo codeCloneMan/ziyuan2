@@ -1,33 +1,39 @@
 /**
- * 上屏（提交）规则 —— 模拟真实输入法
+ * 上屏（提交）规则 —— 模拟真实打字
  *
- * 一个字在码表里可能有多条编码，按该字自己的编码长度分两类：
- * - 「全码」= 该字最长的那条：打满即**自动上屏**、直接切下一题；
- * - 「简码」= 更短的那些：停在原地，**按空格才上屏**。
+ * 判定时机只有两个，与编码长短无关：
+ * - 打满 4 键 → 自动判断上屏；
+ * - 不足 4 键 → 按空格上屏后再判断（fxj + 空格 这样）。
+ * 未满 4 键前绝不判定（即使已打错），由空格或第 4 键来触发。
  *
- * 关键：全码按"该字自己的最长编码"判定，不能写死 4 码。
- * 像 攥 = dtj、也 = l / lye 这类最长码只有 3 码的字，
- * 打完 3 码就是全码，必须直接算对，不能再要求按空格。
+ * 判定标准：码表里该字的任何一条编码（简码/全码）都算对。
+ * 该字编码不足 4 码时，第 4 键相当于"早已上屏后多打的键"，
+ * 只要是打在完整编码之后就不追究（与输入法自动上屏行为一致）。
  */
 
-/** 编码键盘的位数（码表里最长 4 码） */
+/** 编码键盘的位数（码表里最长 4 码），打满即自动判断 */
 export const AUTO_COMMIT_LENGTH = 4;
 
-export type CommitMode =
-  /** 还没打完，或不是该字任何一条合法编码 */
-  | 'none'
-  /** 打满了全码（该字最长编码）→ 自动上屏 */
-  | 'auto'
-  /** 只打出更短的简码 → 需要按空格上屏 */
-  | 'space';
+/**
+ * 第 4 键自动上屏时的判定：
+ * 输入恰好是某条编码，或某条完整编码的前缀（该字编码不足 4 码、第 4 键多打）都算对。
+ */
+export function isAutoCommitCorrect(input: string, accepted: readonly string[]): boolean {
+  if (input.length < AUTO_COMMIT_LENGTH) return false;
+  if (accepted.includes(input)) return true;
+  return accepted.some(code => code.length > 0 && input.startsWith(code));
+}
 
 /**
- * 判断当前输入对应的上屏方式。
- * accepted 为该字在码表里的全部编码。
+ * 空格上屏时的判定：当前输入必须恰好是码表里的某条编码。
  */
-export function commitMode(input: string, accepted: readonly string[]): CommitMode {
-  if (!input || !accepted.includes(input)) return 'none';
-  let longest = 0;
-  for (const c of accepted) if (c.length > longest) longest = c.length;
-  return input.length >= longest ? 'auto' : 'space';
+export function isSpaceCommitCorrect(input: string, accepted: readonly string[]): boolean {
+  return input.length > 0 && accepted.includes(input);
+}
+
+/**
+ * 是否已打出一条完整编码（且不足 4 码）→ 提示"按空格上屏"。
+ */
+export function isCompleteCodeAwaitingSpace(input: string, accepted: readonly string[]): boolean {
+  return input.length > 0 && input.length < AUTO_COMMIT_LENGTH && accepted.includes(input);
 }

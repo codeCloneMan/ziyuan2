@@ -1,34 +1,51 @@
 import { describe, it, expect } from 'vitest';
-import { commitMode, AUTO_COMMIT_LENGTH } from './code-commit';
+import {
+  isAutoCommitCorrect,
+  isSpaceCommitCorrect,
+  isCompleteCodeAwaitingSpace,
+  AUTO_COMMIT_LENGTH,
+} from './code-commit';
 
-describe('上屏规则（commitMode）', () => {
-  it('打满全码（该字最长编码）→ 自动上屏', () => {
-    expect(commitMode('uiyu', ['uiyu', 'uil'])).toBe('auto');
-    expect(commitMode('dtj', ['dtj'])).toBe('auto');   // 攥：全码只有 3 码也要自动走
-    expect(commitMode('lye', ['l', 'lye'])).toBe('auto'); // 也
-    expect(commitMode('kav', ['kav', 'k'])).toBe('auto'); // 的
-    expect(commitMode('ahh', ['ahh', 'a'])).toBe('auto'); // 好
+describe('上屏判定：满4键自动判断 / 不足4键空格判断', () => {
+  it('第4键自动上屏：打满4码且是码表编码 → 对', () => {
+    expect(isAutoCommitCorrect('uiyu', ['uiyu', 'uil'])).toBe(true); // 乐=uiyu
+    expect(isAutoCommitCorrect('qjxy', ['qj'])).toBe(true); // 到=qj，第4键多打不追究
   });
 
-  it('只打出更短的简码 → 需要空格上屏', () => {
-    expect(commitMode('uil', ['uiyu', 'uil'])).toBe('space'); // 乐：短的那条算简码
-    expect(commitMode('k', ['kav', 'k'])).toBe('space');
-    expect(commitMode('a', ['ahh', 'a'])).toBe('space');
-    expect(commitMode('l', ['l', 'lye'])).toBe('space');
-    expect(commitMode('el', ['el', 'eld'])).toBe('space');
+  it('第4键自动上屏：编码不足4码时，前缀命中即算对（第4键只是触发）', () => {
+    expect(isAutoCommitCorrect('dtju', ['dtj'])).toBe(true);      // 攥=dtj
+    expect(isAutoCommitCorrect('fxzj', ['fxz'])).toBe(true);      // 斫=fxz
+    expect(isAutoCommitCorrect('kxyz', ['kav', 'k'])).toBe(true); // 的=一简k
   });
 
-  it('等长多全码都算全码 → 都自动上屏', () => {
-    expect(commitMode('hle', ['hle', 'hli', 'h'])).toBe('auto');
-    expect(commitMode('hli', ['hle', 'hli', 'h'])).toBe('auto');
-    expect(commitMode('h', ['hle', 'hli', 'h'])).toBe('space');
+  it('第4键自动上屏：不是该字任何编码（或前缀）→ 错', () => {
+    expect(isAutoCommitCorrect('fxjz', ['fxz'])).toBe(false); // 斫打fxj*
+    expect(isAutoCommitCorrect('zzzz', ['kav', 'k'])).toBe(false);
   });
 
-  it('还没打完 / 打错 → none', () => {
-    expect(commitMode('ui', ['uiyu', 'uil'])).toBe('none');
-    expect(commitMode('elk', ['el', 'eld'])).toBe('none');
-    expect(commitMode('', ['kav', 'k'])).toBe('none');
-    expect(commitMode('zzzz', ['kav', 'k'])).toBe('none');
+  it('空格上屏：输入恰好是码表里某条编码 → 对（简码全码都行）', () => {
+    expect(isSpaceCommitCorrect('dtj', ['dtj'])).toBe(true);
+    expect(isSpaceCommitCorrect('fxz', ['fxz'])).toBe(true);
+    expect(isSpaceCommitCorrect('uil', ['uiyu', 'uil'])).toBe(true); // 乐的简码
+    expect(isSpaceCommitCorrect('k', ['kav', 'k'])).toBe(true);      // 的一简
+    expect(isSpaceCommitCorrect('hle', ['hle', 'hli', 'h'])).toBe(true);
+    expect(isSpaceCommitCorrect('h', ['hle', 'hli', 'h'])).toBe(true);
+  });
+
+  it('空格上屏：不是完整编码 → 错（哪怕只是某条码的前缀）', () => {
+    expect(isSpaceCommitCorrect('fxj', ['fxz'])).toBe(false);
+    expect(isSpaceCommitCorrect('fx', ['fxz'])).toBe(false);
+    expect(isSpaceCommitCorrect('ui', ['uiyu', 'uil'])).toBe(false);
+    expect(isSpaceCommitCorrect('', ['k'])).toBe(false);
+  });
+
+  it('完整编码待上屏提示：不足4码且已是完整编码', () => {
+    expect(isCompleteCodeAwaitingSpace('dtj', ['dtj'])).toBe(true);
+    expect(isCompleteCodeAwaitingSpace('fxz', ['fxz'])).toBe(true);
+    expect(isCompleteCodeAwaitingSpace('k', ['kav', 'k'])).toBe(true);
+    expect(isCompleteCodeAwaitingSpace('fx', ['fxz'])).toBe(false);      // 还没打完
+    expect(isSpaceCommitCorrect('uiyu', ['uiyu', 'uil'])).toBe(true);    // 满4码走空格也算对
+    expect(isCompleteCodeAwaitingSpace('uiyu', ['uiyu', 'uil'])).toBe(false); // 满4码无需提示
   });
 
   it('编码键盘位数常量为 4', () => {

@@ -6,7 +6,12 @@ import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars } from '@/data/commonChars';
 import { common5000 } from '@/data/builtinCharSets';
 import { buildFullCodeIndex } from '@/lib/full-codes';
-import { commitMode, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
+import {
+  isAutoCommitCorrect,
+  isSpaceCommitCorrect,
+  isCompleteCodeAwaitingSpace,
+  AUTO_COMMIT_LENGTH,
+} from '@/lib/code-commit';
 import type { PracticeLevel } from '@/types';
 import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -207,8 +212,8 @@ export default function WholeCharPracticePage() {
       : currentItem.code ? [currentItem.code] : []),
     [currentItem],
   );
-  // 打出简码（比全码短的那条）→ 停在原地等空格上屏；打满全码则自动走
-  const awaitingCommit = !feedbackType && commitMode(inputCode, acceptedCodes) === 'space';
+  // 已打出一条完整编码（不足 4 码）→ 提示按空格上屏
+  const awaitingCommit = !feedbackType && isCompleteCodeAwaitingSpace(inputCode, acceptedCodes);
 
   const hintLevel = useMemo(() => {
     const seen = modeProgress.correctCountMap[currentItem.char] || 0;
@@ -364,38 +369,37 @@ export default function WholeCharPracticePage() {
 
   const handleKeyPress = useCallback((key: string) => {
     if (!isPlaying || feedbackType || !currentItem.char) return;
+    if (inputCode.length >= AUTO_COMMIT_LENGTH) return;
     const newCode = inputCode + key;
     setInputCode(newCode);
 
-    // 该字的全部编码（码表里列出的都算对）
-    const accepted = acceptedCodes;
-    const mode = commitMode(newCode, accepted);
+    // 判定时机只有两个：满 4 键自动上屏；不足 4 键等空格上屏。
+    // 未满 4 键绝不判定（即使已打错），与真实打字一致。
+    if (newCode.length < AUTO_COMMIT_LENGTH) return;
 
-    if (mode === 'none') {
-      // 还是某条编码的前缀 → 继续输入
-      if (accepted.some(code => code.startsWith(newCode))) return;
-      // 前缀断裂 → 判错（显示正确拆分与全部写法）
+    const isCorrect = isAutoCommitCorrect(newCode, acceptedCodes);
+    if (!isCorrect) {
+      // 判错（显示正确拆分与全部写法）
       setUserWrongSplit(newCode);
       setShowSplitViz(true);
       setSplitAnimationStep(splitParts.length);
-      finishAnswer(false, key);
-      return;
     }
-
-    // 简码（比全码短）→ 不自动跳题，等空格上屏；仍可继续补全成全码
-    if (mode === 'space') return;
-
-    // 打满全码 → 自动上屏，直接切下一题
-    finishAnswer(true, key);
+    finishAnswer(isCorrect, key);
   }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, splitParts.length, finishAnswer]);
 
-  /** 空格上屏：仅在"打出简码"时生效，返回是否消费了这次空格 */
+  /** 空格上屏：不足 4 键时按空格立即判定（码表里的编码才算对），返回是否消费了这次空格 */
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || feedbackType || !currentItem.char) return false;
-    if (commitMode(inputCode, acceptedCodes) !== 'space') return false;
-    finishAnswer(true, ' ');
+    if (!inputCode) return false;
+    const isCorrect = isSpaceCommitCorrect(inputCode, acceptedCodes);
+    if (!isCorrect) {
+      setUserWrongSplit(inputCode);
+      setShowSplitViz(true);
+      setSplitAnimationStep(splitParts.length);
+    }
+    finishAnswer(isCorrect, ' ');
     return true;
-  }, [isPlaying, feedbackType, currentItem.char, inputCode, acceptedCodes, finishAnswer]);
+  }, [isPlaying, feedbackType, currentItem.char, inputCode, acceptedCodes, splitParts.length, finishAnswer]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -405,9 +409,10 @@ export default function WholeCharPracticePage() {
       if (e.key === 'Escape') { stopPractice(); return; }
       if (e.key === ' ') {
         e.preventDefault();
-        // 已够码未满 4 码 → 空格上屏（模拟输入法）
+        // 有输入 → 空格上屏并判定（不足 4 键时的上屏方式，模拟输入法）
         if (handleSpaceCommit()) return;
-        if (showHint && inputCode.length > 0) {
+        // 无输入 → 空格用于查看/切换拆分提示
+        if (showHint) {
           setShowSplitViz(true);
           setSplitAnimationStep(splitParts.length);
           // 仅显示拆分提示，不提交答案
@@ -446,7 +451,7 @@ export default function WholeCharPracticePage() {
   const handleNativeBeforeInput = useCallback((e: React.FormEvent<HTMLInputElement>) => {
     const ne = e.nativeEvent as InputEvent;
     if (ne.inputType === 'insertText' && ne.data === ' ') {
-      // 软键盘空格 = 上屏（简码未满 4 码时）
+      // 软键盘空格 = 上屏判定（不足 4 键时的上屏方式）
       e.preventDefault();
       if (!feedbackType) handleSpaceCommit();
     } else if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
@@ -785,9 +790,9 @@ export default function WholeCharPracticePage() {
 
                   {awaitingCommit && (
                     <div className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
-                      打出简码 · 按
+                      已打完整编码 · 按
                       <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                      上屏（也可继续打满全码）
+                      上屏（或继续输入自动上屏）
                     </div>
                   )}
 
@@ -897,6 +902,9 @@ export default function WholeCharPracticePage() {
                   <span className="text-muted-foreground">= 字根小码</span>
                 </div>
                 <div className="mt-1.5 pt-1.5 border-t border-border/40 text-muted-foreground">
+                  <span className="text-foreground font-semibold">满4键自动上屏</span> · 不足4键按空格上屏
+                </div>
+                <div className="pt-1 text-muted-foreground">
                   当前：<span className="text-foreground font-semibold">{codeRuleLabels[codeRule]}</span>
                 </div>
               </div>
