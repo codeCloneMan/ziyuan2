@@ -2,7 +2,7 @@ import { useState, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { keyboardRows, keyRootsMap } from '@/data/roots';
 import { imagesByKey } from '@/data/root-images';
-import { Keyboard, Delete } from 'lucide-react';
+import { Keyboard, Delete, CornerDownLeft } from 'lucide-react';
 
 // ====== 触觉反馈（移动端振动） ======
 function hapticFeedback(type: 'tap' | 'correct' | 'wrong') {
@@ -42,6 +42,8 @@ export interface PracticeKeyboardProps {
   correctCountMap?: Record<string, number>;
   // ===== codes 模式专属 =====
   onBackspace?: () => void;
+  /** 空格 / 上屏键：简码未到 4 码时用它提交（模拟输入法上屏） */
+  onSpace?: () => void;
   headerLeft?: ReactNode;
   headerRight?: ReactNode;
 }
@@ -61,6 +63,7 @@ export default function PracticeKeyboard({
   currentRootChar,
   correctCountMap,
   onBackspace,
+  onSpace,
   headerLeft,
   headerRight,
 }: PracticeKeyboardProps) {
@@ -195,15 +198,25 @@ export default function PracticeKeyboard({
             })}
           </div>
         ))}
-        {/* 编码模式：退格键行 */}
-        {mode === 'codes' && onBackspace && (
+        {/* 编码模式：空格上屏 + 退格键行 */}
+        {mode === 'codes' && (onSpace || onBackspace) && (
           <div className="flex gap-[3px] sm:gap-1 w-full" style={{ paddingLeft: '12px' }}>
-            <button onClick={() => { hapticFeedback('tap'); onBackspace(); }}
-              onMouseDown={(e) => e.preventDefault()}
-              className="flex-[2] min-w-0 h-11 sm:flex-none sm:h-10 sm:w-18 rounded-lg font-medium text-xs transition-all duration-150 border border-border/60 bg-card hover:bg-secondary/40 flex items-center justify-center gap-1">
-              <Delete className="h-3 w-3" />
-              <span className="text-[11px]" style={{ fontFamily: "'Noto Serif SC', serif" }}>删除</span>
-            </button>
+            {onSpace && (
+              <button onClick={() => { hapticFeedback('tap'); onSpace(); }}
+                onMouseDown={(e) => e.preventDefault()}
+                className="flex-[3] min-w-0 h-11 sm:flex-none sm:h-10 sm:w-40 rounded-lg font-medium text-xs transition-all duration-150 border border-primary/30 bg-primary/[0.06] hover:bg-primary/10 text-primary flex items-center justify-center gap-1">
+                <CornerDownLeft className="h-3 w-3" />
+                <span className="text-[11px]" style={{ fontFamily: "'Noto Serif SC', serif" }}>空格上屏</span>
+              </button>
+            )}
+            {onBackspace && (
+              <button onClick={() => { hapticFeedback('tap'); onBackspace(); }}
+                onMouseDown={(e) => e.preventDefault()}
+                className="flex-[2] min-w-0 h-11 sm:flex-none sm:h-10 sm:w-18 rounded-lg font-medium text-xs transition-all duration-150 border border-border/60 bg-card hover:bg-secondary/40 flex items-center justify-center gap-1">
+                <Delete className="h-3 w-3" />
+                <span className="text-[11px]" style={{ fontFamily: "'Noto Serif SC', serif" }}>删除</span>
+              </button>
+            )}
           </div>
         )}
       </div>

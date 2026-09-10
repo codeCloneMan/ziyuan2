@@ -2,7 +2,10 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { useCharCodeData, useBuiltinPhrases, type CharCodeItem, type BuiltinPhrasesData } from '@/lib/data-loader';
+import { useCharCodeData, useBuiltinPhrases, type BuiltinPhrasesData } from '@/lib/data-loader';
+import { buildFullCodeIndex, fullCodesOf, type FullCodeInfo } from '@/lib/full-codes';
+import { getPhraseCodes } from '@/lib/phrase-codes';
+import { needsSpaceToCommit, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
 import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { usePracticeRound } from '@/hooks/use-practice-round';
@@ -18,62 +21,17 @@ import {
 } from 'lucide-react';
 
 // ============================================
-// 字符编码映射（延迟构建）
-// ============================================
-
-function buildCharToFullCodes(charCodeData: CharCodeItem[]): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const item of charCodeData) {
-    const existing = map.get(item.char);
-    if (existing) {
-      if (!existing.includes(item.code)) existing.push(item.code);
-    } else {
-      map.set(item.char, [item.code]);
-    }
-  }
-  return map;
-}
-
-function getFullCode(ch: string, charToFullCodes: Map<string, string[]>): string | null {
-  const codes = charToFullCodes.get(ch);
-  if (!codes || codes.length === 0) return null;
-  return codes.reduce((a, b) => a.length >= b.length ? a : b);
-}
-
-const phraseCodeCache = new Map<string, string | null>();
-
-function getPhraseCode(phrase: string, charToFullCodes: Map<string, string[]>): string | null {
-  const cached = phraseCodeCache.get(phrase);
-  if (cached !== undefined) return cached;
-  const phraseLen = phrase.length;
-  const fullCodes: string[] = [];
-  for (const ch of phrase) {
-    const fc = getFullCode(ch, charToFullCodes);
-    if (!fc) { phraseCodeCache.set(phrase, null); return null; }
-    fullCodes.push(fc);
-  }
-  let extracted = '';
-  if (phraseLen === 2) {
-    extracted = fullCodes[0].slice(0, 2) + fullCodes[1].slice(0, 2);
-  } else if (phraseLen === 3) {
-    extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1) + fullCodes[2].slice(0, 2);
-  } else {
-    extracted = fullCodes[0].slice(0, 1) + fullCodes[1].slice(0, 1)
-      + fullCodes[2].slice(0, 1) + fullCodes[phraseLen - 1].slice(0, 1);
-  }
-  const result = extracted.length >= 4 ? extracted : null;
-  phraseCodeCache.set(phrase, result);
-  return result;
-}
-
-// ============================================
 // 词组类型 & 配置（仅两种级别）
 // ============================================
 
 interface PhraseItem {
   phrase: string;
+  /** 逐字主展示全码（提示用） */
   codes: string[];
+  /** 主展示短语码 */
   fullCode: string;
+  /** 全部合法短语码；打出任意一个即正确 */
+  accepted: string[];
 }
 
 const modeConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof BookOpen }> = {
@@ -83,7 +41,7 @@ const modeConfig: Record<PracticeLevel, { label: string; description: string; ic
 
 function buildPhraseList(
   level: PracticeLevel,
-  charToFullCodes: Map<string, string[]>,
+  index: Map<string, FullCodeInfo>,
   phrasesData: BuiltinPhrasesData,
 ): PhraseItem[] {
   const phrases: PhraseItem[] = [];
@@ -91,11 +49,11 @@ function buildPhraseList(
   const addPhrase = (phrase: string) => {
     if (seen.has(phrase)) return;
     seen.add(phrase);
-    const fullCode = getPhraseCode(phrase, charToFullCodes);
-    if (!fullCode) return;
-    const codes = phrase.split('').map(ch => getFullCode(ch, charToFullCodes) || '?');
+    const accepted = getPhraseCodes(phrase, index);
+    if (accepted.length === 0) return;
+    const codes = phrase.split('').map(ch => fullCodesOf(index.get(ch))[0] || '?');
     if (codes.includes('?')) return;
-    phrases.push({ phrase, codes, fullCode });
+    phrases.push({ phrase, codes, fullCode: accepted[0], accepted });
   };
 
   const { twoCharPhrases, twoCharFreqs, threeCharPhrases, threeCharFreqs } = phrasesData;
@@ -148,7 +106,7 @@ interface SessionResult {
 export default function PhrasePracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
   const { data: phrasesData } = useBuiltinPhrases();
-  const charToFullCodes = useMemo(() => charCodeData ? buildCharToFullCodes(charCodeData) : new Map(), [charCodeData]);
+  const charCodeIndex = useMemo(() => charCodeData ? buildFullCodeIndex(charCodeData) : new Map<string, FullCodeInfo>(), [charCodeData]);
 
   const { progress: phraseProgress, recordAnswer, setMode: setStoreMode } = usePhraseProgress();
   const { preferences, setPref } = usePreferences();
@@ -185,11 +143,11 @@ export default function PhrasePracticePage() {
     currentPhraseRef.current = currentPhrase;
   });
 
-  // 词组池（同步计算，getPhraseCode 有缓存，构建足够快）
+  // 词组池（同步计算，全码索引已按字分组，构建足够快）
   const phrasePool = useMemo(() => {
     if (!charCodeData || !phrasesData) return [];
-    return buildPhraseList(level, charToFullCodes, phrasesData);
-  }, [level, charCodeData, phrasesData, charToFullCodes]);
+    return buildPhraseList(level, charCodeIndex, phrasesData);
+  }, [level, charCodeData, phrasesData, charCodeIndex]);
   const poolReady = phrasePool.length > 0;
   const poolCount = phrasePool.length;
 
@@ -285,33 +243,22 @@ export default function PhrasePracticePage() {
     setPref('phraseMode', lvl);
   }, [setPref]);
 
-  // 逐键累加编码：前缀正确继续等待；四码完整且正确判对；前缀断裂判错
-  const handleKeyPress = useCallback((key: string) => {
-    if (!isPlaying || feedbackType || !currentPhrase) return;
-
-    const newCode = inputCode + key;
-    setInputCode(newCode);
-
-    const correctCode = currentPhrase.fullCode;
-    const time = Date.now() - answerStartTime.current;
-    const result = { phrase: currentPhrase.phrase, input: newCode, time, fullCode: correctCode };
-
-    const isPrefix = correctCode.startsWith(newCode);
-    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
-    if (isPrefix && newCode !== correctCode) return;
-
-    const isCorrect = newCode === correctCode;
-    if (isCorrect) {
-      recordAnswer(true);
-      setSessionResults(prev => [...prev, { ...result, correct: true }]);
-    } else {
-      recordAnswer(false);
-      setSessionResults(prev => [...prev, { ...result, correct: false }]);
-    }
+  /** 收尾：记录答题、推进轮次、交给状态机做反馈与切题 */
+  const finishPhraseAnswer = useCallback((isCorrect: boolean, key: string, input: string) => {
+    const phrase = currentPhraseRef.current;
+    if (!phrase) return;
+    recordAnswer(isCorrect);
+    setSessionResults(prev => [...prev, {
+      phrase: phrase.phrase,
+      input,
+      time: Date.now() - answerStartTime.current,
+      fullCode: phrase.fullCode,
+      correct: isCorrect,
+    }]);
 
     // 轮次：答完词库最后一个词即完成一轮 —— 记录轮次、本轮统计归零，
     // 下一题自动进入新一轮。先 reset 再 submit，最后一题计入新一轮不丢。
-    const roundDone = markSeen(currentPhrase.phrase);
+    const roundDone = markSeen(phrase.phrase);
     if (roundDone) {
       reset();
       setSessionResults([]);
@@ -319,7 +266,39 @@ export default function PhrasePracticePage() {
     }
 
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, inputCode, currentPhrase, recordAnswer, submit, markSeen, reset, completedRounds]);
+  }, [recordAnswer, markSeen, reset, completedRounds, submit]);
+
+  // 逐键累加编码：命中任一合法码的前缀继续等待；满 4 码命中自动上屏；
+  // 未到 4 码命中停在原地等空格上屏；前缀断裂判错
+  const handleKeyPress = useCallback((key: string) => {
+    if (!isPlaying || feedbackType || !currentPhrase) return;
+
+    const newCode = inputCode + key;
+    setInputCode(newCode);
+
+    const accepted = currentPhrase.accepted;
+
+    if (!accepted.some(c => c.startsWith(newCode))) {
+      finishPhraseAnswer(false, key, newCode);
+      return;
+    }
+
+    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
+    if (!accepted.includes(newCode)) return;
+
+    // 已够码但没到 4 码 → 不自动跳题，等空格上屏；仍可继续补全更长编码
+    if (newCode.length < AUTO_COMMIT_LENGTH) return;
+
+    finishPhraseAnswer(true, key, newCode);
+  }, [isPlaying, feedbackType, inputCode, currentPhrase, finishPhraseAnswer]);
+
+  /** 空格上屏：仅在"已够码未满 4 码"时生效，返回是否消费了这次空格 */
+  const handleSpaceCommit = useCallback((): boolean => {
+    if (!isPlaying || feedbackType || !currentPhrase) return false;
+    if (!needsSpaceToCommit(inputCode, currentPhrase.accepted)) return false;
+    finishPhraseAnswer(true, ' ', inputCode);
+    return true;
+  }, [isPlaying, feedbackType, currentPhrase, inputCode, finishPhraseAnswer]);
 
   /** 虚拟键盘退格 */
   const handleBackspace = useCallback(() => {
@@ -340,6 +319,12 @@ export default function PhrasePracticePage() {
         setInputCode(prev => prev.slice(0, -1));
         return;
       }
+      if (e.key === ' ') {
+        // 已够码未满 4 码 → 空格上屏（模拟输入法）
+        e.preventDefault();
+        handleSpaceCommit();
+        return;
+      }
       const key = e.key.toLowerCase();
       if (key.length === 1 && key >= 'a' && key <= 'z') {
         e.preventDefault();
@@ -348,10 +333,12 @@ export default function PhrasePracticePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, feedbackType, handleKeyPress, stopPractice]);
+  }, [isPlaying, feedbackType, handleKeyPress, handleSpaceCommit, stopPractice]);
 
   // 本轮进度 = 本轮已答词数 / 词库总数（与轮次记录同一口径，不再用队列下标）
   const progress = poolCount > 0 ? (roundSeen / poolCount) * 100 : 0;
+  // 已够码未满 4 码 → 停在原地等空格上屏（词组码均为 4 码，此处是统一规则的兜底）
+  const awaitingCommit = !feedbackType && needsSpaceToCommit(inputCode, currentPhrase?.accepted ?? []);
 
   if (dataLoading || !charCodeData) {
     return (
@@ -548,7 +535,11 @@ export default function PhrasePracticePage() {
                   placeholder="输入四码"
                   onBeforeInput={(e) => {
                     const ne = e.nativeEvent as InputEvent;
-                    if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
+                    if (ne.inputType === 'insertText' && ne.data === ' ') {
+                      // 软键盘空格 = 上屏（简码未满 4 码时）
+                      e.preventDefault();
+                      if (!feedbackType) handleSpaceCommit();
+                    } else if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
                       e.preventDefault(); // 受控组件无需实际插入
                       handleKeyPress(ne.data.toLowerCase());
                     } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
@@ -566,10 +557,27 @@ export default function PhrasePracticePage() {
                   value={inputCode.toUpperCase()} />
               </div>
 
+              {awaitingCommit && (
+                <div className="mb-3 text-center text-xs font-medium text-amber-600 dark:text-amber-400">
+                  已够码 · 按
+                  <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
+                  上屏
+                </div>
+              )}
+
               {/* 正确答案（错误时显示） */}
               {feedbackType === 'wrong' && (
-                <div className="text-lg font-mono font-bold text-red-600 animate-fade-in">
-                  正确编码：<span className="uppercase">{currentPhrase.fullCode}</span>
+                <div className="animate-fade-in">
+                  <div className="text-lg font-mono font-bold text-red-600">
+                    正确编码：<span className="uppercase">{currentPhrase.fullCode}</span>
+                  </div>
+                  {currentPhrase.accepted.length > 1 && (
+                    <div className="mt-1 text-xs text-muted-foreground">
+                      也可：<span className="font-mono tracking-wider">
+                        {currentPhrase.accepted.filter(c => c !== currentPhrase.fullCode).map(c => c.toUpperCase()).join(' / ')}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -608,6 +616,7 @@ export default function PhrasePracticePage() {
               feedbackType={feedbackType}
               onKeyPress={handleKeyPress}
               onBackspace={handleBackspace}
+              onSpace={() => { if (!feedbackType) handleSpaceCommit(); }}
               headerLeft="编码键盘"
               headerRight={
                 <span className="text-[10px] text-muted-foreground">

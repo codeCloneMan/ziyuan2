@@ -40,7 +40,7 @@ describe('常用前5000字题库', () => {
   });
 });
 
-describe('多全码判定（buildFullCodeIndex）', () => {
+describe('全部编码判定（buildFullCodeIndex）', () => {
   const index = buildFullCodeIndex([
     { char: '好', code: 'a' },     // 一级简码
     { char: '好', code: 'ahh' },   // 全码
@@ -52,39 +52,57 @@ describe('多全码判定（buildFullCodeIndex）', () => {
     { char: '大', code: 'edai' },
   ]);
 
-  it('全码 = 最长码；等长的多个全码全部接受，简码不作为答案', () => {
-    expect(index.get('好')).toEqual({ fullCode: 'ahh', accepted: ['ahh'] });
-    expect(index.get('了')).toEqual({ fullCode: 'hle', accepted: ['hle', 'hli'] });
-    expect(index.get('大')).toEqual({ fullCode: 'edai', accepted: ['edai'] });
+  it('主展示码 = 最长码；码表里列出的每一个编码都算对（含简码）', () => {
+    expect(index.get('好')).toEqual({ fullCode: 'ahh', accepted: ['ahh', 'a'], alternates: ['a'] });
+    expect(index.get('了')).toEqual({ fullCode: 'hle', accepted: ['hle', 'hli', 'h'], alternates: ['hli', 'h'] });
+    expect(index.get('大')).toEqual({ fullCode: 'edai', accepted: ['edai', 'eda', 'e'], alternates: ['eda', 'e'] });
   });
 
-  it('输入是任一全码的前缀时继续，命中任一全码即正确', () => {
+  it('输入是任一编码的前缀时继续，命中任一编码即正确', () => {
     const accepted = index.get('了')!.accepted;
     // "hl" 是 hle/hli 的共同前缀 → 继续输入
     expect(accepted.some(c => c.startsWith('hl'))).toBe(true);
     // 打出第二个全码 hli → 判对
     expect(accepted.includes('hli')).toBe(true);
-    // 打错（hlx 不是任何全码前缀）→ 判错
+    // 打错（hlx 不是任何编码前缀）→ 判错
     expect(accepted.some(c => c.startsWith('hlx'))).toBe(false);
   });
 
-  it('真实码表：常用多全码字（了/地/会/种/见）全部全码都被接受', () => {
+  it('重复编码被去重', () => {
+    const dup = buildFullCodeIndex([
+      { char: '乐', code: 'uil' },
+      { char: '乐', code: 'uil' },
+      { char: '乐', code: 'uiyu' },
+    ]);
+    expect(dup.get('乐')!.accepted).toEqual(['uiyu', 'uil']);
+  });
+
+  it('真实码表：常用字的全部写法都被接受（乐/的/大/了/万）', () => {
     const data = JSON.parse(
       readFileSync(resolve(import.meta.dirname, '../../public/data/charCodeData.json'), 'utf8')
     ) as { char: string; code: string }[];
     const realIndex = buildFullCodeIndex(data);
-    // 每个常用字都应有全码，且 accepted 内全部等长（最长）
     for (const ch of common5000) {
       const info = realIndex.get(ch);
       expect(info, `${ch} 无码表数据`).toBeTruthy();
-      for (const c of info!.accepted) expect(c.length).toBe(info!.fullCode.length);
-      expect(info!.accepted).toContain(info!.fullCode);
+      // 主展示码就是最长码；其余写法都在 accepted 里
+      expect(info!.accepted[0]).toBe(info!.fullCode);
+      expect(info!.accepted).toEqual([info!.fullCode, ...info!.alternates]);
+      for (const c of info!.accepted) {
+        expect(c.length).toBeLessThanOrEqual(info!.fullCode.length);
+        expect(c.length).toBeGreaterThan(0);
+      }
     }
-    // 多全码样例：第二个全码也在 accepted 中
-    expect(realIndex.get('了')!.accepted).toEqual(['hle', 'hli']);
-    expect(realIndex.get('地')!.accepted).toEqual(['blde', 'bldi']);
-    expect(realIndex.get('会')!.accepted).toEqual(['snh', 'snk']);
-    expect(realIndex.get('种')!.accepted).toEqual(['tvc', 'tvz']);
-    expect(realIndex.get('见')!.accepted).toEqual(['uhj', 'uhx']);
+    // 用户实测案例：乐 uil 与 uiyu 都算对
+    expect(realIndex.get('乐')!.accepted).toEqual(['uiyu', 'uil']);
+    expect(realIndex.get('的')!.accepted).toEqual(['kav', 'k']);
+    expect(realIndex.get('大')!.accepted).toEqual(['edai', 'eda', 'e']);
+    expect(realIndex.get('万')!.accepted).toEqual(['lmo', 'lwa', 'lw']);
+    // 等长多全码
+    expect(realIndex.get('了')!.accepted).toEqual(['hle', 'hli', 'h']);
+    expect(realIndex.get('地')!.accepted).toEqual(['blde', 'bldi', 'b']);
+    expect(realIndex.get('会')!.accepted).toEqual(['snh', 'snk', 'sn']);
+    expect(realIndex.get('种')!.accepted).toEqual(['tvc', 'tvz', 'tv']);
+    expect(realIndex.get('见')!.accepted).toEqual(['uhj', 'uhx', 'uh']);
   });
 });

@@ -6,6 +6,7 @@ import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { top500Chars } from '@/data/commonChars';
 import { common5000 } from '@/data/builtinCharSets';
 import { buildFullCodeIndex } from '@/lib/full-codes';
+import { needsSpaceToCommit, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
 import type { PracticeLevel } from '@/types';
 import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -76,6 +77,14 @@ function isMustSplitChar(char: string): boolean {
   const split = getCharSplit(char);
   if (!split) return false;
   return split.length >= 3;
+}
+
+/**
+ * 当前题目。codes = 码表中该字的全部编码（全码 + 简码 + 别名），
+ * 打出任意一个都算对；code 只作主展示码（最长码）。
+ */
+interface PracticeItem extends CharCodeItem {
+  codes: string[];
 }
 
 export default function WholeCharPracticePage() {
@@ -163,8 +172,8 @@ export default function WholeCharPracticePage() {
     },
   });
 
-  const [currentItem, setCurrentItem] = useState<CharCodeItem>(() => ({
-    char: '', code: '',
+  const [currentItem, setCurrentItem] = useState<PracticeItem>(() => ({
+    char: '', code: '', codes: [],
   }));
   const [inputCode, setInputCode] = useState('');
   const [showSplitViz, setShowSplitViz] = useState(false);
@@ -186,6 +195,20 @@ export default function WholeCharPracticePage() {
 
   const splitParts = useMemo(() => getSplitParts(currentItem.char), [currentItem.char]);
   const codeRule = useMemo(() => getCodeRule(currentItem.code), [currentItem.code]);
+  // 主展示码之外的其它写法（简码 / 别名）：答对或揭晓时一并列出
+  const codeAlternates = useMemo(
+    () => currentItem.codes.filter(c => c !== currentItem.code),
+    [currentItem],
+  );
+  // 该题可接受的编码集合（码表里列出的全部写法）
+  const acceptedCodes = useMemo(
+    () => (currentItem.codes.length > 0
+      ? currentItem.codes
+      : currentItem.code ? [currentItem.code] : []),
+    [currentItem],
+  );
+  // 已够码但未满 4 码 → 停在原地等空格上屏（模拟输入法简码上屏）
+  const awaitingCommit = !feedbackType && needsSpaceToCommit(inputCode, acceptedCodes);
 
   const hintLevel = useMemo(() => {
     const seen = modeProgress.correctCountMap[currentItem.char] || 0;
@@ -258,7 +281,9 @@ export default function WholeCharPracticePage() {
 
     if (nextId) {
       const info = fullCodeIndex.get(nextId);
-      setCurrentItem(info ? { char: nextId, code: info.fullCode } : charCodeData[0]);
+      setCurrentItem(info
+        ? { char: nextId, code: info.fullCode, codes: info.accepted }
+        : { ...charCodeData[0], codes: [charCodeData[0].code] });
       setInputCode('');
     }
     setShowSplitViz(false);
@@ -316,27 +341,14 @@ export default function WholeCharPracticePage() {
     }
   }, [showSplitViz, splitAnimationStep, splitParts.length]);
 
-  const handleKeyPress = useCallback((key: string) => {
-    if (!isPlaying || feedbackType || !currentItem.char) return;
-    const newCode = inputCode + key;
-    setInputCode(newCode);
-
-    // 该字的全部全码：打出任意一个即正确；输入只要是某个全码的前缀就继续
-    const accepted = fullCodeIndex.get(currentItem.char)?.accepted ?? [currentItem.code];
-    const isPrefix = accepted.some(code => code.startsWith(newCode));
-    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
-    if (isPrefix && !accepted.includes(newCode)) return;
-
-    const isCorrect = accepted.includes(newCode);
+  /** 收尾：记录答题、推进轮次、交给状态机做反馈与切题 */
+  const finishAnswer = useCallback((isCorrect: boolean, key: string) => {
     if (isCorrect) {
       recordAnswer(modeKey, currentItem.char, true);
       if (isBeginner) spacedRecordResult(currentItem.char, true);
     } else {
       recordAnswer(modeKey, currentItem.char, false);
       if (isBeginner) spacedRecordResult(currentItem.char, false);
-      setUserWrongSplit(newCode);
-      setShowSplitViz(true);
-      setSplitAnimationStep(splitParts.length);
     }
 
     // 轮次：答完池内最后一个字即完成一轮 —— 记录轮次、本轮统计归零，
@@ -348,7 +360,43 @@ export default function WholeCharPracticePage() {
     }
 
     submit(isCorrect, key);
-  }, [isPlaying, feedbackType, inputCode, currentItem, fullCodeIndex, recordAnswer, modeKey, isBeginner, splitParts.length, submit, spacedRecordResult, markSeen, reset, completedRounds]);
+  }, [currentItem.char, recordAnswer, modeKey, isBeginner, spacedRecordResult, markSeen, reset, completedRounds, submit]);
+
+  const handleKeyPress = useCallback((key: string) => {
+    if (!isPlaying || feedbackType || !currentItem.char) return;
+    const newCode = inputCode + key;
+    setInputCode(newCode);
+
+    // 该字的全部编码（码表里列出的都算对）：打出任意一个即正确；
+    // 输入只要是某个编码的前缀就继续
+    const accepted = acceptedCodes;
+
+    if (!accepted.some(code => code.startsWith(newCode))) {
+      // 前缀断裂 → 判错（显示正确拆分与全部写法）
+      setUserWrongSplit(newCode);
+      setShowSplitViz(true);
+      setSplitAnimationStep(splitParts.length);
+      finishAnswer(false, key);
+      return;
+    }
+
+    // 前缀未走完（还可能打对）→ 继续输入，不算一次作答
+    if (!accepted.includes(newCode)) return;
+
+    // 已够码但没到 4 码（简码）→ 不自动跳题，等空格上屏；仍可继续补全更长编码
+    if (newCode.length < AUTO_COMMIT_LENGTH) return;
+
+    // 满 4 码命中 → 自动上屏，直接切下一题
+    finishAnswer(true, key);
+  }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, splitParts.length, finishAnswer]);
+
+  /** 空格上屏：仅在"已够码未满 4 码"时生效，返回是否消费了这次空格 */
+  const handleSpaceCommit = useCallback((): boolean => {
+    if (!isPlaying || feedbackType || !currentItem.char) return false;
+    if (!needsSpaceToCommit(inputCode, acceptedCodes)) return false;
+    finishAnswer(true, ' ');
+    return true;
+  }, [isPlaying, feedbackType, currentItem.char, inputCode, acceptedCodes, finishAnswer]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -358,6 +406,8 @@ export default function WholeCharPracticePage() {
       if (e.key === 'Escape') { stopPractice(); return; }
       if (e.key === ' ') {
         e.preventDefault();
+        // 已够码未满 4 码 → 空格上屏（模拟输入法）
+        if (handleSpaceCommit()) return;
         if (showHint && inputCode.length > 0) {
           setShowSplitViz(true);
           setSplitAnimationStep(splitParts.length);
@@ -380,7 +430,7 @@ export default function WholeCharPracticePage() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, feedbackType, handleKeyPress, stopPractice, splitParts.length, showHint, inputCode, setPref]);
+  }, [isPlaying, feedbackType, handleKeyPress, handleSpaceCommit, stopPractice, splitParts.length, showHint, inputCode, setPref]);
 
   useEffect(() => {
     // 仅当用户在用原生输入（软键盘）时，切题后保持焦点；
@@ -396,7 +446,11 @@ export default function WholeCharPracticePage() {
   // 旧 diff 逻辑把多个字符当作同一题的多个编码（误判）或注入下一题。
   const handleNativeBeforeInput = useCallback((e: React.FormEvent<HTMLInputElement>) => {
     const ne = e.nativeEvent as InputEvent;
-    if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
+    if (ne.inputType === 'insertText' && ne.data === ' ') {
+      // 软键盘空格 = 上屏（简码未满 4 码时）
+      e.preventDefault();
+      if (!feedbackType) handleSpaceCommit();
+    } else if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
       e.preventDefault(); // 受控组件无需实际插入
       handleKeyPress(ne.data.toLowerCase());
     } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
@@ -405,7 +459,7 @@ export default function WholeCharPracticePage() {
       // 粘贴/拖放无意义且会污染受控输入框，一律阻止（与字根/词组输入一致）
       if (ne.inputType === 'deleteContentBackward' && !feedbackType) setInputCode(c => c.slice(0, -1));
     }
-  }, [handleKeyPress, feedbackType]);
+  }, [handleKeyPress, handleSpaceCommit, feedbackType]);
 
   const renderCodeWithColor = (code: string) => {
     const rule = getCodeRule(code);
@@ -670,17 +724,50 @@ export default function WholeCharPracticePage() {
                   )}
 
                   {(feedbackType === 'correct' || (showHint && hintLevel >= 2 && !feedbackType)) && currentItem.code && (
-                    <div className="mb-4 flex items-center justify-center gap-1">
-                      <span className="text-xs text-muted-foreground mr-1">编码：</span>
-                      {renderCodeWithColor(currentItem.code)}
+                    <div className="mb-4 flex flex-col items-center gap-1">
+                      <div className="flex items-center justify-center gap-1">
+                        <span className="text-xs text-muted-foreground mr-1">编码：</span>
+                        {renderCodeWithColor(currentItem.code)}
+                      </div>
+                      {codeAlternates.length > 0 && (
+                        <div className="text-[11px] text-muted-foreground">
+                          也可：<span className="font-mono tracking-wider">{codeAlternates.map(c => c.toUpperCase()).join(' / ')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
+
+                  {/* 四码位置框：逐位分辨输入（与词组练习一致） */}
+                  <div className="flex justify-center gap-1.5 sm:gap-2 mb-3">
+                    {Array.from({ length: AUTO_COMMIT_LENGTH }).map((_, i) => {
+                      const ch = inputCode[i];
+                      const isFilled = !!ch;
+                      const isCurrent = !feedbackType && !isFilled && i === inputCode.length;
+                      const isCorrectChar = feedbackType === 'correct' && isFilled;
+                      const isWrongChar = feedbackType === 'wrong' && isFilled;
+                      const matchesAnswer = acceptedCodes.some(c => c.length > i && c[i] === ch);
+                      return (
+                        <div key={i} className={cn(
+                          'w-12 h-12 sm:w-14 sm:h-14 rounded-xl border-2 flex items-center justify-center',
+                          'text-xl sm:text-2xl font-mono font-bold uppercase transition-all duration-150',
+                          isCorrectChar && 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400',
+                          isWrongChar && matchesAnswer && 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400',
+                          isWrongChar && !matchesAnswer && 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400',
+                          !feedbackType && isFilled && 'border-primary bg-primary/5',
+                          !feedbackType && isCurrent && 'border-primary ring-2 ring-primary/40 bg-primary/[0.03]',
+                          !feedbackType && !isFilled && !isCurrent && 'border-border/60',
+                        )}>
+                          {ch ? ch.toUpperCase() : ''}
+                        </div>
+                      );
+                    })}
+                  </div>
 
                   <div className="flex justify-center items-center gap-4">
                     <div className="relative" onClick={() => inputRef.current?.focus()}>
                       <input ref={inputRef} type="text" inputMode="text"
                         autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false}
-                        placeholder="输入编码"
+                        placeholder="输入编码" aria-label="输入编码"
                         onFocus={() => { setInputFocused(true); nativeInputActiveRef.current = true; }}
                         onBlur={() => { setInputFocused(false); nativeInputActiveRef.current = false; }}
                         onBeforeInput={handleNativeBeforeInput}
@@ -696,6 +783,14 @@ export default function WholeCharPracticePage() {
                       )}
                     </div>
                   </div>
+
+                  {awaitingCommit && (
+                    <div className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
+                      已够码 · 按
+                      <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
+                      上屏
+                    </div>
+                  )}
 
                   {/* 手机端作答提示 */}
                   <p className="sm:hidden mt-1 text-xs text-muted-foreground/70 text-center">点击输入框或用下方键盘作答</p>
@@ -723,6 +818,11 @@ export default function WholeCharPracticePage() {
                           <span className="text-emerald-600 dark:text-emerald-400 font-mono">{currentItem.code.toUpperCase()}</span>
                         </div>
                       </div>
+                      {codeAlternates.length > 0 && (
+                        <div className="text-center text-[11px] text-muted-foreground">
+                          也可：<span className="font-mono tracking-wider">{codeAlternates.map(c => c.toUpperCase()).join(' / ')}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -746,6 +846,7 @@ export default function WholeCharPracticePage() {
               feedbackType={feedbackType}
               onKeyPress={handleKeyPress}
               onBackspace={() => { if (!feedbackType && inputCode.length > 0) setInputCode(inputCode.slice(0, -1)); }}
+              onSpace={() => { if (!feedbackType) handleSpaceCommit(); }}
               headerLeft="编码键盘"
               headerRight={isMustSplitChar(currentItem.char) ? (
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-amber-500/30 text-amber-600">
