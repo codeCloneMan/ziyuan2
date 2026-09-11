@@ -15,8 +15,14 @@ import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useArticleProgress } from '@/store/progress-store';
 import { DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY } from '@/data/articles';
 import {
-  Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText,
+  Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText, Keyboard,
 } from 'lucide-react';
+
+/** 跟打器式固定窗口显示的行数（当前字固定在第 ARTICLE_ROWS-1 行） */
+const ARTICLE_ROWS = 4;
+
+/** 未打过的字，下方跟打位留空但必须占位，否则行高会塌 */
+const NBSP = '\u00A0';
 
 
 export default function ArticlePracticePage() {
@@ -89,13 +95,28 @@ export default function ArticlePracticePage() {
   const [feedback, setFeedback] = useState<'correct' | null>(null);
   /** 刚打错的字（非阻断提示，立即进位后仍能看到错的是哪个字） */
   const [wrongFlash, setWrongFlash] = useState<string | null>(null);
-  const [wrongSet, setWrongSet] = useState<Set<number>>(new Set());
+  // 每个打错的字留下的错误编码（item 下标 → 你敲的码），在字下方红色常显
+  const [wrongCodes, setWrongCodes] = useState<Record<number, string>>({});
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [roundToast, setRoundToast] = useState<number | null>(null);
+  // 打字工具口径：击键数（含上屏空格）与用时，用于算速度 / 击键 / 码长
+  const [keyStrokes, setKeyStrokes] = useState(0);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  // 触屏设备默认展开虚拟键盘，桌面默认收起，保持「纯打字工具」的干净版面
+  const [showKeyboard, setShowKeyboard] = useState(() => {
+    try {
+      const saved = localStorage.getItem('ziyuan-article-keyboard');
+      if (saved === '0') return false;
+      if (saved === '1') return true;
+    } catch { /* 隐私模式忽略 */ }
+    return typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+  });
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const currentSpanRef = useRef<HTMLSpanElement>(null);
+  const startedAtRef = useRef(0);
+  const currentCellRef = useRef<HTMLSpanElement>(null);
+  const boardRef = useRef<HTMLDivElement>(null);
 
   const current = isPlaying ? items[cursor] : undefined;
   const awaitingCommit = !!current && !feedback && isCompleteCodeAwaitingSpace(inputCode, current.codes);
@@ -103,30 +124,58 @@ export default function ArticlePracticePage() {
     ? Math.round((correctCount / (correctCount + wrongCount)) * 100)
     : 0;
 
+  // 打字工具三项指标：速度（字/分）、击键（击/秒）、码长（平均每字击键数）
+  const committed = correctCount + wrongCount;
+  const elapsedSec = elapsedMs / 1000;
+  const speed = elapsedSec > 1 ? Math.round(committed / (elapsedSec / 60)) : 0;
+  const kps = elapsedSec > 1 ? keyStrokes / elapsedSec : 0;
+  const avgLen = committed > 0 ? keyStrokes / committed : 0;
+
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
 
-  // 当前字滚动到可视区中间
+  // 计时：练习中每 0.5s 刷新一次用时，速度才会跟着动
   useEffect(() => {
-    currentSpanRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [cursor, isPlaying]);
+    if (!isPlaying) return;
+    const t = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 500);
+    return () => clearInterval(t);
+  }, [isPlaying]);
+
+  // 跟打器式固定窗口：面板高度 = 4 行，当前字固定在窗口内第 3 行，上下自动滚。
+  // 行高与当前位置都用 getBoundingClientRect 的小数值量（offsetHeight/offsetTop 取整会累积出 1~2px 行缝）。
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board) return;
+    const cell = (currentCellRef.current ?? board.querySelector('[data-cell]')) as HTMLElement | null;
+    if (!cell) return;
+    const lineH = cell.getBoundingClientRect().height;
+    if (!lineH) return;
+    board.style.height = `${lineH * ARTICLE_ROWS}px`;
+    const cur = currentCellRef.current as HTMLElement | null;
+    if (cur) {
+      const curTop = cur.getBoundingClientRect().top - board.getBoundingClientRect().top + board.scrollTop;
+      board.scrollTop = Math.max(0, curTop - lineH * (ARTICLE_ROWS - 2));
+    }
+  }, [cursor, isPlaying, items]);
 
   const advance = useCallback(() => {
-    setCursor(prev => {
-      const next = prev + 1;
-      if (next >= items.length) {
-        // 走完全文 = 完成一轮，自动重开下一轮
-        setRoundToast(completedRounds + 1);
-        resetRound();
-        setWrongSet(new Set());
-        setCorrectCount(0);
-        setWrongCount(0);
-        return 0;
-      }
-      return next;
-    });
+    const next = cursor + 1;
+    if (next >= items.length) {
+      // 走完全文 = 完成一轮，自动重开下一轮（速度统计同步归零重新计）
+      setRoundToast(completedRounds + 1);
+      resetRound();
+      setWrongCodes({});
+      setCorrectCount(0);
+      setWrongCount(0);
+      setKeyStrokes(0);
+      startedAtRef.current = Date.now();
+      setElapsedMs(0);
+      setCursor(0);
+    } else {
+      setCursor(next);
+    }
     setInputCode('');
     setFeedback(null);
-  }, [items.length, completedRounds, resetRound]);
+  }, [cursor, items.length, completedRounds, resetRound]);
 
   /** 判定当前字（满 4 键自动 / 空格上屏） */
   const judge = useCallback((code: string, trigger: 'keys' | 'space') => {
@@ -134,6 +183,7 @@ export default function ArticlePracticePage() {
     const ok = trigger === 'space'
       ? isSpaceCommitCorrect(code, current.codes)
       : isAutoCommitCorrect(code, current.codes);
+    setKeyStrokes(k => k + code.length + (trigger === 'space' ? 1 : 0));
     recordChar(current.char, ok);
     // 轮次口径：对错都算这个字答过一次
     markSeen(String(current.textIndex));
@@ -143,9 +193,9 @@ export default function ArticlePracticePage() {
       setFeedback('correct');
       timerRef.current = setTimeout(advance, 150);
     } else {
-      // 打错立即进位（模仿打字练习工具）：不阻断打字节奏，错误只留红痕 + 提示
+      // 打错立即进位（模仿打字练习工具）：不阻断打字节奏，错误留在该字下方红色错码
       setWrongCount(c => c + 1);
-      setWrongSet(prev => new Set(prev).add(cursor));
+      setWrongCodes(prev => ({ ...prev, [cursor]: code }));
       setWrongFlash(current.char);
       advance();
       timerRef.current = setTimeout(() => setWrongFlash(null), 1200);
@@ -194,11 +244,16 @@ export default function ArticlePracticePage() {
     setCursor(0);
     setInputCode('');
     setFeedback(null);
-    setWrongSet(new Set());
+    setWrongCodes({});
     setCorrectCount(0);
     setWrongCount(0);
+    setKeyStrokes(0);
+    startedAtRef.current = Date.now();
+    setElapsedMs(0);
     resetRound();
     setIsPlaying(true);
+    // 开始页内容比练习区高，浏览器滚动锚定会把窗口带偏、把顶部统计行顶到导航栏后面
+    window.scrollTo({ top: 0 });
   }, [activeText, charCodeData, resetRound]);
 
   if (dataLoading || !charCodeData) {
@@ -227,7 +282,8 @@ export default function ArticlePracticePage() {
                   文章<span className="text-gradient-primary">练习</span>
                 </h1>
                 <p className="text-muted-foreground max-w-lg mx-auto">
-                  照着文章逐字打编码：满 4 键自动上屏、不足 4 键按空格；标点自动跳过，打错也会继续往下打（错字标红留痕）
+                  照着文章逐字打编码，没有输入框：打出的字直接跟在原文每个字的下方（打对的变浅、打错的红字留痕）。
+                  满 4 键自动上屏、不足 4 键按空格；标点自动跳过，打错也会继续往下打。
                 </p>
               </header>
 
@@ -327,121 +383,191 @@ export default function ArticlePracticePage() {
         </div>
       )}
 
-      {/* ===== 练习区 ===== */}
+      {/* ===== 练习区（打字工具样式：正文在上、打出的字回显在下） ===== */}
       {isPlaying && (
-        <section className="py-4 sm:py-8">
-          <div className="max-w-3xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
-            <div className="flex justify-between items-center gap-2 mb-3">
+        <section className="py-3 sm:py-6">
+          <div className="max-w-3xl mx-auto px-3 sm:px-6">
+            {/* 顶部：轮次 / 本轮进度 / 正确率 + 速度 / 击键 / 码长 + 退出 */}
+            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-2">
               <PracticeStatsLine
                 roundNo={completedRounds + 1}
                 seen={roundSeen}
                 total={itemCount}
                 accuracy={accuracy}
-                  extra={reviewMode ? (
+                extra={reviewMode ? (
                   <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 font-medium">易错字练习</span>
                 ) : undefined}
               />
-              <button
-                onClick={() => { setIsPlaying(false); setInputCode(''); setFeedback(null); setReviewMode(false); }}
-                className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800 transition-colors shrink-0"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />退出
-                <kbd className="hidden sm:inline ml-0.5 px-1 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/50 rounded font-mono">Esc</kbd>
-              </button>
+              <div className="flex items-center gap-x-2 sm:gap-x-3 text-[11px] sm:text-xs text-muted-foreground">
+                <span>速度 <span className="font-mono-stat font-semibold text-foreground">{speed}</span> 字/分</span>
+                <span className="text-border">|</span>
+                <span>击键 <span className="font-mono-stat font-semibold text-foreground">{kps.toFixed(2)}</span></span>
+                <span className="text-border">|</span>
+                <span>码长 <span className="font-mono-stat font-semibold text-foreground">{avgLen.toFixed(2)}</span></span>
+                <button
+                  onClick={() => { setIsPlaying(false); setInputCode(''); setFeedback(null); setReviewMode(false); }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800 transition-colors shrink-0"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />退出
+                  <kbd className="hidden sm:inline px-1 py-0.5 text-[10px] bg-red-100 dark:bg-red-900/50 rounded font-mono">Esc</kbd>
+                </button>
+              </div>
             </div>
 
-            {/* 文章正文（当前字高亮；已答/答错着色） */}
-            <div className="card-base p-4 sm:p-6 mb-3">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground">{sourceLabel}</span>
-                <button onClick={() => setShowHint(v => !v)}
-                  className={cn('flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium transition-colors',
-                    showHint ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400' : 'text-muted-foreground hover:text-foreground')}>
+            {/* 细进度条 */}
+            <div className="h-1 rounded-full bg-muted overflow-hidden mb-3">
+              <div
+                className="h-full rounded-full bg-primary transition-all duration-300"
+                style={{ width: `${itemCount > 0 ? Math.min(100, Math.round((committed / itemCount) * 100)) : 0}%` }}
+              />
+            </div>
+
+            {/* 正文面板：跟打器式 4 行固定窗口，每个字正下方跟「打出来的字」 */}
+            <div className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
+              {/* 内边距放在外层：滚动区自身正好 4 行高，滚动定位才不会被 padding 带偏 */}
+              <div className="px-4 sm:px-6 py-4">
+                <div
+                  ref={boardRef}
+                  className="relative overflow-hidden flex flex-wrap content-start text-2xl sm:text-3xl"
+                >
+                  {chars.map((ch, ti) => {
+                    // 段落换行：撑满一行的占位块强制换行，自身不占高度
+                    if (ch === '\n') return <span key={ti} className="basis-full h-0" />;
+                    const itemIdx = itemIndexByTextIndex.get(ti);
+                    // 标点 / 码表外的字：只占位、不参与跟打，下方跟打位留空
+                    if (itemIdx === undefined) {
+                      return (
+                        <span key={ti} data-cell className="inline-flex flex-col items-center text-muted-foreground/35" style={{ width: '1em' }}>
+                          <span style={{ fontSize: '1em', lineHeight: 1.45 }}>{ch}</span>
+                          <span style={{ fontSize: '0.42em', lineHeight: 1.35 }}>{NBSP}</span>
+                        </span>
+                      );
+                    }
+                    const isCurrent = itemIdx === cursor;
+                    const isDone = itemIdx < cursor;
+                    const wrongCode = wrongCodes[itemIdx];
+
+                    // 跟打位：当前字显示正在敲的码（上屏后换成结果）；打错的字红色常显错码
+                    let bottom = NBSP;
+                    let bottomCls = 'text-muted-foreground/30';
+                    // 码是纯 ASCII 字母，字号要比汉字回显再小一号，否则 4 键错码会顶到相邻字
+                    let isCodeRow = false;
+                    if (isCurrent) {
+                      if (feedback === 'correct') {
+                        bottom = ch;
+                        bottomCls = 'text-muted-foreground/40';
+                      } else if (inputCode) {
+                        bottom = inputCode.toUpperCase();
+                        isCodeRow = true;
+                        bottomCls = awaitingCommit
+                          ? 'text-amber-600 dark:text-amber-400 font-mono'
+                          : 'text-primary/60 font-mono';
+                      }
+                    } else if (isDone) {
+                      if (wrongCode) {
+                        bottom = wrongCode.toUpperCase();
+                        isCodeRow = true;
+                        bottomCls = 'text-red-500 font-mono';
+                      } else {
+                        bottom = ch;
+                        bottomCls = 'text-muted-foreground/40';
+                      }
+                    }
+
+                    return (
+                      <span
+                        key={ti}
+                        data-cell
+                        ref={isCurrent ? currentCellRef : undefined}
+                        className="inline-flex flex-col items-center"
+                        style={{ width: '1em' }}
+                      >
+                        <span
+                          className={cn(
+                            'rounded-[3px] transition-colors',
+                            isCurrent && 'bg-foreground/[0.10] font-semibold',
+                            isDone && wrongCode && 'text-red-600 dark:text-red-400',
+                            isDone && !wrongCode && 'text-muted-foreground/45',
+                            !isCurrent && !isDone && 'text-foreground/85',
+                          )}
+                          style={{ fontSize: '1em', lineHeight: 1.45 }}
+                        >
+                          {ch}
+                        </span>
+                        <span
+                          className={cn('whitespace-nowrap', bottomCls)}
+                          style={{ fontSize: isCodeRow ? '0.36em' : '0.42em', lineHeight: 1.35 }}
+                        >
+                          {bottom}
+                        </span>
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex items-center gap-3 border-t border-border/50 bg-muted/20 px-4 sm:px-6 py-1.5 text-[11px] sm:text-xs text-muted-foreground">
+                <button
+                  onClick={() => setShowHint(v => !v)}
+                  className={cn('flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors shrink-0',
+                    showHint ? 'text-amber-600 dark:text-amber-400' : 'hover:text-foreground')}
+                >
                   {showHint ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
                   {showHint ? '提示开' : '提示关'}
                 </button>
+                <span className="ml-auto truncate font-mono-stat">
+                  第 {completedRounds + 1} 段 · {sourceLabel} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
+                </span>
               </div>
-              <div className="max-h-[45vh] overflow-y-auto leading-loose text-lg sm:text-xl tracking-wide whitespace-pre-wrap break-all">
-                {chars.map((ch, ti) => {
-                  const itemIdx = itemIndexByTextIndex.get(ti);
-                  if (itemIdx === undefined) {
-                    return <span key={ti} className="text-muted-foreground/40">{ch}</span>;
-                  }
-                  const isCurrent = itemIdx === cursor;
-                  const isDone = itemIdx < cursor;
-                  const wasWrong = wrongSet.has(itemIdx);
-                  return (
-                    <span
-                      key={ti}
-                      ref={isCurrent ? currentSpanRef : undefined}
-                      className={cn(
-                        'rounded px-0.5 transition-colors',
-                        isCurrent && 'bg-primary/15 text-primary font-bold ring-2 ring-primary/40',
-                        isDone && wasWrong && 'text-amber-600 dark:text-amber-400',
-                        isDone && !wasWrong && 'text-emerald-600 dark:text-emerald-400',
-                        !isCurrent && !isDone && 'text-foreground/70',
-                      )}
-                    >
-                      {ch}
-                    </span>
-                  );
-                })}
-              </div>
-              {showHint && current && (
-                <div className="mt-2 text-center text-sm font-mono text-amber-600 dark:text-amber-400">
-                  {current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}
-                </div>
-              )}
             </div>
 
-            {/* 输入显示 */}
-            <div className="flex justify-center gap-1.5 mb-2">
-              {Array.from({ length: AUTO_COMMIT_LENGTH }).map((_, i) => {
-                const ch = inputCode[i];
-                const isCurrent = !feedback && !ch && i === inputCode.length;
-                return (
-                  <div key={i} className={cn(
-                    'w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 flex items-center justify-center text-lg font-mono font-bold uppercase transition-all duration-150',
-                    ch && 'border-primary bg-primary/5',
-                    !ch && isCurrent && 'border-primary ring-2 ring-primary/40 bg-primary/[0.03]',
-                    !ch && !isCurrent && 'border-border/60',
-                  )}>
-                    {ch ? ch.toUpperCase() : ''}
-                  </div>
-                );
-              })}
-            </div>
-
+            {showHint && current && (
+              <div className="text-center text-xs font-mono text-amber-600 dark:text-amber-400 mt-2">
+                {current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}
+              </div>
+            )}
             {awaitingCommit && (
-              <div className="text-center text-xs font-medium text-amber-600 dark:text-amber-400 mb-2">
+              <div className="text-center text-xs font-medium text-amber-600 dark:text-amber-400 mt-2">
                 已打完整编码 · 按
                 <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
                 上屏
               </div>
             )}
             {wrongFlash && (
-              <div className="text-center text-xs text-red-600 dark:text-red-400 mb-2">
-                「{wrongFlash}」打错了 · 已继续往下打（错字标红留痕）
+              <div className="text-center text-xs text-red-600 dark:text-red-400 mt-2">
+                「{wrongFlash}」打错了 · 已继续往下打（该字下方红色留痕）
               </div>
             )}
 
-            <PracticeKeyboard
-              mode="codes"
-              keyFeedback={null}
-              feedbackType={feedback}
-              onKeyPress={handleKeyPress}
-              onBackspace={handleBackspace}
-              onSpace={() => { if (!feedback) handleSpaceCommit(); }}
-              headerLeft="编码键盘"
-              headerRight={<span className="text-[10px] text-muted-foreground">{cursor + 1}/{itemCount}</span>}
-            />
-
-            <div className="flex justify-center mt-3">
+            <div className="flex items-center justify-center gap-2 mt-4">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs"
                 onClick={() => startPractice()}>
                 <RotateCcw className="h-3.5 w-3.5" />从头再来
               </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                onClick={() => {
+                  setShowKeyboard(v => {
+                    try { localStorage.setItem('ziyuan-article-keyboard', v ? '0' : '1'); } catch { /* 忽略 */ }
+                    return !v;
+                  });
+                }}>
+                <Keyboard className="h-3.5 w-3.5" />{showKeyboard ? '收起键盘' : '虚拟键盘'}
+              </Button>
             </div>
+
+            {showKeyboard && (
+              <div className="mt-3">
+                <PracticeKeyboard
+                  mode="codes"
+                  keyFeedback={null}
+                  feedbackType={feedback}
+                  onKeyPress={handleKeyPress}
+                  onBackspace={handleBackspace}
+                  onSpace={() => { if (!feedback) handleSpaceCommit(); }}
+                  headerLeft="编码键盘"
+                  headerRight={<span className="text-[10px] text-muted-foreground">{cursor + 1}/{itemCount}</span>}
+                />
+              </div>
+            )}
           </div>
         </section>
       )}
