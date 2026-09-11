@@ -86,12 +86,22 @@ export interface PhraseProgress {
 /** 练习难度级别（三页面统一）：入门/进阶 */
 export type PracticeLevel = 'beginner' | 'advanced';
 
+/**
+ * 整字练习的"码长档"：
+ * - 'all'：码表里该字的全部编码都算对（原有口径）
+ * - '1'..'4'：只练该字「恰好 N 键」的编码，判定只认该长度的码
+ */
+export type WholeCharCodeLen = 'all' | '1' | '2' | '3' | '4';
+
+export const WHOLE_CHAR_CODE_LENS: readonly WholeCharCodeLen[] = ['all', '1', '2', '3', '4'];
+
 export interface Preferences {
   theme: 'light' | 'dark';
   practiceStyle: string;
   rootMode: PracticeLevel;
   charSetRange: PracticeLevel;
   phraseMode: PracticeLevel;
+  wholeCharCodeLen: WholeCharCodeLen;
   showHint: boolean;
   wholeCharShowHint: boolean;
   phraseShowHint: boolean;
@@ -158,6 +168,7 @@ const defaultPreferences: Preferences = {
   rootMode: 'beginner',
   charSetRange: 'beginner',
   phraseMode: 'beginner',
+  wholeCharCodeLen: 'all',
   showHint: true,
   wholeCharShowHint: true,
   phraseShowHint: true,
@@ -190,6 +201,7 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   if (!validLevels.includes(prefs.rootMode as PracticeLevel)) prefs.rootMode = 'beginner';
   if (!validLevels.includes(prefs.charSetRange as PracticeLevel)) prefs.charSetRange = 'beginner';
   if (!validLevels.includes(prefs.phraseMode as PracticeLevel)) prefs.phraseMode = 'beginner';
+  if (!WHOLE_CHAR_CODE_LENS.includes(prefs.wholeCharCodeLen as WholeCharCodeLen)) prefs.wholeCharCodeLen = 'all';
 
   // 嵌套字段类型防御：导入文件/localStorage 可能损坏（如 correctCountMap 变成字符串），
   // 非plain object 的分段一律回退默认值，避免下游 .filter/Object.keys 崩溃

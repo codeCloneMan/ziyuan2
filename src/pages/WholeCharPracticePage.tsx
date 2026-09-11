@@ -3,12 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
-import { top500Chars } from '@/data/commonChars';
-import { common5000 } from '@/data/builtinCharSets';
+import { practiceChars500, practiceChars5000 } from '@/data/practice-pools.generated';
 import { buildFullCodeIndex } from '@/lib/full-codes';
 import {
   isAutoCommitCorrect,
   isSpaceCommitCorrect,
+  isExactCode,
   isCompleteCodeAwaitingSpace,
   AUTO_COMMIT_LENGTH,
 } from '@/lib/code-commit';
@@ -21,6 +21,8 @@ import {
   useWholeCharProgress,
   usePreferences,
   useDailyStats,
+  WHOLE_CHAR_CODE_LENS,
+  type WholeCharCodeLen,
 } from '@/store/progress-store';
 import { getCharSplit } from '@/data/splitData';
 import {
@@ -39,8 +41,24 @@ function shuffleInPlace<T>(arr: T[]): T[] {
 }
 
 const levelConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof Star }> = {
-  beginner: { label: '入门', description: '常用 500 高频字', icon: Star },
-  advanced: { label: '进阶', description: '常用 5000 字，科学记忆', icon: GraduationCap },
+  beginner: { label: '入门', description: '字频前 500 字', icon: Star },
+  advanced: { label: '进阶', description: '字频前 5000 字，科学记忆', icon: GraduationCap },
+};
+
+/** 码长档标签：'all'=码表全部编码都算对；'1'..'4'=只练恰好 N 键的编码 */
+const codeLenLabels: Record<WholeCharCodeLen, string> = {
+  all: '全部',
+  '1': '1简',
+  '2': '2简',
+  '3': '3简',
+  '4': '4码',
+};
+const codeLenDescriptions: Record<WholeCharCodeLen, string> = {
+  all: '该字码表里的任意编码都算对',
+  '1': '只练 1 键编码（含 1 码字），打完按空格上屏',
+  '2': '只练 2 键编码（含 2 码字），打完按空格上屏',
+  '3': '只练 3 键编码（含 3 码字），打完按空格上屏',
+  '4': '只练 4 键编码，打满自动上屏',
 };
 
 type CodeRule = 'A' | 'AB' | 'ABb' | 'ABCc' | 'ABCD' | 'ABCZ';
@@ -108,15 +126,39 @@ export default function WholeCharPracticePage() {
   const level: PracticeLevel = (rawLevel === 'beginner' || rawLevel === 'advanced') ? rawLevel : 'beginner';
   const currentConfig = levelConfig[level];
   const showHint = preferences.wholeCharShowHint;
+  const rawCodeLen = preferences.wholeCharCodeLen;
+  const codeLen: WholeCharCodeLen = WHOLE_CHAR_CODE_LENS.includes(rawCodeLen) ? rawCodeLen : 'all';
 
-  // 入门=500高频，进阶=常用前5000字（按语料字频降序，限定 GB2312 国标字集）
+  // 字频前500 / 前5000（附件字表；已过滤国标外字与码表缺字）
+  const basePool = level === 'beginner' ? practiceChars500 : practiceChars5000;
+  const codeLenNeed = codeLen === 'all' ? 0 : Number(codeLen);
+
+  // 练习池：码长档从基础池里筛出「有恰好 N 键官方编码」的字
   const learningPool = useMemo(() => {
     if (!charCodeData) return [];
-    if (level === 'beginner') return top500Chars;
-    return common5000;
-  }, [charCodeData, level]);
+    if (codeLenNeed === 0) return [...basePool];
+    return basePool.filter(ch => {
+      const info = fullCodeIndex.get(ch);
+      return !!info && info.accepted.some(c => c.length === codeLenNeed);
+    });
+  }, [charCodeData, basePool, codeLenNeed, fullCodeIndex]);
 
-  const modeKey = `whole:${level}`;
+  // 各码长档的字数（选择器上展示）
+  const codeLenCounts = useMemo(() => {
+    const counts: Record<WholeCharCodeLen, number> = { all: basePool.length, '1': 0, '2': 0, '3': 0, '4': 0 };
+    if (!charCodeData) return counts;
+    for (const ch of basePool) {
+      const info = fullCodeIndex.get(ch);
+      if (!info) continue;
+      for (const n of [1, 2, 3, 4]) {
+        if (info.accepted.some(c => c.length === n)) counts[String(n) as WholeCharCodeLen]++;
+      }
+    }
+    return counts;
+  }, [basePool, charCodeData, fullCodeIndex]);
+
+  // 码长档是独立练习池与独立轮次记录；'all' 沿用旧 key，保留既有累计进度
+  const modeKey = codeLenNeed === 0 ? `whole:${level}` : `whole:${level}:${codeLen}`;
   // 用 useMemo 稳定 modeProgress 引用：直接写 `progress.modes[modeKey] || {...}` 时，
   // mode 不存在的情况下每次渲染都会创建新对象，导致依赖它的 useCallback 每次重建
   const modeProgress = useMemo(
@@ -286,15 +328,25 @@ export default function WholeCharPracticePage() {
 
     if (nextId) {
       const info = fullCodeIndex.get(nextId);
-      setCurrentItem(info
-        ? { char: nextId, code: info.fullCode, codes: info.accepted }
-        : { ...charCodeData[0], codes: [charCodeData[0].code] });
+      if (info && codeLenNeed > 0) {
+        // 码长档：只认该字「恰好 N 键」的官方编码
+        const codes = info.accepted.filter(c => c.length === codeLenNeed);
+        setCurrentItem({
+          char: nextId,
+          code: codes[0] ?? info.fullCode,
+          codes: codes.length > 0 ? codes : [info.fullCode],
+        });
+      } else {
+        setCurrentItem(info
+          ? { char: nextId, code: info.fullCode, codes: info.accepted }
+          : { ...charCodeData[0], codes: [charCodeData[0].code] });
+      }
       setInputCode('');
     }
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [charCodeData, fullCodeIndex, learningPool, isBeginner, spacedGetNextItem, spaced.pool]);
+  }, [charCodeData, fullCodeIndex, learningPool, isBeginner, codeLenNeed, spacedGetNextItem, spaced.pool]);
 
   const startPractice = useCallback(() => {
     // 只重置间隔学习池（会话从空池重新循序渐进），不清当前模式的累计进度：
@@ -377,7 +429,10 @@ export default function WholeCharPracticePage() {
     // 未满 4 键绝不判定（即使已打错），与真实打字一致。
     if (newCode.length < AUTO_COMMIT_LENGTH) return;
 
-    const isCorrect = isAutoCommitCorrect(newCode, acceptedCodes);
+    // 码长档只认「恰好该长度」的编码；「全部」档保留"该字编码不足 4 码时第 4 键不追究"的容错
+    const isCorrect = codeLenNeed > 0
+      ? isExactCode(newCode, acceptedCodes)
+      : isAutoCommitCorrect(newCode, acceptedCodes);
     if (!isCorrect) {
       // 判错（显示正确拆分与全部写法）
       setUserWrongSplit(newCode);
@@ -385,7 +440,7 @@ export default function WholeCharPracticePage() {
       setSplitAnimationStep(splitParts.length);
     }
     finishAnswer(isCorrect, key);
-  }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, splitParts.length, finishAnswer]);
+  }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, codeLenNeed, splitParts.length, finishAnswer]);
 
   /** 空格上屏：不足 4 键时按空格立即判定（码表里的编码才算对），返回是否消费了这次空格 */
   const handleSpaceCommit = useCallback((): boolean => {
@@ -587,6 +642,23 @@ export default function WholeCharPracticePage() {
                   })}
                 </div>
 
+                <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">练习码长</h2>
+                <div className="grid grid-cols-5 gap-1.5 mb-2">
+                  {WHOLE_CHAR_CODE_LENS.map(len => (
+                    <button key={len} onClick={() => setPref('wholeCharCodeLen', len)}
+                      className={cn('p-2 rounded-lg border text-center transition-all duration-200',
+                        codeLen === len
+                          ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                          : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                      <div className={cn('text-xs font-medium', codeLen === len ? 'text-foreground' : 'text-muted-foreground')}>
+                        {codeLenLabels[len]}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground/70 font-mono-stat">{codeLenCounts[len]}</div>
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground/70 mb-5">{codeLenDescriptions[codeLen]}</p>
+
                 <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30 mb-4">
                   <span className="text-xs text-muted-foreground">首次出现显示拆分与编码提示</span>
                   <button onClick={() => setPref('wholeCharShowHint', !showHint)} aria-label="切换提示"
@@ -619,6 +691,9 @@ export default function WholeCharPracticePage() {
             <div className="flex items-center gap-2">
               <Badge variant="secondary" className="bg-primary/10 text-primary font-medium px-3 py-1.5 text-xs">
                 {currentConfig.label}
+              </Badge>
+              <Badge variant="outline" className="text-xs px-2.5 py-1.5 border-sky-500/40 text-sky-600 dark:text-sky-400">
+                {codeLenLabels[codeLen]}
               </Badge>
               <button onClick={stopPractice}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors">
@@ -792,7 +867,7 @@ export default function WholeCharPracticePage() {
                     <div className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-400">
                       已打完整编码 · 按
                       <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                      上屏（或继续输入自动上屏）
+                      上屏{codeLenNeed === 0 ? '（或继续输入自动上屏）' : ''}
                     </div>
                   )}
 
@@ -903,6 +978,10 @@ export default function WholeCharPracticePage() {
                 </div>
                 <div className="mt-1.5 pt-1.5 border-t border-border/40 text-muted-foreground">
                   <span className="text-foreground font-semibold">满4键自动上屏</span> · 不足4键按空格上屏
+                </div>
+                <div className="pt-1 text-muted-foreground">
+                  当前码长：<span className="text-foreground font-semibold">{codeLenLabels[codeLen]}</span>
+                  {codeLenNeed > 0 && <span className="text-muted-foreground/60">（只认 {codeLenNeed} 键编码）</span>}
                 </div>
                 <div className="pt-1 text-muted-foreground">
                   当前：<span className="text-foreground font-semibold">{codeRuleLabels[codeRule]}</span>

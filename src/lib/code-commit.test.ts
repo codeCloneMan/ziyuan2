@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   isAutoCommitCorrect,
   isSpaceCommitCorrect,
+  isExactCode,
   isCompleteCodeAwaitingSpace,
   AUTO_COMMIT_LENGTH,
 } from './code-commit';
@@ -46,6 +47,14 @@ describe('上屏判定：满4键自动判断 / 不足4键空格判断', () => {
     expect(isCompleteCodeAwaitingSpace('fx', ['fxz'])).toBe(false);      // 还没打完
     expect(isSpaceCommitCorrect('uiyu', ['uiyu', 'uil'])).toBe(true);    // 满4码走空格也算对
     expect(isCompleteCodeAwaitingSpace('uiyu', ['uiyu', 'uil'])).toBe(false); // 满4码无需提示
+  });
+
+  it('码长档严格判定：只认恰好该长度的编码（isExactCode）', () => {
+    expect(isExactCode('k', ['k'])).toBe(true);        // 1简档打 1 键码
+    expect(isExactCode('kav', ['k'])).toBe(false);     // 1简档打全码不算对
+    expect(isExactCode('kavx', ['k'])).toBe(false);    // 多打的更不算
+    expect(isExactCode('hle', ['hle', 'hli'])).toBe(true);
+    expect(isExactCode('', ['k'])).toBe(false);
   });
 
   it('编码键盘位数常量为 4', () => {

@@ -14,13 +14,19 @@
 /** 编码键盘的位数（码表里最长 4 码），打满即自动判断 */
 export const AUTO_COMMIT_LENGTH = 4;
 
+/** 输入是否恰好等于码表里的某条编码（码长档的严格判定也用它） */
+export function isExactCode(input: string, accepted: readonly string[]): boolean {
+  return input.length > 0 && accepted.includes(input);
+}
+
 /**
  * 第 4 键自动上屏时的判定：
  * 输入恰好是某条编码，或某条完整编码的前缀（该字编码不足 4 码、第 4 键多打）都算对。
+ * 码长档（1简/2简/3简）要求严格命中，改用 isExactCode。
  */
 export function isAutoCommitCorrect(input: string, accepted: readonly string[]): boolean {
   if (input.length < AUTO_COMMIT_LENGTH) return false;
-  if (accepted.includes(input)) return true;
+  if (isExactCode(input, accepted)) return true;
   return accepted.some(code => code.length > 0 && input.startsWith(code));
 }
 
@@ -28,7 +34,7 @@ export function isAutoCommitCorrect(input: string, accepted: readonly string[]):
  * 空格上屏时的判定：当前输入必须恰好是码表里的某条编码。
  */
 export function isSpaceCommitCorrect(input: string, accepted: readonly string[]): boolean {
-  return input.length > 0 && accepted.includes(input);
+  return isExactCode(input, accepted);
 }
 
 /**

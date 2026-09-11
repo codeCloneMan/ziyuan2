@@ -2,9 +2,10 @@ import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
-import { useCharCodeData, useBuiltinPhrases, type BuiltinPhrasesData } from '@/lib/data-loader';
-import { buildFullCodeIndex, fullCodesOf, type FullCodeInfo } from '@/lib/full-codes';
-import { getPhraseCodes } from '@/lib/phrase-codes';
+import { useCharCodeData } from '@/lib/data-loader';
+import { buildFullCodeIndex, type FullCodeInfo } from '@/lib/full-codes';
+import { getPhraseCodeInfo } from '@/lib/phrase-codes';
+import { practicePhrases500, practicePhrases5000 } from '@/data/practice-pools.generated';
 import {
   isAutoCommitCorrect,
   isSpaceCommitCorrect,
@@ -31,64 +32,30 @@ import {
 
 interface PhraseItem {
   phrase: string;
-  /** 逐字主展示全码（提示用） */
-  codes: string[];
-  /** 主展示短语码 */
-  fullCode: string;
-  /** 全部合法短语码；打出任意一个即正确 */
+  /** 全部合法编码；打出任意一个即正确（长度可能不足 4 键，如 可能=dkj） */
   accepted: string[];
+  /** 逐字取码（提示用；≥4 字词的中间字为空串） */
+  perChar: string[];
 }
 
 const modeConfig: Record<PracticeLevel, { label: string; description: string; icon: typeof BookOpen }> = {
-  beginner: { label: '入门', description: '前500高频双字词', icon: BookOpen },
-  advanced: { label: '进阶', description: '前5000高频混合词', icon: Zap },
+  beginner: { label: '入门', description: '高频前500词', icon: BookOpen },
+  advanced: { label: '进阶', description: '高频前5000词', icon: Zap },
 };
 
+/** 由静态词池构建题目：编码按「官方单字码表优先恰好键数」的规则推导 */
 function buildPhraseList(
   level: PracticeLevel,
   index: Map<string, FullCodeInfo>,
-  phrasesData: BuiltinPhrasesData,
 ): PhraseItem[] {
-  const phrases: PhraseItem[] = [];
-  const seen = new Set<string>();
-  const addPhrase = (phrase: string) => {
-    if (seen.has(phrase)) return;
-    seen.add(phrase);
-    const accepted = getPhraseCodes(phrase, index);
-    if (accepted.length === 0) return;
-    const codes = phrase.split('').map(ch => fullCodesOf(index.get(ch))[0] || '?');
-    if (codes.includes('?')) return;
-    phrases.push({ phrase, codes, fullCode: accepted[0], accepted });
-  };
-
-  const { twoCharPhrases, twoCharFreqs, threeCharPhrases, threeCharFreqs } = phrasesData;
-
-  if (level === 'beginner') {
-    // 入门：前500个双字词（数据已按词频降序排列）
-    const limit = 500;
-    for (let i = 0; i < twoCharPhrases.length && phrases.length < limit; i++) {
-      const p = twoCharPhrases[i];
-      if (p.length === 2) addPhrase(p);
-    }
-  } else {
-    // 进阶：前5000个词（双字+三字合并，按词频降序取前5000）
-    const limit = 5000;
-    const merged: { phrase: string; freq: number }[] = [];
-    for (let i = 0; i < twoCharPhrases.length; i++) {
-      merged.push({ phrase: twoCharPhrases[i], freq: twoCharFreqs[i] });
-    }
-    for (let i = 0; i < threeCharPhrases.length; i++) {
-      const p = threeCharPhrases[i];
-      merged.push({ phrase: p.length >= 3 ? p.slice(0, 3) : p, freq: threeCharFreqs[i] });
-    }
-    merged.sort((a, b) => b.freq - a.freq);
-    for (const m of merged) {
-      if (phrases.length >= limit) break;
-      addPhrase(m.phrase);
-    }
+  const pool = level === 'beginner' ? practicePhrases500 : practicePhrases5000;
+  const items: PhraseItem[] = [];
+  for (const phrase of pool) {
+    const info = getPhraseCodeInfo(phrase, index);
+    if (!info) continue;
+    items.push({ phrase, accepted: info.accepted, perChar: info.perChar });
   }
-
-  return phrases;
+  return items;
 }
 
 function shuffleArray<T>(array: T[]): T[] {
@@ -110,7 +77,6 @@ interface SessionResult {
 
 export default function PhrasePracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
-  const { data: phrasesData } = useBuiltinPhrases();
   const charCodeIndex = useMemo(() => charCodeData ? buildFullCodeIndex(charCodeData) : new Map<string, FullCodeInfo>(), [charCodeData]);
 
   const { progress: phraseProgress, recordAnswer, setMode: setStoreMode } = usePhraseProgress();
@@ -150,9 +116,9 @@ export default function PhrasePracticePage() {
 
   // 词组池（同步计算，全码索引已按字分组，构建足够快）
   const phrasePool = useMemo(() => {
-    if (!charCodeData || !phrasesData) return [];
-    return buildPhraseList(level, charCodeIndex, phrasesData);
-  }, [level, charCodeData, phrasesData, charCodeIndex]);
+    if (!charCodeData) return [];
+    return buildPhraseList(level, charCodeIndex);
+  }, [level, charCodeData, charCodeIndex]);
   const poolReady = phrasePool.length > 0;
   const poolCount = phrasePool.length;
 
@@ -257,7 +223,7 @@ export default function PhrasePracticePage() {
       phrase: phrase.phrase,
       input,
       time: Date.now() - answerStartTime.current,
-      fullCode: phrase.fullCode,
+      fullCode: phrase.accepted[0],
       correct: isCorrect,
     }]);
 
@@ -331,6 +297,8 @@ export default function PhrasePracticePage() {
 
   // 本轮进度 = 本轮已答词数 / 词库总数（与轮次记录同一口径，不再用队列下标）
   const progress = poolCount > 0 ? (roundSeen / poolCount) * 100 : 0;
+  // 主展示码（accepted 已按 长度降序→词典序 排好）
+  const currentFullCode = currentPhrase ? currentPhrase.accepted[0] : '';
   // 已打出一条完整编码（不足 4 码）→ 提示按空格上屏；词组码固定 4 码，一般不出现
   const awaitingCommit = !feedbackType && isCompleteCodeAwaitingSpace(inputCode, currentPhrase?.accepted ?? []);
 
@@ -358,7 +326,7 @@ export default function PhrasePracticePage() {
                   词组<span className="text-gradient-primary">练习</span>
                 </h1>
                 <p className="text-muted-foreground max-w-lg mx-auto">
-                  看词组，打四码编码。练习常用词组的输入
+                  看词组，打编码。练习常用词组的输入
                 </p>
               </header>
 
@@ -477,7 +445,7 @@ export default function PhrasePracticePage() {
                   {currentPhrase.phrase.split('').map((char, i) => (
                     <div key={i} className="text-center">
                       <div className="font-bold root-char">{char}</div>
-                      <div className="font-mono text-xs text-muted-foreground">{currentPhrase.codes[i]}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{currentPhrase.perChar[i]}</div>
                     </div>
                   ))}
                 </div>
@@ -499,9 +467,9 @@ export default function PhrasePracticePage() {
                         'w-14 h-14 sm:w-16 sm:h-16 rounded-xl border-2 flex items-center justify-center',
                         'text-2xl font-mono font-bold uppercase transition-all duration-150',
                         isCorrectChar && 'border-emerald-500 bg-emerald-50 text-emerald-700',
-                        isWrongChar && i < currentPhrase.fullCode.length && char === currentPhrase.fullCode[i]
+                        isWrongChar && i < currentFullCode.length && char === currentFullCode[i]
                           && 'border-emerald-500 bg-emerald-50 text-emerald-700',
-                        isWrongChar && i < inputCode.length && char !== currentPhrase.fullCode[i]
+                        isWrongChar && i < inputCode.length && char !== currentFullCode[i]
                           && 'border-red-500 bg-red-50 text-red-700',
                         !feedbackType && isFilled && 'border-primary bg-primary/5',
                         !feedbackType && isCurrent && 'border-primary ring-2 ring-primary/40 bg-primary/[0.03]',
@@ -526,7 +494,7 @@ export default function PhrasePracticePage() {
                   autoCorrect="off"
                   autoCapitalize="off"
                   spellCheck={false}
-                  placeholder="输入四码"
+                  placeholder="输入编码"
                   onBeforeInput={(e) => {
                     const ne = e.nativeEvent as InputEvent;
                     if (ne.inputType === 'insertText' && ne.data === ' ') {
@@ -563,12 +531,12 @@ export default function PhrasePracticePage() {
               {feedbackType === 'wrong' && (
                 <div className="animate-fade-in">
                   <div className="text-lg font-mono font-bold text-red-600">
-                    正确编码：<span className="uppercase">{currentPhrase.fullCode}</span>
+                    正确编码：<span className="uppercase">{currentFullCode}</span>
                   </div>
                   {currentPhrase.accepted.length > 1 && (
                     <div className="mt-1 text-xs text-muted-foreground">
                       也可：<span className="font-mono tracking-wider">
-                        {currentPhrase.accepted.filter(c => c !== currentPhrase.fullCode).map(c => c.toUpperCase()).join(' / ')}
+                        {currentPhrase.accepted.filter(c => c !== currentFullCode).map(c => c.toUpperCase()).join(' / ')}
                       </span>
                     </div>
                   )}
