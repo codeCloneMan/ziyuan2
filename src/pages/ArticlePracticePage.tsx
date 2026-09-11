@@ -4,15 +4,11 @@ import { cn } from '@/lib/utils';
 import { useCharCodeData } from '@/lib/data-loader';
 import { buildFullCodeIndex, type FullCodeInfo } from '@/lib/full-codes';
 import { buildArticleItems } from '@/lib/article-items';
-import {
-  isAutoCommitCorrect,
-  isSpaceCommitCorrect,
-  isCompleteCodeAwaitingSpace,
-  AUTO_COMMIT_LENGTH,
-} from '@/lib/code-commit';
+import { isCompleteCodeAwaitingSpace, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
 import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useArticleProgress } from '@/store/progress-store';
+import { charFrequency } from '@/data/charFrequency';
 import {
   DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY, COMMON500_ARTICLE_ID, ARTICLE_SHUFFLE_KEY,
   shuffledCommon500Text,
@@ -39,23 +35,6 @@ export default function ArticlePracticePage() {
     [charCodeData],
   );
   const { progress: articleProgress, recordChar, retractChar } = useArticleProgress();
-
-  // 编码 → 字 反查（同码多字时保留先出现的那个）：用于「字下方显示字」与打字中的候选预览
-  const codeToChar = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const [ch, info] of charCodeIndex) {
-      for (const code of info.accepted) {
-        if (!m.has(code)) m.set(code, ch);
-      }
-    }
-    return m;
-  }, [charCodeIndex]);
-
-  /**
-   * 这个编码当前打出来的是哪个字（打完的码精确命中）：用于把「打错时你打出的那个字」显示在跟打行，
-   * 查不到（这个码在码表里打不出字）返回 undefined。
-   */
-  const charForCode = useCallback((code: string): string | undefined => codeToChar.get(code), [codeToChar]);
 
   // ============ 文章选择 / 自定义文本 ============
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_ARTICLES[0]?.id ?? 'common');
@@ -147,8 +126,8 @@ export default function ArticlePracticePage() {
   const [feedback, setFeedback] = useState<'correct' | null>(null);
   /** 刚打错的字（非阻断提示，立即进位后仍能看到错的是哪个字） */
   const [wrongFlash, setWrongFlash] = useState<string | null>(null);
-  // 每个打错的字留下的错误编码（item 下标 → 你敲的码），在字下方红色常显
-  const [wrongCodes, setWrongCodes] = useState<Record<number, string>>({});
+  // 打错的字留下的「你实际打出的字」（item 下标 → 字；打不出字记 '✕'），在字下方红色常显
+  const [producedChars, setProducedChars] = useState<Record<number, string>>({});
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
   /** 回改次数：退回去重打的次数（跟打器口径） */
@@ -171,6 +150,74 @@ export default function ArticlePracticePage() {
   const startedAtRef = useRef(0);
   const currentCellRef = useRef<HTMLSpanElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+
+  // ============ 输入法候选 ============
+  // 码 → 字们（一个码可能对应多个字，与输入法的重码候选一致）
+  const charsByCode = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const [ch, info] of charCodeIndex) {
+      for (const code of info.accepted) {
+        const arr = m.get(code);
+        if (arr) { if (!arr.includes(ch)) arr.push(ch); }
+        else m.set(code, [ch]);
+      }
+    }
+    return m;
+  }, [charCodeIndex]);
+  const sortedCodes = useMemo(() => [...charsByCode.keys()].sort(), [charsByCode]);
+
+  /**
+   * 以已敲的码为前缀取候选字（输入法候选框）：
+   * 排序 = 精确命中该码的字 → 码更短的字（简码优先）→ 字频更高。
+   * 与真实输入法一致：打满 4 键或按空格取第 1 个候选（顶屏）。
+   */
+  const candidatesFor = useCallback((prefix: string): string[] => {
+    if (!prefix) return [];
+    // 排序数组中，以 prefix 开头的码是一段连续区间：二分找下界
+    let lo = 0, hi = sortedCodes.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (sortedCodes[mid] < prefix) lo = mid + 1; else hi = mid;
+    }
+    const pool: Array<{ char: string; len: number; exact: boolean }> = [];
+    const seen = new Set<string>();
+    for (let i = lo; i < sortedCodes.length; i++) {
+      const code = sortedCodes[i];
+      if (!code.startsWith(prefix)) break;
+      const chars = charsByCode.get(code);
+      if (!chars) continue;
+      for (const ch of chars) {
+        const key = `${code}|${ch}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        pool.push({ char: ch, len: code.length, exact: code.length === prefix.length });
+      }
+    }
+    pool.sort((a, b) =>
+      Number(b.exact) - Number(a.exact)
+      || a.len - b.len
+      || (charFrequency[b.char] ?? 0) - (charFrequency[a.char] ?? 0));
+    const out: string[] = [];
+    for (const c of pool) {
+      if (!out.includes(c.char)) out.push(c.char);
+      if (out.length >= 9) break;
+    }
+    return out;
+  }, [sortedCodes, charsByCode]);
+
+  const candidates = useMemo(
+    () => (isPlaying && inputCode ? candidatesFor(inputCode) : []),
+    [isPlaying, inputCode, candidatesFor],
+  );
+  // 精确命中：敲的码本身就是某个字的完整编码（空格/满键顶屏只认这种，避免简码前缀被当对）
+  const exactCharForCode = useCallback((code: string): string | null => {
+    const chars = charsByCode.get(code);
+    return chars && chars.length > 0 ? chars[0] : null;
+  }, [charsByCode]);
+
+  // 键盘事件里要读最新的候选列表（事件监听只挂一次）
+  const candidatesRef = useRef<string[]>([]);
+  useEffect(() => { candidatesRef.current = candidates; }, [candidates]);
 
   const current = isPlaying ? items[cursor] : undefined;
   const awaitingCommit = !!current && !feedback && isCompleteCodeAwaitingSpace(inputCode, current.codes);
@@ -217,7 +264,7 @@ export default function ArticlePracticePage() {
       // 走完全文 = 完成一轮，自动重开下一轮（速度统计同步归零重新计）
       setRoundToast(completedRounds + 1);
       resetRound();
-      setWrongCodes({});
+      setProducedChars({});
       setUndoCount(0);
       setCorrectCount(0);
       setWrongCount(0);
@@ -232,30 +279,48 @@ export default function ArticlePracticePage() {
     setFeedback(null);
   }, [cursor, items.length, completedRounds, resetRound]);
 
-  /** 判定当前字（满 4 键自动 / 空格上屏） */
-  const judge = useCallback((code: string, trigger: 'keys' | 'space') => {
+  /**
+   * 上屏一个字：produced = 你实际打出的字（满 4 键/空格顶第 1 候选；点候选则直接是那个字）。
+   * 判定即「打出的字 == 原文字」——与跟打器的比对方式一致；打不出字给 null（显示红叉）。
+   */
+  const commitChar = useCallback((produced: string | null, trigger: 'keys' | 'space' | 'pick') => {
     if (!current) return;
-    const ok = trigger === 'space'
-      ? isSpaceCommitCorrect(code, current.codes)
-      : isAutoCommitCorrect(code, current.codes);
-    setKeyStrokes(k => k + code.length + (trigger === 'space' ? 1 : 0));
+    const ok = produced !== null && produced === current.char;
+    setKeyStrokes(k => k + inputCode.length + (trigger === 'keys' ? 0 : 1));
     recordChar(current.char, ok);
     // 轮次口径：对错都算这个字答过一次
     markSeen(String(current.textIndex));
     if (timerRef.current) clearTimeout(timerRef.current);
     if (ok) {
+      setProducedChars(prev => {
+        if (prev[cursor] === undefined) return prev;
+        const next = { ...prev };
+        delete next[cursor];
+        return next;
+      });
       setCorrectCount(c => c + 1);
       setFeedback('correct');
       timerRef.current = setTimeout(advance, 150);
     } else {
-      // 打错立即进位（模仿打字练习工具）：不阻断打字节奏，错误留在该字下方红色错码
+      // 打错立即进位（模仿打字练习工具）：不阻断打字节奏，打出的那个字在下方红色留痕
       setWrongCount(c => c + 1);
-      setWrongCodes(prev => ({ ...prev, [cursor]: code }));
+      setProducedChars(prev => ({ ...prev, [cursor]: produced ?? '✕' }));
       setWrongFlash(current.char);
       advance();
       timerRef.current = setTimeout(() => setWrongFlash(null), 1200);
     }
-  }, [current, cursor, recordChar, markSeen, advance]);
+  }, [current, cursor, inputCode, recordChar, markSeen, advance]);
+
+  /** 满 4 键自动顶屏 / 空格上屏：都只认「精确命中该码」的字（简码前缀不算对） */
+  const commitExact = useCallback((trigger: 'keys' | 'space') => {
+    commitChar(exactCharForCode(inputCode), trigger);
+  }, [commitChar, exactCharForCode, inputCode]);
+
+  /** 数字键 / 点击候选：直接选中该候选字上屏（输入法的显式选字） */
+  const pickCandidate = useCallback((char: string) => {
+    if (!isPlaying || !current || feedback === 'correct' || !inputCode) return;
+    commitChar(char, 'pick');
+  }, [isPlaying, current, feedback, inputCode, commitChar]);
 
   const handleKeyPress = useCallback((key: string) => {
     if (!isPlaying || !current || feedback === 'correct') return;
@@ -263,19 +328,18 @@ export default function ArticlePracticePage() {
     if (newCode.length > AUTO_COMMIT_LENGTH) return;
     setInputCode(newCode);
     if (newCode.length < AUTO_COMMIT_LENGTH) return;
-    judge(newCode, 'keys');
-  }, [isPlaying, current, feedback, inputCode, judge]);
+    commitExact('keys');
+  }, [isPlaying, current, feedback, inputCode, commitExact]);
 
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || !current || !inputCode || feedback === 'correct') return false;
-    judge(inputCode, 'space');
+    commitExact('space');
     return true;
-  }, [isPlaying, current, inputCode, feedback, judge]);
+  }, [isPlaying, current, inputCode, feedback, commitExact]);
 
   /**
-   * 退格：有正在敲的码先删码；码删空后可以「回退」到上一个打错的字重打。
-   * 回退只能退到打错的字（打对的字不允许回退，避免把答对的记录回滚掉），
-   * 回退时撤销那次错误记录与积分——按最终结果算，同时记一次「回改」。
+   * 退格：有正在敲的码先删码；码删空后再按 → **删掉上一个已打出的字**（打对的也删），
+   * 光标退回那一个字重打，并撤销那次的记录（按最终结果算），记一次「回改」。
    */
   const handleBackspace = useCallback(() => {
     if (!isPlaying || feedback === 'correct') return;
@@ -285,20 +349,25 @@ export default function ArticlePracticePage() {
     }
     const prevIdx = cursor - 1;
     const item = items[prevIdx];
-    if (!item || !wrongCodes[prevIdx]) return;
-    retractChar(item.char, false);
-    setWrongCodes(prev => {
+    if (!item) return;
+    const produced = producedChars[prevIdx];
+    // 打出的字就是原文字（或没有失败记录）→ 那次是答对的，回退要撤销正确记录
+    const wasCorrect = produced === undefined || produced === item.char;
+    retractChar(item.char, wasCorrect);
+    setProducedChars(prev => {
+      if (prev[prevIdx] === undefined) return prev;
       const next = { ...prev };
       delete next[prevIdx];
       return next;
     });
-    setWrongCount(c => Math.max(0, c - 1));
+    if (wasCorrect) setCorrectCount(c => Math.max(0, c - 1));
+    else setWrongCount(c => Math.max(0, c - 1));
     setUndoCount(c => c + 1);
     setWrongFlash(null);
     setCursor(prevIdx);
     setInputCode('');
     setFeedback(null);
-  }, [isPlaying, feedback, inputCode, cursor, items, wrongCodes, retractChar]);
+  }, [isPlaying, feedback, inputCode, cursor, items, producedChars, retractChar]);
 
   // 物理键盘
   useEffect(() => {
@@ -308,12 +377,17 @@ export default function ArticlePracticePage() {
       if (e.key === 'Escape') { setIsPlaying(false); return; }
       if (e.key === ' ') { e.preventDefault(); handleSpaceCommit(); return; }
       if (e.key === 'Backspace') { e.preventDefault(); handleBackspace(); return; }
+      // 数字键 1-9：选第 N 个候选字（输入法的显式选字）
+      if (/^[1-9]$/.test(e.key) && candidatesRef.current.length > 0) {
+        const pick = candidatesRef.current[Number(e.key) - 1];
+        if (pick) { e.preventDefault(); pickCandidate(pick); return; }
+      }
       const key = e.key.toLowerCase();
       if (/^[a-z]$/.test(key)) { e.preventDefault(); handleKeyPress(key); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPlaying, handleKeyPress, handleSpaceCommit, handleBackspace]);
+  }, [isPlaying, handleKeyPress, handleSpaceCommit, handleBackspace, pickCandidate]);
 
   const startPractice = useCallback((text?: string) => {
     // 乱序开启时，每次开始练习都重新打乱一次
@@ -324,7 +398,7 @@ export default function ArticlePracticePage() {
     setCursor(0);
     setInputCode('');
     setFeedback(null);
-    setWrongCodes({});
+    setProducedChars({});
     setCorrectCount(0);
     setWrongCount(0);
     setUndoCount(0);
@@ -542,7 +616,7 @@ export default function ArticlePracticePage() {
                   }
                     const isCurrent = itemIdx === cursor;
                     const isDone = itemIdx < cursor;
-                    const wrongCode = wrongCodes[itemIdx];
+                    const producedChar = producedChars[itemIdx];
 
                     // 跟打行 = 一行正常大小的文字（和原文一样大）：
                     //   打对 → 显示该字；打错 → 显示你打出的那个字（码表里没有就红叉，说明打不出字）；
@@ -563,16 +637,10 @@ export default function ArticlePracticePage() {
                         bottom = <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/70 animate-pulse" />;
                       }
                     } else if (isDone) {
-                      if (wrongCode) {
-                        const produced = charForCode(wrongCode);
-                        if (produced) {
-                          bottom = produced;
-                          bottomCls = 'text-red-500';
-                        } else {
-                          // 这个码在码表里打不出字
-                          bottom = '✕';
-                          bottomCls = 'text-red-500 font-bold';
-                        }
+                      if (producedChar !== undefined) {
+                        // 你打出（或选中）的那个字；打不出字时是 ✕
+                        bottom = producedChar;
+                        bottomCls = 'text-red-500 font-bold';
                       } else {
                         bottom = ch;
                         bottomCls = 'text-foreground/70';
@@ -591,8 +659,8 @@ export default function ArticlePracticePage() {
                           className={cn(
                             'rounded-[3px] transition-colors',
                             isCurrent && 'bg-foreground/[0.10] font-semibold',
-                            isDone && wrongCode && 'text-red-600 dark:text-red-400',
-                            isDone && !wrongCode && 'text-muted-foreground/40',
+                            isDone && producedChar !== undefined && 'text-red-600 dark:text-red-400',
+                            isDone && producedChar === undefined && 'text-muted-foreground/40',
                             !isCurrent && !isDone && 'text-foreground/85',
                           )}
                           style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}
@@ -627,6 +695,30 @@ export default function ArticlePracticePage() {
               </div>
             </div>
 
+            {/* 输入法候选框：打字过程中列出可选的「字」，可点选或用数字键 1-9 */}
+            {isPlaying && !feedback && inputCode && candidates.length > 0 && (
+              <div className="mt-2 rounded-xl border border-primary/20 bg-primary/[0.03] px-3 py-2">
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] text-muted-foreground mr-1 shrink-0">候选</span>
+                  {candidates.map((c, i) => (
+                    <button
+                      key={c}
+                      onClick={() => pickCandidate(c)}
+                      className={cn(
+                        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-lg sm:text-xl transition-colors',
+                        i === 0
+                          ? 'bg-primary/10 text-primary font-semibold'
+                          : 'text-foreground/85 hover:bg-muted',
+                      )}
+                    >
+                      <span className="text-[10px] font-mono text-muted-foreground">{i + 1}</span>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {showHint && current && (
               <div className="text-center text-xs font-mono text-amber-600 dark:text-amber-400 mt-2">
                 {current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}
@@ -636,7 +728,7 @@ export default function ArticlePracticePage() {
               <div className="text-center text-xs font-medium text-amber-600 dark:text-amber-400 mt-2">
                 已打完整编码 · 按
                 <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                上屏
+                上屏第 1 候选（也可数字键 / 点候选）
               </div>
             )}
             {wrongFlash && (
@@ -645,7 +737,7 @@ export default function ArticlePracticePage() {
               </div>
             )}
             <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
-              退格：先删正在敲的码，删空后再按可回退到上一个打错的字重打
+              退格：先删正在敲的码；码删空后再按 = 删掉上一个已打出的字（打对的也删），回到那一个字重打
             </div>
 
             <div className="flex items-center justify-center gap-2 mt-4">
