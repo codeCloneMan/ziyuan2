@@ -3,6 +3,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCharCodeData } from '@/lib/data-loader';
 import { buildFullCodeIndex, type FullCodeInfo } from '@/lib/full-codes';
+import {
+  buildCharsByCode, candidatesFor, resolveCommitChar,
+} from '@/lib/ime-candidates';
 import { buildArticleItems } from '@/lib/article-items';
 import { isCompleteCodeAwaitingSpace, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
 import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
@@ -153,68 +156,17 @@ export default function ArticlePracticePage() {
   const candBoxRef = useRef<HTMLDivElement>(null);
 
   // ============ 输入法候选 ============
-  // 码 → 字们（一个码可能对应多个字，与输入法的重码候选一致）
-  const charsByCode = useMemo(() => {
-    const m = new Map<string, string[]>();
-    for (const [ch, info] of charCodeIndex) {
-      for (const code of info.accepted) {
-        const arr = m.get(code);
-        if (arr) { if (!arr.includes(ch)) arr.push(ch); }
-        else m.set(code, [ch]);
-      }
-    }
-    return m;
-  }, [charCodeIndex]);
+  // 码 → 字们（一个码可能对应多个字，与输入法的重码候选一致）；
+  // 排序口径统一在 lib/ime-candidates：同码字按字频降序，绝不能用码表插入顺序
+  const charsByCode = useMemo(() => buildCharsByCode(charCodeIndex), [charCodeIndex]);
   const sortedCodes = useMemo(() => [...charsByCode.keys()].sort(), [charsByCode]);
 
-  /**
-   * 以已敲的码为前缀取候选字（输入法候选框）：
-   * 排序 = 精确命中该码的字 → 码更短的字（简码优先）→ 字频更高。
-   * 与真实输入法一致：打满 4 键或按空格取第 1 个候选（顶屏）。
-   */
-  const candidatesFor = useCallback((prefix: string): string[] => {
-    if (!prefix) return [];
-    // 排序数组中，以 prefix 开头的码是一段连续区间：二分找下界
-    let lo = 0, hi = sortedCodes.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (sortedCodes[mid] < prefix) lo = mid + 1; else hi = mid;
-    }
-    const pool: Array<{ char: string; len: number; exact: boolean }> = [];
-    const seen = new Set<string>();
-    for (let i = lo; i < sortedCodes.length; i++) {
-      const code = sortedCodes[i];
-      if (!code.startsWith(prefix)) break;
-      const chars = charsByCode.get(code);
-      if (!chars) continue;
-      for (const ch of chars) {
-        const key = `${code}|${ch}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        pool.push({ char: ch, len: code.length, exact: code.length === prefix.length });
-      }
-    }
-    pool.sort((a, b) =>
-      Number(b.exact) - Number(a.exact)
-      || a.len - b.len
-      || (charFrequency[b.char] ?? 0) - (charFrequency[a.char] ?? 0));
-    const out: string[] = [];
-    for (const c of pool) {
-      if (!out.includes(c.char)) out.push(c.char);
-      if (out.length >= 9) break;
-    }
-    return out;
-  }, [sortedCodes, charsByCode]);
-
   const candidates = useMemo(
-    () => (isPlaying && inputCode ? candidatesFor(inputCode) : []),
-    [isPlaying, inputCode, candidatesFor],
+    () => (isPlaying && inputCode
+      ? candidatesFor(inputCode, charsByCode, sortedCodes, charFrequency)
+      : []),
+    [isPlaying, inputCode, charsByCode, sortedCodes],
   );
-  // 精确命中：敲的码本身就是某个字的完整编码（空格/满键顶屏只认这种，避免简码前缀被当对）
-  const exactCharForCode = useCallback((code: string): string | null => {
-    const chars = charsByCode.get(code);
-    return chars && chars.length > 0 ? chars[0] : null;
-  }, [charsByCode]);
 
   // 键盘事件里要读最新的候选列表（事件监听只挂一次）
   const candidatesRef = useRef<string[]>([]);
@@ -313,11 +265,12 @@ export default function ArticlePracticePage() {
   /**
    * 上屏一个字：produced = 你实际打出的字（满 4 键/空格顶第 1 候选；点候选则直接是那个字）。
    * 判定即「打出的字 == 原文字」——与跟打器的比对方式一致；打不出字给 null（显示红叉）。
+   * typedCode = 这次上屏实际敲下的码，用于击键统计（第 4 键触发时也要算上第 4 键）。
    */
-  const commitChar = useCallback((produced: string | null, trigger: 'keys' | 'space' | 'pick') => {
+  const commitChar = useCallback((produced: string | null, typedCode: string, trigger: 'keys' | 'space' | 'pick') => {
     if (!current) return;
     const ok = produced !== null && produced === current.char;
-    setKeyStrokes(k => k + inputCode.length + (trigger === 'keys' ? 0 : 1));
+    setKeyStrokes(k => k + typedCode.length + (trigger === 'keys' ? 0 : 1));
     recordChar(current.char, ok);
     // 轮次口径：对错都算这个字答过一次
     markSeen(String(current.textIndex));
@@ -340,17 +293,25 @@ export default function ArticlePracticePage() {
       advance();
       timerRef.current = setTimeout(() => setWrongFlash(null), 1200);
     }
-  }, [current, cursor, inputCode, recordChar, markSeen, advance]);
+  }, [current, cursor, recordChar, markSeen, advance]);
 
-  /** 满 4 键自动顶屏 / 空格上屏：都只认「精确命中该码」的字（简码前缀不算对） */
-  const commitExact = useCallback((trigger: 'keys' | 'space') => {
-    commitChar(exactCharForCode(inputCode), trigger);
-  }, [commitChar, exactCharForCode, inputCode]);
+  /**
+   * 满 4 键自动顶屏 / 空格上屏：打出的字由 lib/ime-candidates 决定——
+   * 精确命中该码时取该码的**第 1 候选**（与候选框显示的第 1 个一致），
+   * 满 4 键且码不足 4 键时容忍多打的第 4 键（回退到前 3 键），空格则只认精确码。
+   */
+  const commitCode = useCallback((code: string, trigger: 'keys' | 'space') => {
+    commitChar(
+      resolveCommitChar(code, charsByCode, charFrequency, trigger === 'keys'),
+      code,
+      trigger,
+    );
+  }, [commitChar, charsByCode]);
 
   /** 数字键 / 点击候选：直接选中该候选字上屏（输入法的显式选字） */
   const pickCandidate = useCallback((char: string) => {
     if (!isPlaying || !current || feedback === 'correct' || !inputCode) return;
-    commitChar(char, 'pick');
+    commitChar(char, inputCode, 'pick');
   }, [isPlaying, current, feedback, inputCode, commitChar]);
 
   const handleKeyPress = useCallback((key: string) => {
@@ -359,14 +320,14 @@ export default function ArticlePracticePage() {
     if (newCode.length > AUTO_COMMIT_LENGTH) return;
     setInputCode(newCode);
     if (newCode.length < AUTO_COMMIT_LENGTH) return;
-    commitExact('keys');
-  }, [isPlaying, current, feedback, inputCode, commitExact]);
+    commitCode(newCode, 'keys');
+  }, [isPlaying, current, feedback, inputCode, commitCode]);
 
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || !current || !inputCode || feedback === 'correct') return false;
-    commitExact('space');
+    commitCode(inputCode, 'space');
     return true;
-  }, [isPlaying, current, inputCode, feedback, commitExact]);
+  }, [isPlaying, current, inputCode, feedback, commitCode]);
 
   /**
    * 退格：有正在敲的码先删码；码删空后再按 → **删掉上一个已打出的字**（打对的也删），
