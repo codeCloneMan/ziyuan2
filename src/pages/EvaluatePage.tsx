@@ -161,6 +161,8 @@ interface EvaluateResult {
   dynamicSelectionRate: number;
   equivalent: number;
   speedEquivalent: number;
+  /** 全码口径速度当量（每字取全码，可对比官方发布值） */
+  fullCodeSpeedEquivalent: number;
   speedIndex: number;
   compositeScore: number;
 
@@ -403,7 +405,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     return {
       totalChars: 0, totalCodes: 0, uniqueCodes: 0, duplicateCount: 0,
       weightedAvgCodeLen: 0, fullDupRate: 0, staticDupCount: 0, simplifiedDupRate: 0,
-      dynamicSelectionRate: 0, equivalent: 0, speedEquivalent: 0, speedIndex: 0, compositeScore: 0,
+      dynamicSelectionRate: 0, equivalent: 0, speedEquivalent: 0, fullCodeSpeedEquivalent: 0, speedIndex: 0, compositeScore: 0,
       avgCodeLength: 0, maxCodeLength: 0, codeLengthStdDev: 0, codeLengthDist: {},
       keyFreq: {}, keyUsageRate: {}, leftHandRate: 0, rightHandRate: 0, fingerLoad: {},
       sameFingerRate: 0, handAlternationRate: 0,
@@ -477,7 +479,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
 
   for (const [code, chars] of codeToChars) {
     if (chars.length > 1) {
-      dupCount += chars.length - 1;
+      dupCount += chars.length; // 官方静重口径：重码组内字数之和（含首选）
       dupeList.push({ code, chars, count: chars.length });
     }
   }
@@ -562,9 +564,10 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   const simplifiedDupRate = clampPercentage(safeDivide(simplifiedDupCount, filteredEntries.length) * 100);
 
   // ★ 动态选重率（字频加权，按字去重）
-  // 分子：最短码处于重码组的字的字频之和
-  // 分母：全部字的字频之和（去重）
-  // 注意：用户实际只使用最短码（简码），所以只统计最短码的重码情况
+  // 官方口径（宇浩测评 duplicateAnalysisService）：同一编码下字频最高的那个字是「自动首选」，
+  // 不需要选重，必须从分子里排除；只累加同组其余字的字频。
+  // 分母：全部字的字频之和（去重）。
+  // 注意：用户实际只使用最短码（简码），所以只统计最短码的重码情况。
   const dynamicSelectionRate = (() => {
     // 先找出每个字的最短码
     const charShortestCode = new Map<string, string>();
@@ -574,26 +577,41 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
         charShortestCode.set(entry.char, entry.code);
       }
     }
-    // 检查每个字的最短码是否处于重码组
+    // 按最短码分组
+    const groups = new Map<string, string[]>();
+    for (const [char, code] of charShortestCode) {
+      const arr = groups.get(code);
+      if (arr) arr.push(char);
+      else groups.set(code, [char]);
+    }
     let dupFreqSum = 0;
-    const countedChars = new Set<string>();
-    for (const [char, shortestCode] of charShortestCode) {
-      if (countedChars.has(char)) continue;
-      const chars = codeToChars.get(shortestCode);
-      if (chars && chars.length > 1) {
-        dupFreqSum += getCharFrequencyWeight(char);
-      }
-      countedChars.add(char);
+    for (const chars of groups.values()) {
+      if (chars.length < 2) continue;
+      // 组内字频最高的字自动首选（不选重）→ 用 slice(1) 排除
+      const sorted = [...chars].sort((a, b) => getCharFrequencyWeight(b) - getCharFrequencyWeight(a));
+      for (const ch of sorted.slice(1)) dupFreqSum += getCharFrequencyWeight(ch);
     }
     return safeDivide(dupFreqSum, freqSum);
   })();
 
-  // ★ 速度当量（字频加权）
+  // ★ 速度当量（字频加权，简码口径：每字取最短码）
   const speedEquiv = calcWeightedSpeedEquivalent(filteredEntries, activeFreqTable);
   // ★ 速度指数 = 100 / 速度当量（社区通用换算，直观反映相对速度上限）
   const speedIndex = calcSpeedIndex(speedEquiv);
+  // ★ 全码速度当量：官方发布值（字源 1.3473）是「每字全码」口径，
+  //   本页主指标用的是简码口径，两者不可混比，这里额外按全码算一份供对照。
+  const fullCodeSpeedEquiv = calcWeightedSpeedEquivalent(
+    evalChars.flatMap(ch => {
+      const codes = allCharToCodes.get(ch);
+      if (!codes || codes.length === 0) return [];
+      const full = codes.reduce((a, b) => (b.length > a.length ? b : a));
+      return [{ char: ch, code: full }];
+    }),
+    activeFreqTable,
+  );
 
-  // ★ 当量 = 字频加权码长 + 动态选重率（小数形式）
+  // ★ 有效码长 = 字频加权码长 + 动态选重率（即"计入选重的等效码长"；
+  //   注意：社区/官方的「当量」专指速度当量，不是这个量，故不再叫"当量"）
   const equivalent = weightedAvgCodeLen + dynamicSelectionRate;
 
   // ★ 综合评分（参考国标GB/T18031加权公式）
@@ -706,15 +724,15 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
   for (const [, chars] of fullCodeToChars) {
     const gb2312Chars = chars.filter(c => gb2312Set.has(c));
     if (gb2312Chars.length > gb2312MaxCandidates) gb2312MaxCandidates = gb2312Chars.length;
-    if (gb2312Chars.length > 1) gb2312StaticDup += gb2312Chars.length - 1;
+    if (gb2312Chars.length > 1) gb2312StaticDup += gb2312Chars.length;
     const gbkChars = chars.filter(c => gbkSet.has(c));
     if (gbkChars.length > gbkMaxCandidates) gbkMaxCandidates = gbkChars.length;
-    if (gbkChars.length > 1) gbkStaticDup += gbkChars.length - 1;
-    // 通规静重（口径同社区：字表内每个编码组的非首选字数）
+    if (gbkChars.length > 1) gbkStaticDup += gbkChars.length;
+    // 通规静重（官方口径：字表内每个重码组的字数之和 Σn，含自动首选的那个字）
     const tonggui12Chars = chars.filter(c => tonggui12Set.has(c));
-    if (tonggui12Chars.length > 1) tonggui12StaticDup += tonggui12Chars.length - 1;
+    if (tonggui12Chars.length > 1) tonggui12StaticDup += tonggui12Chars.length;
     const tongguiAllChars = chars.filter(c => tongguiAllSet.has(c));
-    if (tongguiAllChars.length > 1) tongguiAllStaticDup += tongguiAllChars.length - 1;
+    if (tongguiAllChars.length > 1) tongguiAllStaticDup += tongguiAllChars.length;
   }
 
   // ★ 码长-简码效率曲线：假设用户记住前 N 高频字的简码（最短码），
@@ -736,8 +754,16 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
       }
       charLens.set(ch, { min, max });
     }
-    // 按字频降序排列（同频按码面稳定排序）
+    // 官方口径：按「字频 × 该字能节省的码长（全码长 − 简码长）」降序排简码，
+    // 而不是纯按字频——省得多的字优先记简码。
+    const benefit = (ch: string) => {
+      const lens = charLens.get(ch)!;
+      return getCharFrequencyWeight(ch) * Math.max(0, lens.max - lens.min);
+    };
     const sortedChars = [...charLens.keys()].sort((a, b) => {
+      const bA = benefit(a);
+      const bB = benefit(b);
+      if (bB !== bA) return bB - bA;
       const fwA = getCharFrequencyWeight(a);
       const fwB = getCharFrequencyWeight(b);
       if (fwB !== fwA) return fwB - fwA;
@@ -1163,8 +1189,8 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
           const bi = phraseIndexMap.get(b) ?? -1;
           return getWeight(b, bi) - getWeight(a, ai);
         });
-        // 分子：重码组内所有词的词频之和（含首选词）
-        for (const phrase of sorted) {
+        // 分子：重码组内「非首选」词的词频之和（首选词自动上屏，不计选重）
+        for (const phrase of sorted.slice(1)) {
           const idx = phraseIndexMap.get(phrase) ?? -1;
           phraseDupFreq += getWeight(phrase, idx);
         }
@@ -1418,6 +1444,7 @@ function evaluate(entries: CodeEntry[], charset: CharsetFilter = 'all', _allPhra
     dynamicSelectionRate,
     equivalent,
     speedEquivalent: speedEquiv,
+    fullCodeSpeedEquivalent: fullCodeSpeedEquiv,
     speedIndex,
     compositeScore,
     avgCodeLength,
@@ -2016,7 +2043,7 @@ export default function EvaluatePage() {
       `全码重码率: ${result.fullDupRate.toFixed(2)}%`,
       `出简重码率: ${result.simplifiedDupRate.toFixed(2)}%`,
       `动态选重率: ${(result.dynamicSelectionRate * 10000).toFixed(1)}‱`,
-      `动态码长(码长+选重): ${result.equivalent.toFixed(3)}`,
+      `有效码长(码长+选重): ${result.equivalent.toFixed(3)}`,
       `速度当量: ${result.speedEquivalent.toFixed(3)}`,
       `速度指数: ${result.speedIndex.toFixed(2)}`,
       `综合评分: ${result.compositeScore.toFixed(1)}/100`,
@@ -2144,11 +2171,11 @@ export default function EvaluatePage() {
                 <div className="grid gap-3 sm:grid-cols-3 text-xs">
                   <div className="p-3 rounded-lg bg-muted/50">
                     <div className="font-semibold text-foreground mb-1">通用格式</div>
-                    <code className="text-muted-foreground">字\t编码</code> 或 <code className="text-muted-foreground">编码 字</code>
+                    <code className="text-muted-foreground">字\t编码</code> 或 <code className="text-muted-foreground">编码 字</code><div className="text-muted-foreground/80 mt-1">多列（序号/权重）也能自动认列</div>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50">
-                    <div className="font-semibold text-foreground mb-1">Rime格式</div>
-                    <code className="text-muted-foreground">编码\t字</code>（YAML头自动跳过）
+                    <div className="font-semibold text-foreground mb-1">Rime / 编码在前</div>
+                    <code className="text-muted-foreground">编码\t字</code>（YAML头自动跳过）<div className="text-muted-foreground/80 mt-1">逗号/竖线分隔也行（aa,的）；表头行、方案名、条数说明会自动剔除</div>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50">
                     <div className="font-semibold text-foreground mb-1">示例</div>
@@ -2289,7 +2316,7 @@ export default function EvaluatePage() {
             {/* 全码重码率 */}
             <ScoreCard
               icon={<AlertTriangle className="h-4 w-4" />}
-              title="全码重码率"
+              title="重码字占比（最短码口径：重码组内字数 / 总字数）"
               value={result.fullDupRate.toFixed(2)}
               unit="%"
               score={(() => {
@@ -2330,7 +2357,7 @@ export default function EvaluatePage() {
             {/* 动态码长（码长 + 选重率，即计入选重罚时的等效码长） */}
             <ScoreCard
               icon={<Activity className="h-4 w-4" />}
-              title="动态码长"
+              title="有效码长（字频加权码长 + 动态选重率）"
               value={result.equivalent.toFixed(3)}
               unit=""
               score={(() => {
@@ -2366,7 +2393,21 @@ export default function EvaluatePage() {
                 if (result.speedEquivalent < 1.45) return 65;
                 return 35;
               })()}
-              subtext={`速度指数 ${result.speedIndex.toFixed(2)}`}
+              subtext={`速度指数 ${result.speedIndex.toFixed(2)} · 简码口径`}
+            />
+            {/* 全码速度当量：官方发布值（字源 1.3473）是每字全码口径，供直接对照 */}
+            <ScoreCard
+              icon={<Zap className="h-4 w-4" />}
+              title="全码速度当量"
+              value={result.fullCodeSpeedEquivalent.toFixed(3)}
+              unit=""
+              score={(() => {
+                if (result.fullCodeSpeedEquivalent < 1.25) return 100;
+                if (result.fullCodeSpeedEquivalent < 1.35) return 85;
+                if (result.fullCodeSpeedEquivalent < 1.45) return 65;
+                return 35;
+              })()}
+              subtext="每字取全码 · 可与官方发布值对照"
             />
             {/* 综合评分 */}
             <ScoreCard
@@ -2378,6 +2419,15 @@ export default function EvaluatePage() {
               highlight
             />
           </div>
+
+          {/* 口径说明：数值可读性的前提——字集、编码口径与字频基准 */}
+          <p className="text-xs text-muted-foreground/80 leading-relaxed">
+            口径说明：速度当量按陈一凡键位相关当量表对相邻键对的字频加权平均；本页「速度当量」为
+            <span className="text-foreground/80">简码口径</span>（每字取最短码），官方发布值（字源 1.3473）为
+            <span className="text-foreground/80">全码口径</span>，故另列「全码速度当量」供对照。
+            静重为字表内重码组的字数之和（含自动首选字），动态选重率已排除每组自动首选字（官方口径）；
+            加权类指标以所选字频表为基准，未收录字按 0 权重剔除。与官方发布表对比时请确认字集与码表版本一致。
+          </p>
 
           {/* ===== C. 字符集覆盖率 + 综合测评表 ===== */}
 
@@ -3119,11 +3169,12 @@ export default function EvaluatePage() {
                       ]},
                       { category: '核心指标', items: [
                         { name: '字频加权码长', value: result.weightedAvgCodeLen.toFixed(3), score: result.weightedAvgCodeLen < 3.5 ? 90 : result.weightedAvgCodeLen < 4.5 ? 65 : 40 },
-                        { name: '全码重码率', value: `${result.fullDupRate.toFixed(2)}%（${result.staticDupCount}字）`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
+                        { name: '重码字占比（最短码口径）', value: `${result.fullDupRate.toFixed(2)}%（${result.staticDupCount}字）`, score: result.fullDupRate < 5 ? 90 : result.fullDupRate < 10 ? 65 : 35 },
                         { name: '出简重码率', value: `${result.simplifiedDupRate.toFixed(2)}%`, score: result.simplifiedDupRate < 5 ? 90 : result.simplifiedDupRate < 10 ? 65 : 35 },
                         { name: '动态选重率', value: `${(result.dynamicSelectionRate * 10000).toFixed(1)}‱`, score: (result.dynamicSelectionRate * 10000) < 5 ? 95 : (result.dynamicSelectionRate * 10000) < 20 ? 75 : 40 },
                         { name: '动态码长（码长+选重）', value: result.equivalent.toFixed(3), score: result.equivalent < 3.5 ? 95 : result.equivalent < 4.0 ? 70 : 40 },
-                        { name: '速度当量', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.25 ? 95 : result.speedEquivalent < 1.35 ? 75 : 40 },
+                        { name: '速度当量（简码口径）', value: result.speedEquivalent.toFixed(3), score: result.speedEquivalent < 1.25 ? 95 : result.speedEquivalent < 1.35 ? 75 : 40 },
+                        { name: '全码速度当量', value: result.fullCodeSpeedEquivalent.toFixed(3), score: result.fullCodeSpeedEquivalent < 1.25 ? 95 : result.fullCodeSpeedEquivalent < 1.35 ? 75 : 40 },
                         { name: '速度指数', value: result.speedIndex.toFixed(2), score: result.speedIndex > 80 ? 95 : result.speedIndex > 74 ? 75 : 40 },
                         { name: '综合评分', value: `${result.compositeScore.toFixed(1)}/100`, score: result.compositeScore },
                       ]},
@@ -3256,7 +3307,7 @@ export default function EvaluatePage() {
                 <div>
                   <h3 className="font-bold text-foreground">单字重码</h3>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    共 {result.staticDupCount} 个重码字（{dupes.length} 组），全码重码率 {result.fullDupRate.toFixed(2)}%
+                    共 {result.staticDupCount} 个重码字（{dupes.length} 组），重码字占比 {result.fullDupRate.toFixed(2)}%
                   </p>
                 </div>
                 <button onClick={() => setShowSingleCharDup(false)} className="p-2 rounded-full hover:bg-muted transition-colors">

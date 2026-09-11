@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, useBuiltinPhrases } from '@/lib/data-loader';
 import { rootMappings } from '@/data/roots';
+import RootGlyph from '@/components/RootGlyph';
 import { getCharSplit, getPhraseSplits } from '@/data/splitData';
 import {
   Search, SplitSquareHorizontal, X, Keyboard, BookOpen, Hash,
@@ -310,11 +311,15 @@ export default function SplitSearchPage() {
                           <span className="font-mono font-bold text-foreground text-sm uppercase">{result.code}</span>
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-primary/30 text-primary">{result.code.length}码</Badge>
                         </div>
-                        {/* 拆分信息 */}
+                        {/* 拆分信息：每个组件用官方字根图（无图则回退字形） */}
                         {result.split && (
-                          <div className="text-xs text-muted-foreground">
-                            <span className="text-foreground/70">拆分：</span>
-                            <span className="root-char">{result.split}</span>
+                          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <span className="text-foreground/70 shrink-0">拆分：</span>
+                            <span className="flex items-center gap-0.5">
+                              {[...result.split].map((c, i) => (
+                                <RootGlyph key={i} char={c} box="h-5 w-5" text="text-xs" />
+                              ))}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -352,9 +357,13 @@ export default function SplitSearchPage() {
                         <div key={ci} className="flex items-center gap-2 text-sm">
                           <span className="root-char font-bold text-foreground w-5 text-center">{ch}</span>
                           <span className="text-muted-foreground">→</span>
-                          {/* 拆分 */}
-                          <span className="root-char text-muted-foreground">
-                            {result.charSplits[ci] || '—'}
+                          {/* 拆分：每个组件用官方字根图 */}
+                          <span className="flex items-center gap-0.5">
+                            {[...(result.charSplits[ci] || '')].length > 0
+                              ? [...(result.charSplits[ci] || '')].map((c, si) => (
+                                  <RootGlyph key={si} char={c} box="h-5 w-5" text="text-xs" />
+                                ))
+                              : <span className="text-muted-foreground">—</span>}
                           </span>
                           <span className="text-muted-foreground/50">|</span>
                           {/* 全码 */}
@@ -452,10 +461,10 @@ export default function SplitSearchPage() {
                     字源拆分
                   </div>
                   <div className="flex items-center gap-2 flex-wrap p-3 rounded-lg bg-muted/50 border border-border">
-                    {selectedDetail.split.split('').map((component, i) => (
-                      <div key={i} className="flex items-center gap-1">
+                    {[...selectedDetail.split].map((component, i) => (
+                      <div key={i} className="flex items-center gap-1.5">
                         {i > 0 && <span className="text-muted-foreground/50">+</span>}
-                        <span className="root-char text-lg font-bold text-primary">{component}</span>
+                        <RootGlyph char={component} box="h-11 w-11 rounded-lg border border-border bg-card" text="text-xl" />
                       </div>
                     ))}
                   </div>

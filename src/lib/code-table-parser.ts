@@ -1,10 +1,14 @@
 // ========================================
 // 码表解析器
 // 支持：
-//   1. 通用格式：`字\t编码` / `编码\t字` / `编码 字 权重` / `字 编码`
+//   1. 通用格式：`字\t编码` / `编码\t字` / `编码 字 权重` / `字 编码` / `序号 编码 字`
 //   2. Rime 格式：`编码\t字`，带标准 YAML 头（--- ... ...）
 //   3. 虎码等方言头：`---config@键=值` 元数据行（可能没有 `...` 结束行）
 //   4. 注释行：# （通用）、; （非 Rime）
+//   5. 逗号/竖线/分号分隔的两列表（如 `aa,的`）
+//
+// 非码表内容（表头 `编码\t字`、`code\tchar`、方案名、`共 N 条`、权重行等）
+// 会被丢掉，保证上传的码表「条条可查」。
 // ========================================
 
 export interface CodeEntry {
@@ -12,9 +16,46 @@ export interface CodeEntry {
   code: string;
 }
 
-/** 编码格式判断：形码编码为字母/数字混合，纯数字串视为词频权重而非编码 */
-function looksLikeCode(s: string): boolean {
-  return /^[\da-z]+$/.test(s) && !/^\d+$/.test(s);
+/**
+ * 表头/元数据关键词：真实编码不会等于这些词。
+ * 命中即判定该行不是码表条目（如 `编码\t字`、`code\tchar`、`name: tiger`）。
+ */
+const META_WORDS = new Set([
+  '编码', '全码', '简码', '码', '代码', '输入码', '编码表', '字根', '字根码', '键位', '键', '部首',
+  '编号', '序号', '字', '汉字', '字符', '单字', '例字', '词', '词组', '词语', '说明', '备注', '示例', '格式',
+  'code', 'codes', 'key', 'keys', 'id', 'no', 'index', 'name', 'version', 'columns', 'sort',
+  'author', 'description', 'weight', 'freq', 'frequency', 'char', 'chars', 'character', 'word', 'words',
+]);
+
+/** 编码字段：字母开头，允许字母/数字/撇号/连字符/下划线（形码与 Rime 简码的常见形态） */
+const CODE_FIELD = /^[a-z][a-z0-9'_-]{0,19}$/i;
+
+/** 汉字字段：至少含一个非 ASCII 字符（汉字 / PUA 变体 / 扩展区字），纯 ASCII 是表头或说明 */
+function isHanField(s: string): boolean {
+  return /\P{ASCII}/u.test(s);
+}
+
+function isMetaWord(s: string): boolean {
+  return META_WORDS.has(s.trim().toLowerCase());
+}
+
+/**
+ * 从一行里挑出「编码」和「字」两列：
+ *   编码 = 第一个像编码的字段（字母开头）；
+ *   字   = 第一个含非 ASCII 字符的字段；
+ * 两者必须都存在且不是同一列，否则整行丢弃。
+ * 这样 `编码\t字`、`code\tchar`、`aa 1.0`、`的\t100` 之类都不会成为条目，
+ * 而 `序号 编码 字` 这种多列顺序错位也能取对。
+ */
+function pickEntry(fields: string[]): CodeEntry | null {
+  const cleaned = fields.map(f => f.trim()).filter(Boolean);
+  if (cleaned.length < 2) return null;
+  const codeIdx = cleaned.findIndex(f => CODE_FIELD.test(f));
+  const charIdx = cleaned.findIndex(f => isHanField(f));
+  if (codeIdx === -1 || charIdx === -1 || codeIdx === charIdx) return null;
+  const code = cleaned[codeIdx];
+  if (isMetaWord(code)) return null;
+  return { char: cleaned[charIdx], code: code.toLowerCase() };
 }
 
 /**
@@ -61,70 +102,33 @@ export function parseCodeTable(content: string): CodeEntry[] {
     if (trimmed.startsWith('#')) continue;
     if (formatDetected !== 'rime' && trimmed.startsWith(';')) continue;
 
-    // 编码格式判断：形码编码为字母/数字混合，纯数字串视为词频权重而非编码
+    // 制表符分隔（Rime 与多数码表）：取整行所有列，让 pickEntry 自行认列
     if (trimmed.includes('\t')) {
-      const parts = trimmed.split('\t');
-      if (parts.length >= 2) {
-        // 与空格分支保持一致：f1 先转小写（编码位置），f2 按编码判断时再转小写
-        const f1 = parts[0].trim().toLowerCase(), f2 = parts[1].trim();
-        if (looksLikeCode(f1)) {
-          entries.push({ char: f2, code: f1 });
-        } else if (looksLikeCode(f2.toLowerCase())) {
-          entries.push({ char: f1, code: f2.toLowerCase() });
-        } else if (f2) {
-          // 两列都不是编码（如 `字 权重`）：无编码可评，跳过
-          continue;
-        }
-        continue;
-      }
-    }
-
-    // 空格分隔的三列及以上：`编码 字 权重`（或 `字 编码 权重`），只取前两列
-    if (!trimmed.includes('\t')) {
-      const parts = trimmed.split(/\s+/);
-      if (parts.length >= 3) {
-        const f1 = parts[0].toLowerCase(), f2 = parts[1];
-        if (looksLikeCode(f1)) {
-          entries.push({ char: f2, code: f1 });
-        } else if (looksLikeCode(f2)) {
-          entries.push({ char: f1, code: f2.toLowerCase() });
-        } else {
-          // 前两列都不是编码（如 `字 权重 权重`）：无编码可评，跳过
-          continue;
-        }
-        continue;
-      }
-    }
-
-    const match = trimmed.match(/^(\S+)\s+(\S+)$/);
-    if (match) {
-      const f1 = match[1].toLowerCase(), f2 = match[2];
-      if (looksLikeCode(f1)) {
-        entries.push({ char: f2, code: f1 });
-      } else if (looksLikeCode(f2)) {
-        // 两列：字 编码
-        entries.push({ char: f1, code: f2.toLowerCase() });
-      } else {
-        // 两列都不是编码（如 `字 权重`）：不是可评估的码表条目，跳过
-        continue;
-      }
+      const entry = pickEntry(trimmed.split('\t'));
+      if (entry) entries.push(entry);
       continue;
     }
 
-    const matchRest = trimmed.match(/^(\S+)\s+(.+)$/);
-    if (matchRest) {
-      const code = matchRest[1].toLowerCase(), rest = matchRest[2].trim();
-      if (/^[\da-z]+$/.test(code)) {
-        entries.push({ char: rest, code });
-      } else {
-        entries.push({ char: code, code: rest.toLowerCase().split(/\s+/)[0] ?? '' });
-      }
+    // 逗号 / 竖线 / 分号 分隔的两列表（如 `aa,的`）：仅在没有空白分隔时启用
+    if (/[,|｜]/.test(trimmed) && !/\s/.test(trimmed)) {
+      const entry = pickEntry(trimmed.split(/[,|｜]+/));
+      if (entry) entries.push(entry);
       continue;
     }
 
-    const matchGlue = trimmed.match(/^(\S)(\S+)$/);
-    if (matchGlue && /^[a-z]+$/.test(matchGlue[2])) {
-      entries.push({ char: matchGlue[1], code: matchGlue[2].toLowerCase() });
+    // 空白分隔（可能多列：序号 / 编码 / 字 / 权重）
+    const fields = trimmed.split(/\s+/);
+    if (fields.length >= 2) {
+      const entry = pickEntry(fields);
+      if (entry) entries.push(entry);
+      continue;
+    }
+
+    // 无分隔符的粘连写法（如 `字aa`）：首字符是字、其余是纯字母编码
+    const matchGlue = trimmed.match(/^(\S)([a-zA-Z]{1,19})$/);
+    if (matchGlue) {
+      const entry = { char: matchGlue[1], code: matchGlue[2].toLowerCase() };
+      if (isHanField(entry.char) && !isMetaWord(entry.code)) entries.push(entry);
     }
   }
 

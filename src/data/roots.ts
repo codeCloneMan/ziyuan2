@@ -292,6 +292,39 @@ export function getRootImagePath(root: RootMapping): string | null {
   return file ? `${ROOT_IMAGE_DIR}/${file}` : null;
 }
 
+/** 字根图完整 URL（含 BASE_URL）；无官方图返回 null */
+export function getRootImageUrl(root: RootMapping): string | null {
+  const rel = getRootImagePath(root);
+  return rel ? `${import.meta.env.BASE_URL}${rel}` : null;
+}
+
+/**
+ * 字（拆分组件） → 字根映射。一个拆分组件字可能对应多个键位上的字根，
+ * 优先保留「有官方字根图」的那个（PUA 变体常有图，可渲染字根用字形本身）。
+ */
+const rootByChar: Map<string, RootMapping> = (() => {
+  const map = new Map<string, RootMapping>();
+  for (const root of rootMappings) {
+    const prev = map.get(root.char);
+    if (!prev || (!getRootImagePath(prev) && getRootImagePath(root))) map.set(root.char, root);
+  }
+  return map;
+})();
+
+/**
+ * 按拆分组件字取官方字根图 URL（拆分查询/首页用）。
+ * 该字不是任何字根、或该字根没有官方裁剪图时返回 null，调用方回退到字形本身。
+ */
+export function getRootImageUrlByChar(char: string): string | null {
+  const root = rootByChar.get(char);
+  return root ? getRootImageUrl(root) : null;
+}
+
+/** 按拆分组件字取字根记录（首页键位预览等需要显示描述时用） */
+export function findRootByChar(char: string): RootMapping | undefined {
+  return rootByChar.get(char);
+}
+
 /**
  * 可练习字根列表（虎码模式：全部字根都练）。
  *

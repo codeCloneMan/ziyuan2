@@ -2,12 +2,15 @@ import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Keyboard, BookOpen, PenTool, TextQuote, ArrowRight,
-  ChevronUp, CheckCircle2, Sparkles,
+  ChevronUp, CheckCircle2, Sparkles, BarChart3, ExternalLink, Search,
+  Image as ImageIcon, HelpCircle, HardDrive, MessageCircle, Layers,
 } from 'lucide-react';
 import {
-  keyboardRows, keyRootsMap, practiceRootMappings,
+  keyboardRows, keyRootsMap, practiceRootMappings, getRootImageUrl,
 } from '@/data/roots';
+import RootGlyph from '@/components/RootGlyph';
 import { ROOT_IMAGE_POOL } from '@/data/root-images';
+import { practiceChars5000 } from '@/data/practice-pools.generated';
 import { useLearningProgress } from '@/hooks/use-learning-progress';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +31,32 @@ const practiceEntries = [
   { label: '整字练习', desc: '拆字编码', link: '/whole-char', icon: PenTool },
   { label: '词组练习', desc: '四码上屏', link: '/phrase', icon: TextQuote },
   { label: '字根表', desc: '按键检索', link: '/table', icon: BookOpen },
+];
+
+// 站内工具入口
+const TOOLS = [
+  { label: '字根表', desc: '按键检索全部字根', link: '/table', icon: BookOpen },
+  { label: '字根图', desc: '官方 1.32 字根图', link: '/chart', icon: ImageIcon },
+  { label: '拆分查询', desc: '查单字/词组拆分', link: '/split-search', icon: Search },
+  { label: '码表测评', desc: '上传码表算指标', link: '/evaluate', icon: BarChart3 },
+  { label: '常见问题', desc: '安装与使用答疑', link: '/faq', icon: HelpCircle },
+];
+
+// 测评与对照（社区权威数据源，可交叉核对本页测评口径）
+const EVAL_LINKS = [
+  { label: '宇浩测码', href: 'https://ceping.shurufa.app/' },
+  { label: '好码测评', href: 'https://chs.hertz.ltd/#evaluate' },
+  { label: '虎测评', href: 'https://assess.tiger-code.com/' },
+  { label: 'yb 测码', href: 'https://yb6b.github.io/#/' },
+  { label: '汉字拆分系统', href: 'https://chaifen.app/' },
+];
+
+// 字源官方资源
+const RESOURCE_LINKS = [
+  { label: '字源网盘下载', href: 'http://ziyuan.ysepan.com/', icon: HardDrive },
+  { label: '官方 QQ 群', href: 'https://qm.qq.com/cgi-bin/qm/qr?authKey=7vCcSmNXkf%2BpzmA5%2BVONkqLIHn5sCZQ%2BB9cju2k5FHuC3zceqm9ex4ZBCGeA6ohR&k=Clj6XiPreJ-8u0IO6TTg6QcTCJc_Rq_k&noverify=0', icon: MessageCircle },
+  { label: '天珩字库', href: 'http://cheonhyeong.com/Simplified/download.html', icon: Layers },
+  { label: '汉典', href: 'https://www.zdic.net/', icon: BookOpen },
 ];
 
 // 整体进度环
@@ -98,7 +127,7 @@ export default function HomePage() {
             </p>
 
             {/* CTA */}
-            <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
+            <div className="flex flex-wrap items-center justify-center gap-3 mb-10">
               <Link to="/practice">
                 <span className="btn-primary px-7 py-3 text-base gap-2 shadow-md shadow-primary/20">
                   开始练习
@@ -113,9 +142,25 @@ export default function HomePage() {
               </Link>
             </div>
 
-            <p className="text-xs text-muted-foreground/50 font-mono-stat tracking-wide">
-              {ROOT_IMAGE_POOL.length} 张官方字根图 · 26 键位 · 4 种练习模式
-            </p>
+            {/* 数据条：站内可用内容规模（大站门面） */}
+            <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-5 max-w-2xl mx-auto">
+              {[
+                { n: practiceRootMappings.length, label: '官方字根', sub: '全部可练' },
+                { n: ROOT_IMAGE_POOL.length, label: '字根图', sub: '官方裁剪图' },
+                { n: 26, label: '键位', sub: '全键盘覆盖' },
+                { n: practiceChars5000.length, label: '常用字题库', sub: '含前 500 字专项' },
+              ].map(item => (
+                <div key={item.label} className="text-center">
+                  <dt className="text-2xl sm:text-3xl font-bold font-mono-stat text-gradient-primary leading-none">
+                    {item.n}
+                  </dt>
+                  <dd className="mt-1.5 text-xs text-muted-foreground">
+                    <span className="text-foreground/80 font-medium">{item.label}</span>
+                    <span className="block text-muted-foreground/60 mt-0.5">{item.sub}</span>
+                  </dd>
+                </div>
+              ))}
+            </dl>
           </div>
         </div>
       </section>
@@ -259,7 +304,10 @@ export default function HomePage() {
                   {row.map((key) => {
                     const roots = keyRootsMap[key] || [];
                     const isSelected = selectedKey === key;
-                    const firstRoots = roots.slice(0, 3).map(r => r.displayChar).join(' ');
+                    // 键帽预览：优先展示「有官方字根图」或「单字形」的字根，每个用官方裁剪图
+                    const previewRoots = roots
+                      .filter(r => getRootImageUrl(r) || [...r.displayChar].length === 1)
+                      .slice(0, 3);
                     return (
                       <button
                         key={key}
@@ -274,8 +322,10 @@ export default function HomePage() {
                         )}
                       >
                         <span className="text-[11px] sm:text-xs font-bold uppercase text-foreground/80">{key}</span>
-                        <span className="text-[7px] sm:text-[9px] text-muted-foreground/70 leading-tight text-center line-clamp-2 root-char px-0.5">
-                          {firstRoots}
+                        <span className="flex items-center justify-center gap-[1px] leading-none">
+                          {previewRoots.map((r, i) => (
+                            <RootGlyph key={i} char={r.char} box="h-2.5 w-2.5 sm:h-3 sm:w-3" text="text-[7px] sm:text-[8px]" />
+                          ))}
                         </span>
                         <span className="absolute -top-1 -right-1 text-[8px] bg-primary text-primary-foreground rounded-full min-w-3.5 h-3.5 px-0.5 flex items-center justify-center font-bold font-mono-stat shadow-xs">
                           {roots.length}
@@ -303,7 +353,7 @@ export default function HomePage() {
                         key={i}
                         className="flex items-center gap-2 p-1.5 rounded-md hover:bg-primary/[0.05] transition-colors"
                       >
-                        <span className="text-lg font-bold root-char">{root.displayChar}</span>
+                        <RootGlyph char={root.char} box="h-8 w-8" text="text-lg" markFallback />
                         <span className="font-mono text-xs text-muted-foreground">{root.key}</span>
                       </div>
                     ))}
@@ -313,6 +363,64 @@ export default function HomePage() {
             )}
           </div>
 
+        </div>
+      </section>
+
+      {/* ========================================
+          工具与权威资源：把站内工具与外部权威站点集中成门户入口
+          （外链与顶部「更多」菜单同源，这里作为大站的资源区呈现）
+          ======================================== */}
+      <section className="container-page pb-20 sm:pb-28">
+        <div className="grid gap-4 lg:grid-cols-3">
+          {/* 站内工具 */}
+          <div className="card-base !rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">站内工具</h2>
+            <ul className="space-y-2.5">
+              {TOOLS.map(t => (
+                <li key={t.link}>
+                  <Link to={t.link} className="group flex items-center gap-3 -mx-2 px-2 py-2 rounded-lg hover:bg-primary/[0.04] transition-colors">
+                    <t.icon className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{t.label}</span>
+                    <span className="ml-auto text-xs text-muted-foreground/60">{t.desc}</span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* 测评与对照（社区权威数据源） */}
+          <div className="card-base !rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">测评与对照</h2>
+            <ul className="space-y-2.5">
+              {EVAL_LINKS.map(l => (
+                <li key={l.href}>
+                  <a href={l.href} target="_blank" rel="noopener noreferrer"
+                    className="group flex items-center gap-3 -mx-2 px-2 py-2 rounded-lg hover:bg-primary/[0.04] transition-colors">
+                    <BarChart3 className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{l.label}</span>
+                    <ExternalLink className="ml-auto h-3.5 w-3.5 text-muted-foreground/40" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* 字源官方资源 */}
+          <div className="card-base !rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-4 font-serif">字源官方资源</h2>
+            <ul className="space-y-2.5">
+              {RESOURCE_LINKS.map(l => (
+                <li key={l.href}>
+                  <a href={l.href} target="_blank" rel="noopener noreferrer"
+                    className="group flex items-center gap-3 -mx-2 px-2 py-2 rounded-lg hover:bg-primary/[0.04] transition-colors">
+                    <l.icon className="h-4 w-4 text-primary shrink-0" />
+                    <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{l.label}</span>
+                    <ExternalLink className="ml-auto h-3.5 w-3.5 text-muted-foreground/40" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
       </section>
     </div>
