@@ -5,6 +5,8 @@ import { ROOT_IMAGE_POOL, allImageIds, rootImagePath, type RootImage } from '@/d
 import { ROOT_IMAGE_MANIFEST, rootMappings } from '@/data/roots';
 import type { PracticeLevel } from '@/types';
 import { useCharCodeData } from '@/lib/data-loader';
+import { buildFullCodeIndex, type FullCodeInfo } from '@/lib/full-codes';
+import { normalizeRootAnswer, isRootAnswerCorrect } from '@/lib/root-answer';
 import { calcMasteredRootCount } from '@/lib/mastered-count';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
@@ -122,6 +124,12 @@ export default function PracticePage() {
   // 用户是否正在使用原生输入框（软键盘）：仅在此时切题后保持 focus，
   // 避免 Android 上每次切题强制 focus 导致软键盘反复弹出、遮挡虚拟键盘
   const nativeInputActiveRef = useRef(false);
+
+  // 码表全码索引：输入法打出的汉字用它判「该字首键 == 本题键位」（见 lib/root-answer）
+  const fullCodeIndex = useMemo(
+    () => (charCodeData ? buildFullCodeIndex(charCodeData) : new Map<string, FullCodeInfo>()),
+    [charCodeData],
+  );
 
   // 用 ref 持有最新 currentImage，避免 usePracticeSession 的 onWrong 闭包
   // 把 currentImage.file 放入 deps 导致 session 频繁重建（每次切题都会重建）
@@ -313,11 +321,16 @@ export default function PracticePage() {
   // 键盘交互
   // ============================================
 
-  const handleKeyPress = useCallback((key: string) => {
+  const handleAnswer = useCallback((input: string) => {
     if (!isPlaying || feedbackType) return;
 
+    // 输入可能是字母（键位作答），也可能是输入法上屏的汉字（拼音/五笔/字源形码都一样）；
+    // 标点、空白等无法作答的输入直接忽略，不计错
+    const answer = normalizeRootAnswer(input);
+    if (!answer) return;
+
     const current = currentRootRef.current;
-    const isCorrect = key === current.key;
+    const isCorrect = isRootAnswerCorrect(answer, current.key, fullCodeIndex);
 
     // 答错时显示音托提示（仅当该图能对应到码表字根）
     if (!isCorrect) {
@@ -343,27 +356,28 @@ export default function PracticePage() {
       setRoundToast(completedRounds + 1);
     }
 
-    // 交由统一状态机处理反馈着色、计分与切题
-    submit(isCorrect, key);
-  }, [isPlaying, feedbackType, recordAnswer, isBeginner, submit, spacedRecordResult, markSeen, reset, completedRounds]);
+    // 交由统一状态机处理反馈着色、计分与切题（回显你实际打出的内容）
+    submit(isCorrect, answer.kind === 'key' ? answer.key : answer.char);
+  }, [isPlaying, feedbackType, fullCodeIndex, recordAnswer, isBeginner, submit, spacedRecordResult, markSeen, reset, completedRounds]);
 
   // 全局键盘监听
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (!isPlaying) return;
-      // 中文输入法组合期间不提交（isComposing 为主，keyCode 229 为 WebView 纵深防御）
+      // 输入法组合期间不在此提交：组合结束后由输入框的 compositionend 送来上屏内容
+      // （用输入法打汉字作答就是走那条路）
       if (e.isComposing || e.keyCode === 229) return;
       if (e.key === 'Escape') { stopPractice(); return; }
       if (e.key === ' ') { e.preventDefault(); setPref('showHint', !showHint); return; }
       const key = e.key.toLowerCase();
       if (key.length === 1 && key >= 'a' && key <= 'z') {
         e.preventDefault();
-        handleKeyPress(key);
+        handleAnswer(key);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isPlaying, handleKeyPress, stopPractice, showHint, setPref]);
+  }, [isPlaying, handleAnswer, stopPractice, showHint, setPref]);
 
   useEffect(() => {
     // 仅当用户在用原生输入（软键盘）时，切题后保持焦点；
@@ -570,7 +584,7 @@ export default function PracticePage() {
               firstTimeHint={firstTimeHint}
               phoneticHint={phoneticHint}
               inputRef={inputRef}
-              onNativeInput={handleKeyPress}
+              onNativeInput={handleAnswer}
               onNativeFocusChange={(f) => { nativeInputActiveRef.current = f; }}
             />
 
@@ -582,7 +596,7 @@ export default function PracticePage() {
               feedbackType={feedbackType}
               isPlaying={isPlaying}
               correctCountMap={progress.correctCountMap}
-              onKeyPress={handleKeyPress}
+              onKeyPress={handleAnswer}
             />
           </div>
 

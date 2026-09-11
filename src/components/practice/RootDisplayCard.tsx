@@ -16,8 +16,11 @@ interface RootDisplayCardProps {
   firstTimeHint: string | null;
   phoneticHint: string | null;
   inputRef: React.RefObject<HTMLInputElement | null>;
-  /** 原生键盘（手机/桌面直接键入）输入回调 */
-  onNativeInput?: (char: string) => void;
+  /**
+   * 原生键盘输入回调：既收英文直通的单个字母，也收**输入法上屏的内容**
+   * （拼音/五笔/字源形码上屏的汉字，按 lib/root-answer 的口径判定）
+   */
+  onNativeInput?: (text: string) => void;
   /** 原生输入框聚焦状态变化（用于页面决定切题后是否保持焦点/软键盘） */
   onNativeFocusChange?: (focused: boolean) => void;
 }
@@ -104,18 +107,25 @@ export default function RootDisplayCard({
             onFocus={() => { setFocused(true); onNativeFocusChange?.(true); }}
             onBlur={() => { setFocused(false); onNativeFocusChange?.(false); }}
             onBeforeInput={(e) => {
-              // 逐物理按键提交（beforeinput）：英文键盘每次按键触发一次 insertText；
-              // 中文输入法组合过程（insertCompositionText/insertFromComposition）被忽略，
-              // 避免组合提交时旧 slice(-1) 逻辑丢字符/误判
+              // 英文直通：每次按键一次 insertText，直接作答（受控组件无需实际插入）
+              // 输入法组合过程（insertCompositionText）不在这里处理，等 compositionend
+              // 拿到上屏内容再作答，避免组合中间态（如 pinyin 的 m→mu）被当成答案
               const ne = e.nativeEvent as InputEvent;
               if (ne.inputType === 'insertText' && ne.data && /^[a-z]$/i.test(ne.data)) {
-                e.preventDefault(); // 受控组件无需实际插入
+                e.preventDefault();
                 onNativeInput?.(ne.data.toLowerCase());
               } else if (ne.inputType === 'deleteContentBackward' || ne.inputType === 'insertFromPaste' || ne.inputType === 'insertFromDrop') {
-                // 字根练习每题一键：退格/粘贴/拖放均无意义，
+                // 字根练习每题一次作答：退格/粘贴/拖放均无意义，
                 // 阻止默认行为避免受控 value 与 state 脱同步或残留未提交文本
                 e.preventDefault();
               }
+            }}
+            onCompositionEnd={(e) => {
+              // 输入法上屏（拼音/五笔/字源形码）：把上屏内容交给页面判定，
+              // 并同步清空输入框里的组合残留（受控值只在 keyFeedback 变化时才被 React 写回）
+              const text = e.data;
+              e.currentTarget.value = '';
+              if (text) onNativeInput?.(text);
             }}
             className={cn(
               "w-full h-12 sm:h-14 text-center text-2xl sm:text-3xl font-mono font-bold caret-primary",
@@ -136,6 +146,11 @@ export default function RootDisplayCard({
         {/* 手机端作答提示 */}
         <p className="sm:hidden mt-3 text-xs text-muted-foreground/70 text-center leading-relaxed">
           点击上方输入框或用下方键盘作答
+        </p>
+
+        {/* 输入法作答说明：不切输入法也能练（汉字按其字源编码首键判定） */}
+        <p className="mt-2 text-[11px] text-muted-foreground/60 text-center leading-relaxed">
+          中文 / 形码输入法也可作答：打出的汉字只要它的字源编码首键 = 本题键位（如「木」= xm → 首键 x）即算答对
         </p>
 
         {/* 反馈文字 - 更克制 */}
