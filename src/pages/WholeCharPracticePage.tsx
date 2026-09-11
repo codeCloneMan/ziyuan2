@@ -20,7 +20,6 @@ import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   useWholeCharProgress,
   usePreferences,
-  useProgressStore,
   WHOLE_CHAR_CODE_LENS,
   type WholeCharCodeLen,
 } from '@/store/progress-store';
@@ -115,8 +114,6 @@ export default function WholeCharPracticePage() {
   const fullCodeIndex = useMemo(() => buildFullCodeIndex(charCodeData ?? []), [charCodeData]);
   const { progress, recordAnswer, resetMode } = useWholeCharProgress();
   const { preferences, setPref } = usePreferences();
-  const { state: progressState } = useProgressStore();
-  const totalPoints = progressState.totalPoints;
 
   // ============================================
   // 安全取值：防止旧数据中有非法 level 值导致崩溃
@@ -643,7 +640,6 @@ export default function WholeCharPracticePage() {
                   seen={roundSeen}
                   total={activePool.length}
                   accuracy={accuracy}
-                  totalPoints={totalPoints}
                   extra={
                     <>
                       <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
@@ -767,7 +763,6 @@ export default function WholeCharPracticePage() {
               seen={roundSeen}
               total={activePool.length}
               accuracy={accuracy}
-              totalPoints={totalPoints}
             />
           </div>
           <div className="mt-2">

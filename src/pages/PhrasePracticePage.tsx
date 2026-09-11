@@ -18,7 +18,6 @@ import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   usePhraseProgress,
   usePreferences,
-  useProgressStore,
   PHRASE_WORD_LENS,
   type PhraseWordLen,
 } from '@/store/progress-store';
@@ -87,8 +86,6 @@ export default function PhrasePracticePage() {
   const { progress: phraseProgress, recordAnswer, setMode: setStoreMode } = usePhraseProgress();
   const { preferences, setPref } = usePreferences();
   const phraseShowHint = preferences.phraseShowHint;
-  const { state: progressState } = useProgressStore();
-  const totalPoints = progressState.totalPoints;
 
   const rawLevel = preferences.phraseMode;
   const level: PracticeLevel = (rawLevel === 'beginner' || rawLevel === 'advanced') ? rawLevel : 'beginner';
@@ -408,8 +405,7 @@ export default function PhrasePracticePage() {
                     seen={roundSeen}
                     total={poolCount}
                     accuracy={accuracy}
-                    totalPoints={totalPoints}
-                    extra={
+                      extra={
                       <>
                         <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                           {level === 'beginner' ? '入门' : '进阶'}
@@ -495,7 +491,6 @@ export default function PhrasePracticePage() {
                   seen={roundSeen}
                   total={poolCount}
                   accuracy={accuracy}
-                  totalPoints={totalPoints}
                   extra={reviewMode ? (
                     <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 font-medium">易错项练习</span>
                   ) : undefined}

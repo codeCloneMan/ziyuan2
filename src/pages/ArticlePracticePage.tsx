@@ -12,7 +12,7 @@ import {
 } from '@/lib/code-commit';
 import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeRound } from '@/hooks/use-practice-round';
-import { useArticleProgress, useProgressStore } from '@/store/progress-store';
+import { useArticleProgress } from '@/store/progress-store';
 import { DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY } from '@/data/articles';
 import {
   Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText,
@@ -26,8 +26,6 @@ export default function ArticlePracticePage() {
     [charCodeData],
   );
   const { progress: articleProgress, recordChar } = useArticleProgress();
-  const { state: progressState } = useProgressStore();
-  const totalPoints = progressState.totalPoints;
 
   // ============ 文章选择 / 自定义文本 ============
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_ARTICLES[0]?.id ?? 'common');
@@ -88,7 +86,9 @@ export default function ArticlePracticePage() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [inputCode, setInputCode] = useState('');
-  const [feedback, setFeedback] = useState<'correct' | 'wrong' | null>(null);
+  const [feedback, setFeedback] = useState<'correct' | null>(null);
+  /** 刚打错的字（非阻断提示，立即进位后仍能看到错的是哪个字） */
+  const [wrongFlash, setWrongFlash] = useState<string | null>(null);
   const [wrongSet, setWrongSet] = useState<Set<number>>(new Set());
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
@@ -135,19 +135,20 @@ export default function ArticlePracticePage() {
       ? isSpaceCommitCorrect(code, current.codes)
       : isAutoCommitCorrect(code, current.codes);
     recordChar(current.char, ok);
+    // 轮次口径：对错都算这个字答过一次
+    markSeen(String(current.textIndex));
+    if (timerRef.current) clearTimeout(timerRef.current);
     if (ok) {
-      markSeen(String(current.textIndex));
       setCorrectCount(c => c + 1);
       setFeedback('correct');
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(advance, 160);
+      timerRef.current = setTimeout(advance, 150);
     } else {
+      // 打错立即进位（模仿打字练习工具）：不阻断打字节奏，错误只留红痕 + 提示
       setWrongCount(c => c + 1);
       setWrongSet(prev => new Set(prev).add(cursor));
-      setFeedback('wrong');
-      setInputCode('');
-      if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(() => setFeedback(null), 600);
+      setWrongFlash(current.char);
+      advance();
+      timerRef.current = setTimeout(() => setWrongFlash(null), 1200);
     }
   }, [current, cursor, recordChar, markSeen, advance]);
 
@@ -226,7 +227,7 @@ export default function ArticlePracticePage() {
                   文章<span className="text-gradient-primary">练习</span>
                 </h1>
                 <p className="text-muted-foreground max-w-lg mx-auto">
-                  照着文章逐字打编码，满 4 键自动上屏、不足 4 键按空格（标点自动跳过）
+                  照着文章逐字打编码：满 4 键自动上屏、不足 4 键按空格；标点自动跳过，打错也会继续往下打（错字标红留痕）
                 </p>
               </header>
 
@@ -250,8 +251,7 @@ export default function ArticlePracticePage() {
                     seen={roundSeen}
                     total={itemCount}
                     accuracy={accuracy}
-                    totalPoints={totalPoints}
-                    className="mb-4"
+                      className="mb-4"
                   />
                   <ErrorItemsPanel
                     items={errorItems}
@@ -337,8 +337,7 @@ export default function ArticlePracticePage() {
                 seen={roundSeen}
                 total={itemCount}
                 accuracy={accuracy}
-                totalPoints={totalPoints}
-                extra={reviewMode ? (
+                  extra={reviewMode ? (
                   <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 font-medium">易错字练习</span>
                 ) : undefined}
               />
@@ -377,8 +376,7 @@ export default function ArticlePracticePage() {
                       ref={isCurrent ? currentSpanRef : undefined}
                       className={cn(
                         'rounded px-0.5 transition-colors',
-                        isCurrent && feedback !== 'wrong' && 'bg-primary/15 text-primary font-bold ring-2 ring-primary/40',
-                        isCurrent && feedback === 'wrong' && 'bg-red-100 dark:bg-red-950/50 text-red-600 dark:text-red-400 font-bold ring-2 ring-red-400',
+                        isCurrent && 'bg-primary/15 text-primary font-bold ring-2 ring-primary/40',
                         isDone && wasWrong && 'text-amber-600 dark:text-amber-400',
                         isDone && !wasWrong && 'text-emerald-600 dark:text-emerald-400',
                         !isCurrent && !isDone && 'text-foreground/70',
@@ -404,8 +402,7 @@ export default function ArticlePracticePage() {
                 return (
                   <div key={i} className={cn(
                     'w-11 h-11 sm:w-12 sm:h-12 rounded-xl border-2 flex items-center justify-center text-lg font-mono font-bold uppercase transition-all duration-150',
-                    ch && feedback === 'wrong' && 'border-red-500 bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400',
-                    ch && feedback !== 'wrong' && 'border-primary bg-primary/5',
+                    ch && 'border-primary bg-primary/5',
                     !ch && isCurrent && 'border-primary ring-2 ring-primary/40 bg-primary/[0.03]',
                     !ch && !isCurrent && 'border-border/60',
                   )}>
@@ -422,8 +419,10 @@ export default function ArticlePracticePage() {
                 上屏
               </div>
             )}
-            {feedback === 'wrong' && (
-              <div className="text-center text-xs text-red-600 dark:text-red-400 mb-2">打错了，重新打这个字</div>
+            {wrongFlash && (
+              <div className="text-center text-xs text-red-600 dark:text-red-400 mb-2">
+                「{wrongFlash}」打错了 · 已继续往下打（错字标红留痕）
+              </div>
             )}
 
             <PracticeKeyboard

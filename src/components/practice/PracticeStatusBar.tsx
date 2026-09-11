@@ -14,8 +14,6 @@ interface PracticeStatusBarProps {
   roundTotal: number;
   /** 本轮正确率（0~100） */
   accuracy: number;
-  /** 累计积分（答对一题 +1） */
-  totalPoints: number;
   /** 是否处于易错项练习 */
   reviewMode?: boolean;
   showHint: boolean;
@@ -33,7 +31,6 @@ export default function PracticeStatusBar({
   roundSeen,
   roundTotal,
   accuracy,
-  totalPoints,
   reviewMode,
   showHint,
   speedModeTimeLeft,
@@ -86,7 +83,6 @@ export default function PracticeStatusBar({
               seen={roundSeen}
               total={roundTotal}
               accuracy={accuracy}
-              totalPoints={totalPoints}
             />
           </div>
         </div>

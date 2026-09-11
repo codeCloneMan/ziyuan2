@@ -9,7 +9,7 @@ import { calcMasteredRootCount } from '@/lib/mastered-count';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { usePracticeRound } from '@/hooks/use-practice-round';
-import { useRootProgress, usePreferences, useProgressStore } from '@/store/progress-store';
+import { useRootProgress, usePreferences } from '@/store/progress-store';
 import { PracticeKeyboard, PracticeStatusBar, RootDisplayCard, RoundCompleteToast, ErrorItemsPanel, PracticeStatsLine } from '@/components/practice';
 import { Play, Sparkles, GraduationCap, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
 
@@ -68,8 +68,6 @@ export default function PracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
   const { progress, recordAnswer, reset: resetRootProgress } = useRootProgress();
   const { preferences, setPref } = usePreferences();
-  const { state: progressState } = useProgressStore();
-  const totalPoints = progressState.totalPoints;
   const practiceStyle: PracticeLevel = preferences.rootMode;
   const isBeginner = practiceStyle === 'beginner';
 
@@ -434,7 +432,6 @@ export default function PracticePage() {
                   seen={roundSeen}
                   total={totalRoots}
                   accuracy={accuracy}
-                  totalPoints={totalPoints}
                   className="mb-4"
                 />
                 <ErrorItemsPanel
@@ -553,7 +550,6 @@ export default function PracticePage() {
         roundSeen={roundSeen}
         roundTotal={activeRootIds.length}
         accuracy={accuracy}
-        totalPoints={totalPoints}
         reviewMode={reviewMode}
         showHint={showHint}
         isSpeedMode={!isBeginner}
