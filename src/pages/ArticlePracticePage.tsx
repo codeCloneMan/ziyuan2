@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCharCodeData } from '@/lib/data-loader';
@@ -21,8 +21,12 @@ import {
   Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText, Keyboard, Shuffle,
 } from 'lucide-react';
 
-/** 跟打器式固定窗口显示的行数（当前字固定在第 ARTICLE_ROWS-1 行） */
+/** 跟打器式固定窗口显示的行数（每行 = 原文一行 + 紧跟其下的跟打行，当前字固定在第 ARTICLE_ROWS-1 行） */
 const ARTICLE_ROWS = 4;
+
+/** 原文行/跟打行共用的行高倍数与字格高度（2 行 × 1.45em） */
+const ROW_LINE_HEIGHT = 1.45;
+const CELL_EM = `${ROW_LINE_HEIGHT * 2}em`;
 
 /** 未打过的字，下方跟打位留空但必须占位，否则行高会塌 */
 const NBSP = '\u00A0';
@@ -48,20 +52,10 @@ export default function ArticlePracticePage() {
   }, [charCodeIndex]);
 
   /**
-   * 这个编码当前打出来的是哪个字：
-   * 打完的码精确命中就返回该字；没打完（当前字正在敲）时取「以这段为前缀、且最短」的编码对应的字，
-   * 相当于输入法的首选候选。查不到返回 null。
+   * 这个编码当前打出来的是哪个字（打完的码精确命中）：用于把「打错时你打出的那个字」显示在跟打行，
+   * 查不到（这个码在码表里打不出字）返回 undefined。
    */
-  const previewCharFor = useCallback((code: string): string | null => {
-    if (!code) return null;
-    const exact = codeToChar.get(code);
-    if (exact) return exact;
-    let best: string | null = null;
-    for (const c of codeToChar.keys()) {
-      if (c.length > code.length && c.startsWith(code) && (best === null || c.length < best.length)) best = c;
-    }
-    return best ? (codeToChar.get(best) ?? null) : null;
-  }, [codeToChar]);
+  const charForCode = useCallback((code: string): string | undefined => codeToChar.get(code), [codeToChar]);
 
   // ============ 文章选择 / 自定义文本 ============
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_ARTICLES[0]?.id ?? 'common');
@@ -540,9 +534,9 @@ export default function ArticlePracticePage() {
                   // 标点 / 码表外的字：只占位、不参与跟打，下方跟打位留空
                   if (itemIdx === undefined) {
                     return (
-                      <span key={ti} data-cell className="inline-flex flex-col items-center text-muted-foreground/35" style={{ width: '1em', height: '2.2em' }}>
-                        <span style={{ fontSize: '1em', lineHeight: 1.45 }}>{ch}</span>
-                        <span style={{ fontSize: '0.42em', lineHeight: 1.35 }}>{NBSP}</span>
+                      <span key={ti} data-cell className="inline-flex flex-col items-start text-muted-foreground/35" style={{ width: '1em', height: CELL_EM }}>
+                        <span style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}>{ch}</span>
+                        <span style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}>{NBSP}</span>
                       </span>
                     );
                   }
@@ -550,25 +544,27 @@ export default function ArticlePracticePage() {
                     const isDone = itemIdx < cursor;
                     const wrongCode = wrongCodes[itemIdx];
 
-                    // 跟打位只放「字」：打对显示该字、打错显示你打出的那个字（码表里没有就红叉），
-                    // 正在敲时显示这个编码当前对应的字（输入法候选预览）。字母一律不进这一行。
-                    let bottom = NBSP;
+                    // 跟打行 = 一行正常大小的文字（和原文一样大）：
+                    //   打对 → 显示该字；打错 → 显示你打出的那个字（码表里没有就红叉，说明打不出字）；
+                    //   正在敲 → 像输入法那样把「正在输入的码」直接显示在这一行（带下划线），上屏后换成字。
+                    let bottom: ReactNode = NBSP;
                     let bottomCls = 'text-muted-foreground/30';
-                    let bottomEm = '0.44em';
                     if (isCurrent) {
                       if (feedback === 'correct') {
                         bottom = ch;
-                        bottomCls = 'text-muted-foreground/40';
+                        bottomCls = 'text-foreground/70';
                       } else if (inputCode) {
-                        const preview = previewCharFor(inputCode);
-                        if (preview) {
-                          bottom = preview;
-                          bottomCls = awaitingCommit ? 'text-amber-600 dark:text-amber-400' : 'text-primary/70';
-                        }
+                        bottom = inputCode.toUpperCase();
+                        bottomCls = awaitingCommit
+                          ? 'font-mono text-amber-600 dark:text-amber-400 underline underline-offset-4 decoration-amber-500/60'
+                          : 'font-mono text-primary underline underline-offset-4 decoration-primary/50';
+                      } else {
+                        // 输入位置光标（像文本里闪烁的光标）
+                        bottom = <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/70 animate-pulse" />;
                       }
                     } else if (isDone) {
                       if (wrongCode) {
-                        const produced = codeToChar.get(wrongCode);
+                        const produced = charForCode(wrongCode);
                         if (produced) {
                           bottom = produced;
                           bottomCls = 'text-red-500';
@@ -576,11 +572,10 @@ export default function ArticlePracticePage() {
                           // 这个码在码表里打不出字
                           bottom = '✕';
                           bottomCls = 'text-red-500 font-bold';
-                          bottomEm = '0.55em';
                         }
                       } else {
                         bottom = ch;
-                        bottomCls = 'text-muted-foreground/40';
+                        bottomCls = 'text-foreground/70';
                       }
                     }
 
@@ -589,24 +584,24 @@ export default function ArticlePracticePage() {
                       key={ti}
                       data-cell
                       ref={isCurrent ? currentCellRef : undefined}
-                      className="inline-flex flex-col items-center"
-                      style={{ width: '1em', height: '2.2em' }}
+                      className="inline-flex flex-col items-start"
+                      style={{ width: '1em', height: CELL_EM }}
                     >
                         <span
                           className={cn(
                             'rounded-[3px] transition-colors',
                             isCurrent && 'bg-foreground/[0.10] font-semibold',
                             isDone && wrongCode && 'text-red-600 dark:text-red-400',
-                            isDone && !wrongCode && 'text-muted-foreground/45',
+                            isDone && !wrongCode && 'text-muted-foreground/40',
                             !isCurrent && !isDone && 'text-foreground/85',
                           )}
-                          style={{ fontSize: '1em', lineHeight: 1.45 }}
+                          style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}
                         >
                           {ch}
                         </span>
                         <span
                           className={cn('whitespace-nowrap', bottomCls)}
-                          style={{ fontSize: bottomEm, lineHeight: 1.35 }}
+                          style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}
                         >
                           {bottom}
                         </span>
@@ -637,16 +632,11 @@ export default function ArticlePracticePage() {
                 {current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}
               </div>
             )}
-            {inputCode && !feedback && (
-              <div className="text-center text-xs text-muted-foreground mt-2">
-                正在敲 <span className="font-mono font-semibold text-foreground">{inputCode.toUpperCase()}</span>
-                {awaitingCommit && (
-                  <>
-                    {' '}· 按
-                    <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                    上屏
-                  </>
-                )}
+            {awaitingCommit && (
+              <div className="text-center text-xs font-medium text-amber-600 dark:text-amber-400 mt-2">
+                已打完整编码 · 按
+                <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
+                上屏
               </div>
             )}
             {wrongFlash && (
