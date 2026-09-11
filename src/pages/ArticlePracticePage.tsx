@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { useCharCodeData } from '@/lib/data-loader';
@@ -150,6 +150,7 @@ export default function ArticlePracticePage() {
   const startedAtRef = useRef(0);
   const currentCellRef = useRef<HTMLSpanElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
+  const candBoxRef = useRef<HTMLDivElement>(null);
 
   // ============ 输入法候选 ============
   // 码 → 字们（一个码可能对应多个字，与输入法的重码候选一致）
@@ -243,7 +244,7 @@ export default function ArticlePracticePage() {
 
   // 跟打器式固定窗口：面板高度 = 4 行，当前字固定在窗口内第 3 行，上下自动滚。
   // 行高与当前位置都用 getBoundingClientRect 的小数值量（offsetHeight/offsetTop 取整会累积出 1~2px 行缝）。
-  useEffect(() => {
+  useLayoutEffect(() => {
     const board = boardRef.current;
     if (!board) return;
     const cell = (currentCellRef.current ?? board.querySelector('[data-cell]')) as HTMLElement | null;
@@ -257,6 +258,36 @@ export default function ArticlePracticePage() {
       board.scrollTop = Math.max(0, curTop - lineH * (ARTICLE_ROWS - 2));
     }
   }, [cursor, isPlaying, items]);
+
+  /**
+   * 输入法候选窗跟随光标：锚在当前字「正在敲的码」左下方（下方放不下就翻到上方，
+   * 右侧超界就整体左移）。用 position: fixed + 直接改 style，避免 setState-in-effect，
+   * 同时不受正文窗口 overflow-hidden 裁切。
+   */
+  useLayoutEffect(() => {
+    const box = candBoxRef.current;
+    const cell = currentCellRef.current;
+    if (!box || !cell) return;
+    const place = () => {
+      const r = cell.getBoundingClientRect();
+      const w = box.offsetWidth;
+      const h = box.offsetHeight;
+      const margin = 8;
+      let left = r.left;
+      if (left + w > window.innerWidth - margin) left = window.innerWidth - margin - w;
+      left = Math.max(margin, left);
+      let top = r.bottom + 4;
+      if (top + h > window.innerHeight - margin) {
+        top = r.top - h - 4;
+        if (top < margin) top = Math.min(window.innerHeight - margin - h, r.bottom + 4);
+      }
+      box.style.left = `${Math.round(left)}px`;
+      box.style.top = `${Math.round(top)}px`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [inputCode, candidates, cursor, isPlaying]);
 
   const advance = useCallback(() => {
     const next = cursor + 1;
@@ -695,27 +726,28 @@ export default function ArticlePracticePage() {
               </div>
             </div>
 
-            {/* 输入法候选框：打字过程中列出可选的「字」，可点选或用数字键 1-9 */}
+            {/* 输入法候选窗：跟随「正在敲的码」浮动在字下方（fixed 定位，见上面的 useLayoutEffect） */}
             {isPlaying && !feedback && inputCode && candidates.length > 0 && (
-              <div className="mt-2 rounded-xl border border-primary/20 bg-primary/[0.03] px-3 py-2">
-                <div className="flex flex-wrap items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground mr-1 shrink-0">候选</span>
-                  {candidates.map((c, i) => (
-                    <button
-                      key={c}
-                      onClick={() => pickCandidate(c)}
-                      className={cn(
-                        'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-lg sm:text-xl transition-colors',
-                        i === 0
-                          ? 'bg-primary/10 text-primary font-semibold'
-                          : 'text-foreground/85 hover:bg-muted',
-                      )}
-                    >
-                      <span className="text-[10px] font-mono text-muted-foreground">{i + 1}</span>
-                      {c}
-                    </button>
-                  ))}
-                </div>
+              <div
+                ref={candBoxRef}
+                className="fixed z-40 flex flex-wrap items-center gap-0.5 max-w-[min(92vw,640px)] rounded-lg border border-primary/30 bg-card/98 px-2 py-1 shadow-lg shadow-black/10 backdrop-blur"
+                style={{ left: -9999, top: -9999 }}
+              >
+                {candidates.map((c, i) => (
+                  <button
+                    key={c}
+                    onMouseDown={(e) => { e.preventDefault(); pickCandidate(c); }}
+                    className={cn(
+                      'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-lg sm:text-xl transition-colors',
+                      i === 0
+                        ? 'bg-primary/10 text-primary font-semibold'
+                        : 'text-foreground/85 hover:bg-muted',
+                    )}
+                  >
+                    <span className="text-[10px] font-mono text-muted-foreground">{i + 1}</span>
+                    {c}
+                  </button>
+                ))}
               </div>
             )}
 
