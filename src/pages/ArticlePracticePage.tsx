@@ -13,9 +13,12 @@ import {
 import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useArticleProgress } from '@/store/progress-store';
-import { DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY } from '@/data/articles';
 import {
-  Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText, Keyboard,
+  DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY, COMMON500_ARTICLE_ID, ARTICLE_SHUFFLE_KEY,
+  shuffledCommon500Text,
+} from '@/data/articles';
+import {
+  Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText, Keyboard, Shuffle,
 } from 'lucide-react';
 
 /** 跟打器式固定窗口显示的行数（当前字固定在第 ARTICLE_ROWS-1 行） */
@@ -31,7 +34,34 @@ export default function ArticlePracticePage() {
     () => (charCodeData ? buildFullCodeIndex(charCodeData) : new Map<string, FullCodeInfo>()),
     [charCodeData],
   );
-  const { progress: articleProgress, recordChar } = useArticleProgress();
+  const { progress: articleProgress, recordChar, retractChar } = useArticleProgress();
+
+  // 编码 → 字 反查（同码多字时保留先出现的那个）：用于「字下方显示字」与打字中的候选预览
+  const codeToChar = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const [ch, info] of charCodeIndex) {
+      for (const code of info.accepted) {
+        if (!m.has(code)) m.set(code, ch);
+      }
+    }
+    return m;
+  }, [charCodeIndex]);
+
+  /**
+   * 这个编码当前打出来的是哪个字：
+   * 打完的码精确命中就返回该字；没打完（当前字正在敲）时取「以这段为前缀、且最短」的编码对应的字，
+   * 相当于输入法的首选候选。查不到返回 null。
+   */
+  const previewCharFor = useCallback((code: string): string | null => {
+    if (!code) return null;
+    const exact = codeToChar.get(code);
+    if (exact) return exact;
+    let best: string | null = null;
+    for (const c of codeToChar.keys()) {
+      if (c.length > code.length && c.startsWith(code) && (best === null || c.length < best.length)) best = c;
+    }
+    return best ? (codeToChar.get(best) ?? null) : null;
+  }, [codeToChar]);
 
   // ============ 文章选择 / 自定义文本 ============
   const [selectedId, setSelectedId] = useState<string>(DEFAULT_ARTICLES[0]?.id ?? 'common');
@@ -53,6 +83,13 @@ export default function ArticlePracticePage() {
   }, []);
 
   const [reviewMode, setReviewMode] = useState(false);
+
+  // 常用字 500 的乱序开关：开启后每次开始练习重新打乱（本机记忆）
+  const [shuffleOn, setShuffleOn] = useState<boolean>(() => {
+    try { return localStorage.getItem(ARTICLE_SHUFFLE_KEY) === '1'; } catch { return false; }
+  });
+  const [shuffledText, setShuffledText] = useState('');
+
   // 易错字练习：聚合错次取前 20 个字
   const reviewChars = useMemo(
     () => Object.entries(articleProgress.wrongCountMap)
@@ -70,9 +107,30 @@ export default function ArticlePracticePage() {
   );
 
   const selectedArticle = DEFAULT_ARTICLES.find(a => a.id === selectedId);
-  const baseText = selectedId === 'custom' ? customText : (selectedArticle?.text ?? '');
+  const isCommon500 = selectedId === COMMON500_ARTICLE_ID;
+  const canShuffle = !!selectedArticle?.shufflable;
+  const baseText = selectedId === 'custom'
+    ? customText
+    : (isCommon500 && shuffleOn ? (shuffledText || selectedArticle?.text || '') : (selectedArticle?.text ?? ''));
   const activeText = reviewMode ? reviewChars.join('') : baseText;
-  const sourceLabel = reviewMode ? '易错字练习' : (selectedId === 'custom' ? '自定义文本' : (selectedArticle?.title ?? ''));
+  const sourceLabel = reviewMode
+    ? '易错字练习'
+    : (selectedId === 'custom' ? '自定义文本' : (selectedArticle?.title ?? ''));
+  const shuffleActive = isCommon500 && shuffleOn && !reviewMode;
+
+  /** 开/关乱序：开启时立刻打乱一次，并本机记住 */
+  const toggleShuffle = useCallback(() => {
+    setShuffleOn(prev => {
+      const next = !prev;
+      try {
+        if (next) localStorage.setItem(ARTICLE_SHUFFLE_KEY, '1');
+        else localStorage.removeItem(ARTICLE_SHUFFLE_KEY);
+      } catch { /* 隐私模式忽略 */ }
+      if (next) setShuffledText(shuffledCommon500Text());
+      else setShuffledText('');
+      return next;
+    });
+  }, []);
 
   // ============ 题目序列 ============
   const items = useMemo(
@@ -99,6 +157,8 @@ export default function ArticlePracticePage() {
   const [wrongCodes, setWrongCodes] = useState<Record<number, string>>({});
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
+  /** 回改次数：退回去重打的次数（跟打器口径） */
+  const [undoCount, setUndoCount] = useState(0);
   const [showHint, setShowHint] = useState(false);
   const [roundToast, setRoundToast] = useState<number | null>(null);
   // 打字工具口径：击键数（含上屏空格）与用时，用于算速度 / 击键 / 码长
@@ -164,6 +224,7 @@ export default function ArticlePracticePage() {
       setRoundToast(completedRounds + 1);
       resetRound();
       setWrongCodes({});
+      setUndoCount(0);
       setCorrectCount(0);
       setWrongCount(0);
       setKeyStrokes(0);
@@ -217,10 +278,33 @@ export default function ArticlePracticePage() {
     return true;
   }, [isPlaying, current, inputCode, feedback, judge]);
 
+  /**
+   * 退格：有正在敲的码先删码；码删空后可以「回退」到上一个打错的字重打。
+   * 回退只能退到打错的字（打对的字不允许回退，避免把答对的记录回滚掉），
+   * 回退时撤销那次错误记录与积分——按最终结果算，同时记一次「回改」。
+   */
   const handleBackspace = useCallback(() => {
     if (!isPlaying || feedback === 'correct') return;
-    setInputCode(prev => prev.slice(0, -1));
-  }, [isPlaying, feedback]);
+    if (inputCode) {
+      setInputCode(prev => prev.slice(0, -1));
+      return;
+    }
+    const prevIdx = cursor - 1;
+    const item = items[prevIdx];
+    if (!item || !wrongCodes[prevIdx]) return;
+    retractChar(item.char, false);
+    setWrongCodes(prev => {
+      const next = { ...prev };
+      delete next[prevIdx];
+      return next;
+    });
+    setWrongCount(c => Math.max(0, c - 1));
+    setUndoCount(c => c + 1);
+    setWrongFlash(null);
+    setCursor(prevIdx);
+    setInputCode('');
+    setFeedback(null);
+  }, [isPlaying, feedback, inputCode, cursor, items, wrongCodes, retractChar]);
 
   // 物理键盘
   useEffect(() => {
@@ -238,8 +322,10 @@ export default function ArticlePracticePage() {
   }, [isPlaying, handleKeyPress, handleSpaceCommit, handleBackspace]);
 
   const startPractice = useCallback((text?: string) => {
-    const t = text ?? activeText;
+    // 乱序开启时，每次开始练习都重新打乱一次
+    const t = text ?? (shuffleActive ? shuffledCommon500Text() : activeText);
     if (!t.trim() || !charCodeData) return;
+    if (shuffleActive) setShuffledText(t);
     if (timerRef.current) clearTimeout(timerRef.current);
     setCursor(0);
     setInputCode('');
@@ -247,6 +333,7 @@ export default function ArticlePracticePage() {
     setWrongCodes({});
     setCorrectCount(0);
     setWrongCount(0);
+    setUndoCount(0);
     setKeyStrokes(0);
     startedAtRef.current = Date.now();
     setElapsedMs(0);
@@ -254,7 +341,7 @@ export default function ArticlePracticePage() {
     setIsPlaying(true);
     // 开始页内容比练习区高，浏览器滚动锚定会把窗口带偏、把顶部统计行顶到导航栏后面
     window.scrollTo({ top: 0 });
-  }, [activeText, charCodeData, resetRound]);
+  }, [activeText, charCodeData, resetRound, shuffleActive]);
 
   if (dataLoading || !charCodeData) {
     return (
@@ -301,6 +388,7 @@ export default function ArticlePracticePage() {
                   </div>
                   <p className="text-center text-xs text-muted-foreground/70 mb-4">
                     当前文章：{sourceLabel} · 可练 {itemCount} 字 · 已完成 {completedRounds} 轮
+                    {shuffleActive && <span className="ml-1 text-primary">· 乱序</span>}
                   </p>
                   <PracticeStatsLine
                     roundNo={completedRounds + 1}
@@ -347,6 +435,21 @@ export default function ArticlePracticePage() {
                       </div>
                     </button>
                   </div>
+
+                  {/* 常用字 500 的乱序开关（只有支持乱序的文章才显示） */}
+                  {canShuffle && !reviewMode && (
+                    <button
+                      onClick={toggleShuffle}
+                      className={cn('w-full flex items-center gap-2 p-2.5 mb-3 rounded-xl border text-left text-xs transition-colors',
+                        shuffleOn
+                          ? 'border-primary/40 bg-primary/[0.06] text-primary'
+                          : 'border-border/50 text-muted-foreground hover:border-primary/25')}
+                    >
+                      <Shuffle className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-medium">乱序练习</span>
+                      <span className="ml-auto text-[11px] opacity-80">{shuffleOn ? '已开 · 每次开始重新打乱' : '已关 · 按字频序'}</span>
+                    </button>
+                  )}
 
                   <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-3"
                     onClick={() => setShowEditor(v => !v)}>
@@ -434,40 +537,47 @@ export default function ArticlePracticePage() {
                     // 段落换行：撑满一行的占位块强制换行，自身不占高度
                     if (ch === '\n') return <span key={ti} className="basis-full h-0" />;
                     const itemIdx = itemIndexByTextIndex.get(ti);
-                    // 标点 / 码表外的字：只占位、不参与跟打，下方跟打位留空
-                    if (itemIdx === undefined) {
-                      return (
-                        <span key={ti} data-cell className="inline-flex flex-col items-center text-muted-foreground/35" style={{ width: '1em' }}>
-                          <span style={{ fontSize: '1em', lineHeight: 1.45 }}>{ch}</span>
-                          <span style={{ fontSize: '0.42em', lineHeight: 1.35 }}>{NBSP}</span>
-                        </span>
-                      );
-                    }
+                  // 标点 / 码表外的字：只占位、不参与跟打，下方跟打位留空
+                  if (itemIdx === undefined) {
+                    return (
+                      <span key={ti} data-cell className="inline-flex flex-col items-center text-muted-foreground/35" style={{ width: '1em', height: '2.2em' }}>
+                        <span style={{ fontSize: '1em', lineHeight: 1.45 }}>{ch}</span>
+                        <span style={{ fontSize: '0.42em', lineHeight: 1.35 }}>{NBSP}</span>
+                      </span>
+                    );
+                  }
                     const isCurrent = itemIdx === cursor;
                     const isDone = itemIdx < cursor;
                     const wrongCode = wrongCodes[itemIdx];
 
-                    // 跟打位：当前字显示正在敲的码（上屏后换成结果）；打错的字红色常显错码
+                    // 跟打位只放「字」：打对显示该字、打错显示你打出的那个字（码表里没有就红叉），
+                    // 正在敲时显示这个编码当前对应的字（输入法候选预览）。字母一律不进这一行。
                     let bottom = NBSP;
                     let bottomCls = 'text-muted-foreground/30';
-                    // 码是纯 ASCII 字母，字号要比汉字回显再小一号，否则 4 键错码会顶到相邻字
-                    let isCodeRow = false;
+                    let bottomEm = '0.44em';
                     if (isCurrent) {
                       if (feedback === 'correct') {
                         bottom = ch;
                         bottomCls = 'text-muted-foreground/40';
                       } else if (inputCode) {
-                        bottom = inputCode.toUpperCase();
-                        isCodeRow = true;
-                        bottomCls = awaitingCommit
-                          ? 'text-amber-600 dark:text-amber-400 font-mono'
-                          : 'text-primary/60 font-mono';
+                        const preview = previewCharFor(inputCode);
+                        if (preview) {
+                          bottom = preview;
+                          bottomCls = awaitingCommit ? 'text-amber-600 dark:text-amber-400' : 'text-primary/70';
+                        }
                       }
                     } else if (isDone) {
                       if (wrongCode) {
-                        bottom = wrongCode.toUpperCase();
-                        isCodeRow = true;
-                        bottomCls = 'text-red-500 font-mono';
+                        const produced = codeToChar.get(wrongCode);
+                        if (produced) {
+                          bottom = produced;
+                          bottomCls = 'text-red-500';
+                        } else {
+                          // 这个码在码表里打不出字
+                          bottom = '✕';
+                          bottomCls = 'text-red-500 font-bold';
+                          bottomEm = '0.55em';
+                        }
                       } else {
                         bottom = ch;
                         bottomCls = 'text-muted-foreground/40';
@@ -475,13 +585,13 @@ export default function ArticlePracticePage() {
                     }
 
                     return (
-                      <span
-                        key={ti}
-                        data-cell
-                        ref={isCurrent ? currentCellRef : undefined}
-                        className="inline-flex flex-col items-center"
-                        style={{ width: '1em' }}
-                      >
+                    <span
+                      key={ti}
+                      data-cell
+                      ref={isCurrent ? currentCellRef : undefined}
+                      className="inline-flex flex-col items-center"
+                      style={{ width: '1em', height: '2.2em' }}
+                    >
                         <span
                           className={cn(
                             'rounded-[3px] transition-colors',
@@ -496,7 +606,7 @@ export default function ArticlePracticePage() {
                         </span>
                         <span
                           className={cn('whitespace-nowrap', bottomCls)}
-                          style={{ fontSize: isCodeRow ? '0.36em' : '0.42em', lineHeight: 1.35 }}
+                          style={{ fontSize: bottomEm, lineHeight: 1.35 }}
                         >
                           {bottom}
                         </span>
@@ -516,6 +626,8 @@ export default function ArticlePracticePage() {
                 </button>
                 <span className="ml-auto truncate font-mono-stat">
                   第 {completedRounds + 1} 段 · {sourceLabel} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
+                  {undoCount > 0 && <span className="text-primary"> · 回改 {undoCount}</span>}
+                  {shuffleActive && <span className="text-primary"> · 乱序</span>}
                 </span>
               </div>
             </div>
@@ -525,24 +637,42 @@ export default function ArticlePracticePage() {
                 {current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}
               </div>
             )}
-            {awaitingCommit && (
-              <div className="text-center text-xs font-medium text-amber-600 dark:text-amber-400 mt-2">
-                已打完整编码 · 按
-                <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
-                上屏
+            {inputCode && !feedback && (
+              <div className="text-center text-xs text-muted-foreground mt-2">
+                正在敲 <span className="font-mono font-semibold text-foreground">{inputCode.toUpperCase()}</span>
+                {awaitingCommit && (
+                  <>
+                    {' '}· 按
+                    <kbd className="mx-0.5 px-1.5 py-0.5 rounded bg-amber-500/10 border border-amber-500/30 font-mono text-[10px]">空格</kbd>
+                    上屏
+                  </>
+                )}
               </div>
             )}
             {wrongFlash && (
               <div className="text-center text-xs text-red-600 dark:text-red-400 mt-2">
-                「{wrongFlash}」打错了 · 已继续往下打（该字下方红色留痕）
+                「{wrongFlash}」打错了 · 可退格回退改掉（也可继续往下打）
               </div>
             )}
+            <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
+              退格：先删正在敲的码，删空后再按可回退到上一个打错的字重打
+            </div>
 
             <div className="flex items-center justify-center gap-2 mt-4">
               <Button variant="outline" size="sm" className="gap-1.5 text-xs"
                 onClick={() => startPractice()}>
                 <RotateCcw className="h-3.5 w-3.5" />从头再来
               </Button>
+              {canShuffle && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn('gap-1.5 text-xs', shuffleOn && 'border-primary/50 text-primary')}
+                  onClick={() => { toggleShuffle(); startPractice(); }}
+                >
+                  <Shuffle className="h-3.5 w-3.5" />乱序：{shuffleOn ? '开' : '关'}
+                </Button>
+              )}
               <Button variant="outline" size="sm" className="gap-1.5 text-xs"
                 onClick={() => {
                   setShowKeyboard(v => {

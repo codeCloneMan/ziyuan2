@@ -359,6 +359,7 @@ export type ProgressAction =
   | { type: 'PHRASE_ANSWER'; isCorrect: boolean; phrase?: string }
   | { type: 'PHRASE_SET_MODE'; mode: string }
   | { type: 'ARTICLE_ANSWER'; char: string; isCorrect: boolean }
+  | { type: 'ARTICLE_RETRACT'; char: string; isCorrect: boolean }
   | { type: 'SPACED_RECORD'; poolKey: string; itemId: string; isCorrect: boolean; allItemIds: string[] }
   | { type: 'SPACED_RESET'; poolKey: string; allItemIds: string[] }
   | { type: 'ROUND_COMPLETE'; poolKey: string }
@@ -483,6 +484,45 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
         article,
         totalPoints: Math.max(0, state.totalPoints + points),
         dailyStats: updateDailyStats(state.dailyStats, action.isCorrect, points),
+      };
+    }
+
+    case 'ARTICLE_RETRACT': {
+      // 文章练习的回退改错：撤销上一次 ARTICLE_ANSWER 的记录与积分，按最终结果算
+      const article = { ...state.article };
+      article.totalAttempts = Math.max(0, article.totalAttempts - 1);
+      if (action.isCorrect) {
+        article.totalCorrect = Math.max(0, article.totalCorrect - 1);
+        const next = { ...article.correctCountMap };
+        const n = (next[action.char] ?? 0) - 1;
+        if (n > 0) next[action.char] = n;
+        else delete next[action.char];
+        article.correctCountMap = next;
+      } else {
+        const next = { ...article.wrongCountMap };
+        const n = (next[action.char] ?? 0) - 1;
+        if (n > 0) next[action.char] = n;
+        else delete next[action.char];
+        article.wrongCountMap = next;
+      }
+      const points = calcAnswerPoints(action.isCorrect);
+      const today = getTodayKey();
+      const day = state.dailyStats[today];
+      const dailyStats = day
+        ? {
+            ...state.dailyStats,
+            [today]: {
+              attempts: Math.max(0, day.attempts - 1),
+              correct: Math.max(0, day.correct - (action.isCorrect ? 1 : 0)),
+              score: Math.max(0, day.score - points),
+            },
+          }
+        : state.dailyStats;
+      return {
+        ...state,
+        article,
+        totalPoints: Math.max(0, state.totalPoints - points),
+        dailyStats,
       };
     }
 
@@ -939,7 +979,12 @@ export function useArticleProgress() {
     (char: string, isCorrect: boolean) => dispatch({ type: 'ARTICLE_ANSWER', char, isCorrect }),
     [dispatch],
   );
-  return { progress: state.article, recordChar };
+  // 回退改错：撤销上一次记录（文章练习的退格回退用）
+  const retractChar = useCallback(
+    (char: string, isCorrect: boolean) => dispatch({ type: 'ARTICLE_RETRACT', char, isCorrect }),
+    [dispatch],
+  );
+  return { progress: state.article, recordChar, retractChar };
 }
 
 export function useSpacedPool(poolKey: string, allItemIds: string[]) {

@@ -120,3 +120,52 @@ describe('统计精简后的积分与清洗', () => {
     expect(imported.preferences.phraseWordLen).toBe('all');
   });
 });
+
+/**
+ * 文章练习的「退格回退改错」：回退时撤销上一次记录，按最终结果算。
+ */
+describe('文章练习回退（ARTICLE_RETRACT）', () => {
+  it('撤销一次答错：错次、总数、当日统计一起回滚，积分不变（答错本来 0 分）', async () => {
+    const { reducer } = await import('./progress-store');
+    const base = createDefaultState();
+    const wrong = reducer(base, { type: 'ARTICLE_ANSWER', char: '克', isCorrect: false });
+    expect(wrong.article.wrongCountMap['克']).toBe(1);
+    expect(wrong.article.totalAttempts).toBe(1);
+    expect(wrong.totalPoints).toBe(0);
+    const today = Object.keys(wrong.dailyStats)[0];
+    expect(wrong.dailyStats[today].attempts).toBe(1);
+
+    const undone = reducer(wrong, { type: 'ARTICLE_RETRACT', char: '克', isCorrect: false });
+    expect(undone.article.wrongCountMap['克']).toBeUndefined();
+    expect(undone.article.totalAttempts).toBe(0);
+    expect(undone.totalPoints).toBe(0);
+    expect(undone.dailyStats[today].attempts).toBe(0);
+  });
+
+  it('撤销一次答对：正确数、单字计数与积分一并回滚', async () => {
+    const { reducer } = await import('./progress-store');
+    const base = createDefaultState();
+    const right = reducer(base, { type: 'ARTICLE_ANSWER', char: '马', isCorrect: true });
+    expect(right.totalPoints).toBe(1);
+    expect(right.article.correctCountMap['马']).toBe(1);
+
+    const undone = reducer(right, { type: 'ARTICLE_RETRACT', char: '马', isCorrect: true });
+    expect(undone.article.totalCorrect).toBe(0);
+    expect(undone.article.correctCountMap['马']).toBeUndefined();
+    expect(undone.totalPoints).toBe(0);
+  });
+
+  it('同一字多次答错，回退一次只减一次；减到 0 后不会出现负数', async () => {
+    const { reducer } = await import('./progress-store');
+    let s = createDefaultState();
+    s = reducer(s, { type: 'ARTICLE_ANSWER', char: '的', isCorrect: false });
+    s = reducer(s, { type: 'ARTICLE_ANSWER', char: '的', isCorrect: false });
+    s = reducer(s, { type: 'ARTICLE_RETRACT', char: '的', isCorrect: false });
+    expect(s.article.wrongCountMap['的']).toBe(1);
+    s = reducer(s, { type: 'ARTICLE_RETRACT', char: '的', isCorrect: false });
+    s = reducer(s, { type: 'ARTICLE_RETRACT', char: '的', isCorrect: false });
+    expect(s.article.wrongCountMap['的']).toBeUndefined();
+    expect(s.article.totalAttempts).toBe(0);
+    expect(s.totalPoints).toBe(0);
+  });
+});

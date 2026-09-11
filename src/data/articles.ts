@@ -8,15 +8,53 @@
  *   （对照 https://github.com/weiyinfu/MaoZeDongAnthology/blob/master/src/017-矛盾论.md）
  * - 朱自清《春》：部编版七年级上册课文文本（选自《朱自清全集》第四卷，江苏教育出版社1996年版，略有改动）
  * - 常用字练习文段：自撰，用字均在官方码表内，作为入门热身
+ * - 常用字 500：前 500 常用字（字频序），支持乱序，字序与整字/词组练习的 500 池一致
  *
  * 页面里也可以粘贴自定义文本（保存在本机浏览器），标点与码表缺字会自动跳过。
  */
+
+import { practiceChars500 } from './practice-pools.generated';
 
 export interface PracticeArticle {
   id: string;
   title: string;
   source?: string;
   text: string;
+  /** 是否支持「乱序」练习（练习页据此显示乱序开关） */
+  shufflable?: boolean;
+}
+
+/** 前 500 常用字文章的 id（可乱序） */
+export const COMMON500_ARTICLE_ID = 'common500';
+
+/**
+ * 前 500 常用字练习文章：字序取自附件字频表（与整字/词组练习同一个 500 池），
+ * 每行 20 字排版；乱序开关打开时，练习页在每次开始练习前重新打乱。
+ */
+function buildCommon500Text(order: readonly string[] = practiceChars500): string {
+  const lines: string[] = [];
+  for (let i = 0; i < order.length; i += 20) {
+    lines.push(order.slice(i, i + 20).join(''));
+  }
+  return lines.join('\n');
+}
+
+export const COMMON500_ARTICLE: PracticeArticle = {
+  id: COMMON500_ARTICLE_ID,
+  title: '常用字 500',
+  source: '前 500 常用字字频序 · 支持乱序',
+  text: buildCommon500Text(),
+  shufflable: true,
+};
+
+/** 打乱后的常用字 500 文章（每次开始练习重新打乱，避免背顺序） */
+export function shuffledCommon500Text(): string {
+  const arr = [...practiceChars500];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return buildCommon500Text(arr);
 }
 
 export const DEFAULT_ARTICLES: readonly PracticeArticle[] = [
@@ -67,7 +105,11 @@ export const DEFAULT_ARTICLES: readonly PracticeArticle[] = [
 
 开始的时候，可以慢一点，把每个字看清楚，把每一步做对。等熟练了，再慢慢加快。快是练出来的结果，不是一开始就能做到的事。如果一开始只想着快，反而容易做错；做错了还要回头改，那就更慢了。所以，先把对放在前面，快自然会来。`,
   },
+  COMMON500_ARTICLE,
 ];
 
 /** 自定义文章在本机浏览器里的存储键 */
 export const CUSTOM_ARTICLE_KEY = 'ziyuan-article-custom-v1';
+
+/** 「常用字 500」乱序开关的本机存储键 */
+export const ARTICLE_SHUFFLE_KEY = 'ziyuan-article-shuffle-v1';
