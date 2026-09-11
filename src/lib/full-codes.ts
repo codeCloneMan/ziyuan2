@@ -45,6 +45,18 @@ export function buildFullCodeIndex(data: readonly CharCodeLike[]): Map<string, F
 }
 
 /**
+ * 该字最短编码的键数（0 = 无编码）。
+ * 整字练习的"码长档"按它互斥归类：一个字只属于它最短码长的那一档
+ * （于是 1 简出现后不会在 2/3/4 档再出现，依此类推）。
+ */
+export function shortestCodeLength(info: FullCodeInfo | undefined): number {
+  if (!info || info.accepted.length === 0) return 0;
+  let min = Infinity;
+  for (const c of info.accepted) if (c.length < min) min = c.length;
+  return min === Infinity ? 0 : min;
+}
+
+/**
  * 该字的全部"全码"（最长码，可能多个等长）。
  * 词组取码只能基于全码（简码长度不够，取不出 4 码），所以词组判定用这个子集。
  */

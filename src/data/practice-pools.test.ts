@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { buildFullCodeIndex } from '@/lib/full-codes';
 import { getPhraseCodeInfo } from '@/lib/phrase-codes';
+import { shortestCodeLength } from '@/lib/full-codes';
 import {
   practiceChars500,
   practiceChars5000,
@@ -61,5 +62,37 @@ describe('练习题库（附件字频/词频前 N，官方码表校验）', () =
   it('无法按官方码优先取码（不是最长码截断的 hmcb）', () => {
     expect(practicePhrases5000).toContain('无法');
     expect(getPhraseCodeInfo('无法', index)?.accepted).toEqual(['hwcb']);
+  });
+});
+
+describe('词长档与码长互斥归类', () => {
+  it('词池按词长可分档（2 字词 / 4 字词）', () => {
+    const two = practicePhrases5000.filter(w => w.length === 2).length;
+    const four = practicePhrases5000.filter(w => w.length === 4).length;
+    expect(two).toBe(4654);
+    expect(four).toBe(346);
+    expect(practicePhrases500.filter(w => w.length === 2).length).toBe(497);
+    expect(practicePhrases500.filter(w => w.length === 4).length).toBe(3);
+  });
+
+  it('码长档按「最短码长」互斥归类：1/2/3/4 档之和 = 全部池', () => {
+    const cls = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    for (const ch of practiceChars5000) {
+      const n = shortestCodeLength(index.get(ch));
+      expect(n).toBeGreaterThanOrEqual(1);
+      cls[n as 1 | 2 | 3 | 4]++;
+    }
+    expect(cls[1] + cls[2] + cls[3] + cls[4]).toBe(practiceChars5000.length);
+    expect(cls[1]).toBe(26);   // 一级简码字
+    expect(cls[2]).toBe(646);
+    expect(cls[4]).toBe(964);
+  });
+
+  it('最短码长工具：的=1、两=2、乐=3、单 4 码字=4', () => {
+    expect(shortestCodeLength(index.get('的'))).toBe(1);   // k / kav
+    expect(shortestCodeLength(index.get('两'))).toBe(2);   // wl / wli
+    expect(shortestCodeLength(index.get('乐'))).toBe(3);   // uil / uiyu
+    expect(shortestCodeLength(index.get('揽'))).toBe(4);   // djth
+    expect(shortestCodeLength(undefined)).toBe(0);
   });
 });

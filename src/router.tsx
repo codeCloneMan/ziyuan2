@@ -121,6 +121,7 @@ const HomePage = lazyPage(() => import('@/pages/HomePage'));
 const PracticePage = lazyPage(() => import('@/pages/PracticePage'));
 const WholeCharPracticePage = lazyPage(() => import('@/pages/WholeCharPracticePage'));
 const PhrasePracticePage = lazyPage(() => import('@/pages/PhrasePracticePage'));
+const ArticlePracticePage = lazyPage(() => import('@/pages/ArticlePracticePage'));
 const TablePage = lazyPage(() => import('@/pages/TablePage'));
 const ChartPage = lazyPage(() => import('@/pages/ChartPage'));
 const FAQPage = lazyPage(() => import('@/pages/FAQPage'));
@@ -138,6 +139,7 @@ const routes: RouteObject[] = [
       { path: 'practice', element: lazyElement(PracticePage) },
       { path: 'whole-char', element: lazyElement(WholeCharPracticePage) },
       { path: 'phrase', element: lazyElement(PhrasePracticePage) },
+      { path: 'article', element: lazyElement(ArticlePracticePage) },
       { path: 'table', element: lazyElement(TablePage) },
       { path: 'chart', element: lazyElement(ChartPage) },
       { path: 'faq', element: lazyElement(FAQPage) },

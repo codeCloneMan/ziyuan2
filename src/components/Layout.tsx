@@ -22,6 +22,7 @@ const navItems = [
   { path: '/practice', label: '字根练习', icon: Keyboard },
   { path: '/whole-char', label: '整字练习', icon: PenTool },
   { path: '/phrase', label: '词组练习', icon: TextQuote },
+  { path: '/article', label: '文章练习', icon: BookOpen },
 ];
 
 const toolItems = [
@@ -630,6 +631,7 @@ export default function Layout() {
                   { label: '首页', path: '/' },
                   { label: '字根练习', path: '/practice' },
                   { label: '整字练习', path: '/whole-char' },
+                  { label: '文章练习', path: '/article' },
                   { label: '字根表', path: '/table' },
                 ].map(item => (
                   <li key={item.label}>

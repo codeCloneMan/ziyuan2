@@ -1,27 +1,23 @@
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { RotateCcw, Trophy, Flame, Timer, Eye, EyeOff } from 'lucide-react';
-import type { PracticeStats } from '@/types';
+import { RotateCcw, Timer, Eye, EyeOff } from 'lucide-react';
+import { PracticeStatsLine } from './PracticeStatsLine';
 
 interface PracticeStatusBarProps {
   modeLabel: string;
-  stageModeLabel: string;
-  stats: PracticeStats;
+  stageModeLabel?: string;
+  /** 当前第几轮（已完成轮数 + 1） */
+  roundNo: number;
+  /** 本轮已答题数 */
+  roundSeen: number;
+  /** 本轮题目总数 */
+  roundTotal: number;
+  /** 本轮正确率（0~100） */
   accuracy: number;
-  masteredCount: number;
-  practicedCount?: number;
-  totalRootsCount: number;
-  todayAttempts: number;
-  /** 累计答题数（跨轮次、跨天累计，让第二轮的练习也有可见进度） */
-  cumulativeAttempts?: number;
-  /** 累计正确率（0~100） */
-  cumulativeAccuracy?: number;
-  /** 已完成轮数（持久化记录：每答完池内所有题一轮 +1） */
-  completedRounds?: number;
-  /** 当前这一轮已答题数 */
-  roundSeen?: number;
-  /** 当前这一轮的题目总数 */
-  roundTotal?: number;
+  /** 累计积分（答对一题 +1） */
+  totalPoints: number;
+  /** 是否处于易错项练习 */
+  reviewMode?: boolean;
   showHint: boolean;
   speedModeTimeLeft?: number;
   isSpeedMode: boolean;
@@ -29,20 +25,16 @@ interface PracticeStatusBarProps {
   onToggleHint: () => void;
 }
 
+/** 精简后的练习状态栏：只有轮次/本轮进度/正确率/积分等级（+易错项标记）。 */
 export default function PracticeStatusBar({
   modeLabel,
   stageModeLabel,
-  stats,
-  accuracy,
-  masteredCount,
-  practicedCount,
-  totalRootsCount,
-  todayAttempts,
-  cumulativeAttempts,
-  cumulativeAccuracy,
-  completedRounds,
+  roundNo,
   roundSeen,
   roundTotal,
+  accuracy,
+  totalPoints,
+  reviewMode,
   showHint,
   speedModeTimeLeft,
   isSpeedMode,
@@ -53,20 +45,19 @@ export default function PracticeStatusBar({
     <div className="sticky z-30 border-b border-border/50 glass-nav bg-background/80"
       style={{ top: 'calc(3.5rem + env(safe-area-inset-top))' }}>
       <div className="container-page max-w-5xl py-2">
-        {/* 第一行：模式 + 退出 + 核心数据 */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 shrink-0">
             <Badge variant="secondary" className="bg-primary/8 text-primary font-medium px-2.5 py-1 text-xs">
               {modeLabel}
             </Badge>
-            {completedRounds !== undefined && (
-              <Badge variant="outline" className="text-xs px-2 py-0.5 border-border/50 text-muted-foreground">
-                第 {completedRounds + 1} 轮
-              </Badge>
-            )}
             {stageModeLabel && (
               <Badge variant="outline" className="text-xs px-2 py-0.5 border-border/50">
                 {stageModeLabel}
+              </Badge>
+            )}
+            {reviewMode && (
+              <Badge variant="outline" className="text-xs px-2 py-0.5 border-red-500/40 text-red-600 dark:text-red-400">
+                易错项练习
               </Badge>
             )}
             <button onClick={onStop}
@@ -84,71 +75,29 @@ export default function PracticeStatusBar({
               <span className="hidden sm:inline">{showHint ? '提示开' : '提示关'}</span>
             </button>
           </div>
-          <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm">
-            <div className="flex items-center gap-1">
-              <Trophy className="h-3 w-3 text-amber-500/70" />
-              <span className="font-bold font-mono-stat">{stats.score}</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <Flame className={cn('h-3 w-3', stats.streak >= 10 ? 'text-orange-500' : 'text-muted-foreground/50')} />
-              <span className={cn('font-bold font-mono-stat', stats.streak >= 10 ? 'text-orange-500' : '')}>
-                {stats.streak}x
-              </span>
-            </div>
-            <div className="hidden sm:flex items-center gap-1">
-              <span className="text-muted-foreground/60">正确率</span>
-              <span className="font-bold font-mono-stat">{accuracy}%</span>
-            </div>
+          <div className="flex items-center gap-3">
             {isSpeedMode && speedModeTimeLeft !== undefined && (
-              <div className={cn('flex items-center gap-1 font-bold font-mono-stat', speedModeTimeLeft <= 10 ? 'text-red-500' : 'text-foreground')}>
+              <span className={cn('flex items-center gap-1 text-xs font-bold font-mono-stat', speedModeTimeLeft <= 10 ? 'text-red-500' : 'text-foreground')}>
                 <Timer className="h-3 w-3" />{speedModeTimeLeft}s
-              </div>
+              </span>
             )}
+            <PracticeStatsLine
+              roundNo={roundNo}
+              seen={roundSeen}
+              total={roundTotal}
+              accuracy={accuracy}
+              totalPoints={totalPoints}
+            />
           </div>
         </div>
-        {/* 第二行：进度条 */}
         <div className="mt-1.5">
           <div className="flex justify-between text-[10px] text-muted-foreground/60 mb-0.5">
-            <span className="flex items-center gap-1">
-              已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
-              {practicedCount !== undefined && (
-                <> · 已练习 <span className="font-mono-stat">{practicedCount}</span></>
-              )}
-              <span className="text-muted-foreground/40"> / {totalRootsCount}</span>
-              {completedRounds !== undefined && completedRounds > 0 && (
-                <span className="ml-1 text-sky-600 dark:text-sky-400 font-semibold">已完成 {completedRounds} 轮</span>
-              )}
-              {masteredCount === totalRootsCount && (
-                <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
-              )}
-            </span>
-            <span className="flex items-center gap-2">
-              {roundTotal !== undefined && roundTotal > 0 && (
-                <span>本轮 <span className="font-mono-stat text-foreground/70">{roundSeen ?? 0}</span>/{roundTotal}</span>
-              )}
-              {cumulativeAttempts !== undefined && cumulativeAttempts > 0 && (
-                <span>累计 <span className="font-mono-stat text-foreground/70">{cumulativeAttempts}</span> 题
-                  {cumulativeAccuracy !== undefined && <> · 正确率 <span className="font-mono-stat text-foreground/70">{cumulativeAccuracy}%</span></>}
-                </span>
-              )}
-              <span>今日 {todayAttempts}题</span>
-            </span>
+            <span>本轮进度</span>
+            <span className="font-mono-stat text-foreground/70">{roundSeen}/{roundTotal}</span>
           </div>
           <div className="progress-base h-1 relative overflow-hidden">
-            {/* 已练习（浅色底层） */}
-            {practicedCount !== undefined && (
-              <div className={cn(
-                "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
-                masteredCount === totalRootsCount ? "bg-emerald-500/30"
-                  : practicedCount >= totalRootsCount ? "bg-amber-500/25"
-                  : "bg-primary/20"
-              )} style={{ width: `${Math.min(100, Math.round((practicedCount / totalRootsCount) * 100))}%` }} />
-            )}
-            {/* 已掌握（深色覆盖） */}
-            <div className={cn(
-              "absolute inset-y-0 left-0 rounded-full transition-all duration-500",
-              masteredCount === totalRootsCount ? "bg-emerald-500" : "bg-primary"
-            )} style={{ width: `${Math.min(100, Math.round((masteredCount / totalRootsCount) * 100))}%` }} />
+            <div className="absolute inset-y-0 left-0 rounded-full bg-primary transition-all duration-500"
+              style={{ width: `${roundTotal > 0 ? Math.min(100, Math.round((roundSeen / roundTotal) * 100)) : 0}%` }} />
           </div>
         </div>
       </div>

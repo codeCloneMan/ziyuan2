@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
 import { practiceChars500, practiceChars5000 } from '@/data/practice-pools.generated';
-import { buildFullCodeIndex } from '@/lib/full-codes';
+import { buildFullCodeIndex, shortestCodeLength } from '@/lib/full-codes';
 import {
   isAutoCommitCorrect,
   isSpaceCommitCorrect,
@@ -13,22 +13,21 @@ import {
   AUTO_COMMIT_LENGTH,
 } from '@/lib/code-commit';
 import type { PracticeLevel } from '@/types';
-import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
+import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   useWholeCharProgress,
   usePreferences,
-  useDailyStats,
+  useProgressStore,
   WHOLE_CHAR_CODE_LENS,
   type WholeCharCodeLen,
 } from '@/store/progress-store';
 import { getCharSplit } from '@/data/splitData';
 import {
   Play, RotateCcw, Trash2, Star, Trophy, CheckCircle2, XCircle,
-  Lightbulb, BarChart3, Target, ChevronUp, ChevronDown,
-  Eye, EyeOff, SplitSquareHorizontal, Flame, GraduationCap,
+  Lightbulb, Eye, EyeOff, SplitSquareHorizontal, GraduationCap,
 } from 'lucide-react';
 
 /** 就地洗牌（Fisher-Yates），进阶模式用 */
@@ -55,10 +54,10 @@ const codeLenLabels: Record<WholeCharCodeLen, string> = {
 };
 const codeLenDescriptions: Record<WholeCharCodeLen, string> = {
   all: '该字码表里的任意编码都算对',
-  '1': '只练 1 键编码（含 1 码字），打完按空格上屏',
-  '2': '只练 2 键编码（含 2 码字），打完按空格上屏',
-  '3': '只练 3 键编码（含 3 码字），打完按空格上屏',
-  '4': '只练 4 键编码，打满自动上屏',
+  '1': '只练最短码为 1 键的字（含 1 码字），打完按空格上屏',
+  '2': '只练最短码为 2 键的字（含 2 码字），打完按空格上屏',
+  '3': '只练最短码为 3 键的字（含 3 码字），打完按空格上屏',
+  '4': '只练最短码为 4 键的字，打满自动上屏',
 };
 
 type CodeRule = 'A' | 'AB' | 'ABb' | 'ABCc' | 'ABCD' | 'ABCZ';
@@ -116,7 +115,8 @@ export default function WholeCharPracticePage() {
   const fullCodeIndex = useMemo(() => buildFullCodeIndex(charCodeData ?? []), [charCodeData]);
   const { progress, recordAnswer, resetMode } = useWholeCharProgress();
   const { preferences, setPref } = usePreferences();
-  const todayStats = useDailyStats();
+  const { state: progressState } = useProgressStore();
+  const totalPoints = progressState.totalPoints;
 
   // ============================================
   // 安全取值：防止旧数据中有非法 level 值导致崩溃
@@ -133,14 +133,12 @@ export default function WholeCharPracticePage() {
   const basePool = level === 'beginner' ? practiceChars500 : practiceChars5000;
   const codeLenNeed = codeLen === 'all' ? 0 : Number(codeLen);
 
-  // 练习池：码长档从基础池里筛出「有恰好 N 键官方编码」的字
+  // 练习池：码长档按「最短码长」互斥归类 —— 一个字只属于它最短码长的那一档，
+  // 于是 1 简出现后不会再出现在 2/3/4 档，2 简出现后不会再出现在 3/4 档，依此类推。
   const learningPool = useMemo(() => {
     if (!charCodeData) return [];
     if (codeLenNeed === 0) return [...basePool];
-    return basePool.filter(ch => {
-      const info = fullCodeIndex.get(ch);
-      return !!info && info.accepted.some(c => c.length === codeLenNeed);
-    });
+    return basePool.filter(ch => shortestCodeLength(fullCodeIndex.get(ch)) === codeLenNeed);
   }, [charCodeData, basePool, codeLenNeed, fullCodeIndex]);
 
   // 各码长档的字数（选择器上展示）
@@ -148,31 +146,59 @@ export default function WholeCharPracticePage() {
     const counts: Record<WholeCharCodeLen, number> = { all: basePool.length, '1': 0, '2': 0, '3': 0, '4': 0 };
     if (!charCodeData) return counts;
     for (const ch of basePool) {
-      const info = fullCodeIndex.get(ch);
-      if (!info) continue;
-      for (const n of [1, 2, 3, 4]) {
-        if (info.accepted.some(c => c.length === n)) counts[String(n) as WholeCharCodeLen]++;
-      }
+      const min = shortestCodeLength(fullCodeIndex.get(ch));
+      if (min >= 1 && min <= 4) counts[String(min) as WholeCharCodeLen]++;
     }
     return counts;
   }, [basePool, charCodeData, fullCodeIndex]);
 
   // 码长档是独立练习池与独立轮次记录；'all' 沿用旧 key，保留既有累计进度
   const modeKey = codeLenNeed === 0 ? `whole:${level}` : `whole:${level}:${codeLen}`;
+
+  // 易错项练习：聚合所有档的错次，取前 20 个字组池（独立轮次记录 whole:review，判定用"全部"口径）
+  const [reviewMode, setReviewMode] = useState(false);
+  const reviewChars = useMemo(() => {
+    const best: Record<string, number> = {};
+    for (const m of Object.values(progress.modes)) {
+      for (const [ch, n] of Object.entries(m?.wrongCountMap ?? {})) {
+        if (n > (best[ch] ?? 0)) best[ch] = n;
+      }
+    }
+    return Object.entries(best)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([ch]) => ch)
+      .filter(ch => fullCodeIndex.has(ch));
+  }, [progress.modes, fullCodeIndex]);
+  const errorItems = useMemo(() => {
+    const best: Record<string, number> = {};
+    for (const m of Object.values(progress.modes)) {
+      for (const [ch, n] of Object.entries(m?.wrongCountMap ?? {})) {
+        if (n > (best[ch] ?? 0)) best[ch] = n;
+      }
+    }
+    return Object.entries(best).map(([ch, wrong]) => ({ id: ch, label: ch, wrong })).sort((a, b) => b.wrong - a.wrong);
+  }, [progress.modes]);
+
+  // 当前生效的池与记录键：易错项练习时用错题池 + whole:review
+  const activePool = reviewMode ? reviewChars : learningPool;
+  const activeModeKey = reviewMode ? 'whole:review' : modeKey;
+  const activeCodeLenNeed = reviewMode ? 0 : codeLenNeed;
+
   // 用 useMemo 稳定 modeProgress 引用：直接写 `progress.modes[modeKey] || {...}` 时，
   // mode 不存在的情况下每次渲染都会创建新对象，导致依赖它的 useCallback 每次重建
   const modeProgress = useMemo(
-    () => progress.modes[modeKey] || {
+    () => progress.modes[activeModeKey] || {
       correctCountMap: {}, wrongCountMap: {}, totalAttempts: 0, totalCorrect: 0,
       streak: 0, bestStreak: 0, lastPracticeAt: 0,
     },
-    [progress.modes, modeKey],
+    [progress.modes, activeModeKey],
   );
 
   const isBeginner = level === 'beginner';
 
   // 轮次记录：一轮 = 当前池每个字都答过至少一次；答完自动重开下一轮
-  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(modeKey, learningPool.length);
+  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(activeModeKey, activePool.length);
 
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
@@ -225,7 +251,6 @@ export default function WholeCharPracticePage() {
   const [inputCode, setInputCode] = useState('');
   const [showSplitViz, setShowSplitViz] = useState(false);
   const [splitAnimationStep, setSplitAnimationStep] = useState(0);
-  const [showStatsPanel, setShowStatsPanel] = useState(false);
   const [userWrongSplit, setUserWrongSplit] = useState<string | null>(null);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [roundToast, setRoundToast] = useState<number | null>(null);
@@ -264,15 +289,6 @@ export default function WholeCharPracticePage() {
     return 0;
   }, [modeProgress.correctCountMap, currentItem.char]);
 
-  const weakestChars = useMemo(() => {
-    if (!charCodeData) return [];
-    return charCodeData
-      .filter(d => (modeProgress.wrongCountMap[d.char] || 0) > 0)
-      .map(d => ({ char: d.char, code: fullCodeIndex.get(d.char)?.fullCode ?? d.code, wrong: modeProgress.wrongCountMap[d.char] || 0 }))
-      .sort((a, b) => b.wrong - a.wrong)
-      .slice(0, 10);
-  }, [modeProgress.wrongCountMap, charCodeData, fullCodeIndex]);
-
   const masteredCount = useMemo(() => {
     return learningPool.filter(ch => (modeProgress.correctCountMap[ch] || 0) >= 3).length;
   }, [learningPool, modeProgress.correctCountMap]);
@@ -285,11 +301,11 @@ export default function WholeCharPracticePage() {
   }, [modeProgress.correctCountMap, modeProgress.wrongCountMap]);
 
   const generateNext = useCallback(() => {
-    if (!charCodeData || learningPool.length === 0) return;
+    if (!charCodeData || activePool.length === 0) return;
 
     // 完成判定改为会话内池掌握数（入门模式）：累计进度保留（首页/成就不清零），
-    // 每轮练习从空池重新循序渐进，池全部掌握时才提示完成
-    if (isBeginner && spaced.pool.masteredPool.length === learningPool.length) {
+    // 每轮练习从空池重新循序渐进，池全部掌握时才提示完成（易错项练习不做完成判定）
+    if (isBeginner && !reviewMode && spaced.pool.masteredPool.length === learningPool.length) {
       // 所有字都已掌握，显示完成提示
       setShowCompletionModal(true);
       setShowSplitViz(false);
@@ -300,7 +316,7 @@ export default function WholeCharPracticePage() {
 
     let nextId: string | null = null;
 
-    if (isBeginner) {
+    if (isBeginner && !reviewMode) {
       // 入门：由间隔学习算法决定下一题
       nextId = spacedGetNextItem();
     } else {
@@ -311,9 +327,9 @@ export default function WholeCharPracticePage() {
         wrongQueueRef.current = wrongQueueRef.current.filter(w => w !== dueWrong);
         nextId = dueWrong.char;
       } else {
-        // 进阶：按洗牌队列顺序循环
+        // 进阶 / 易错项练习：按洗牌队列顺序循环
         if (shuffleQueueRef.current.length === 0) {
-          shuffleQueueRef.current = shuffleInPlace([...learningPool]);
+          shuffleQueueRef.current = shuffleInPlace([...activePool]);
           shuffleIndexRef.current = 0;
         } else {
           shuffleIndexRef.current = (shuffleIndexRef.current + 1) % shuffleQueueRef.current.length;
@@ -328,9 +344,9 @@ export default function WholeCharPracticePage() {
 
     if (nextId) {
       const info = fullCodeIndex.get(nextId);
-      if (info && codeLenNeed > 0) {
-        // 码长档：只认该字「恰好 N 键」的官方编码
-        const codes = info.accepted.filter(c => c.length === codeLenNeed);
+      if (info && activeCodeLenNeed > 0) {
+        // 码长档：只认该字「恰好 N 键」的官方编码（易错项练习用"全部"口径）
+        const codes = info.accepted.filter(c => c.length === activeCodeLenNeed);
         setCurrentItem({
           char: nextId,
           code: codes[0] ?? info.fullCode,
@@ -346,15 +362,17 @@ export default function WholeCharPracticePage() {
     setShowSplitViz(false);
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
-  }, [charCodeData, fullCodeIndex, learningPool, isBeginner, codeLenNeed, spacedGetNextItem, spaced.pool]);
+  }, [charCodeData, fullCodeIndex, activePool, activeCodeLenNeed, isBeginner, reviewMode, learningPool.length, spacedGetNextItem, spaced.pool]);
 
-  const startPractice = useCallback(() => {
+  const startPractice = useCallback((poolOverride?: string[]) => {
+    const pool = poolOverride ?? activePool;
+    if (pool.length === 0) return;
     // 只重置间隔学习池（会话从空池重新循序渐进），不清当前模式的累计进度：
     // 首页进度/成就/已掌握统计均以 modes[modeKey] 的累计数据为数据源，清空会导致归零
-    if (isBeginner) {
+    if (isBeginner && !reviewMode) {
       spacedResetProgress();
     } else {
-      shuffleQueueRef.current = shuffleInPlace([...learningPool]);
+      shuffleQueueRef.current = shuffleInPlace([...pool]);
       shuffleIndexRef.current = -1;
       // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
       wrongQueueRef.current = [];
@@ -365,7 +383,14 @@ export default function WholeCharPracticePage() {
     start();
     // 强制 generateNext effect 重跑（isPlaying 可能已是 true，start() 不触发重渲染）
     setRestartNonce(n => n + 1);
-  }, [isBeginner, learningPool, reset, resetRound, start, spacedResetProgress]);
+  }, [isBeginner, reviewMode, activePool, reset, resetRound, start, spacedResetProgress]);
+
+  /** 一键进入易错项练习（用错次前 20 个字组池，"全部"口径） */
+  const startReviewPractice = useCallback(() => {
+    if (reviewChars.length === 0) return;
+    setReviewMode(true);
+    startPractice(reviewChars);
+  }, [reviewChars, startPractice]);
 
   const stopPractice = useCallback(() => {
     stop();
@@ -373,16 +398,17 @@ export default function WholeCharPracticePage() {
     setSplitAnimationStep(0);
     setUserWrongSplit(null);
     setInputCode('');
+    setReviewMode(false);
   }, [stop]);
 
   const clearData = useCallback(() => {
     if (confirm('确定要清除当前模式的整字练习记录吗？')) {
-      resetMode(modeKey);
+      resetMode(activeModeKey);
       spacedResetProgress();
       stop();
       reset();
     }
-  }, [modeKey, stop, reset, resetMode, spacedResetProgress]);
+  }, [activeModeKey, stop, reset, resetMode, spacedResetProgress]);
 
   useEffect(() => {
     if (isPlaying && charCodeData) generateNext();
@@ -401,11 +427,11 @@ export default function WholeCharPracticePage() {
   /** 收尾：记录答题、推进轮次、交给状态机做反馈与切题 */
   const finishAnswer = useCallback((isCorrect: boolean, key: string) => {
     if (isCorrect) {
-      recordAnswer(modeKey, currentItem.char, true);
-      if (isBeginner) spacedRecordResult(currentItem.char, true);
+      recordAnswer(activeModeKey, currentItem.char, true);
+      if (isBeginner && !reviewMode) spacedRecordResult(currentItem.char, true);
     } else {
-      recordAnswer(modeKey, currentItem.char, false);
-      if (isBeginner) spacedRecordResult(currentItem.char, false);
+      recordAnswer(activeModeKey, currentItem.char, false);
+      if (isBeginner && !reviewMode) spacedRecordResult(currentItem.char, false);
     }
 
     // 轮次：答完池内最后一个字即完成一轮 —— 记录轮次、本轮统计归零，
@@ -417,7 +443,7 @@ export default function WholeCharPracticePage() {
     }
 
     submit(isCorrect, key);
-  }, [currentItem.char, recordAnswer, modeKey, isBeginner, spacedRecordResult, markSeen, reset, completedRounds, submit]);
+  }, [currentItem.char, recordAnswer, activeModeKey, isBeginner, reviewMode, spacedRecordResult, markSeen, reset, completedRounds, submit]);
 
   const handleKeyPress = useCallback((key: string) => {
     if (!isPlaying || feedbackType || !currentItem.char) return;
@@ -430,7 +456,7 @@ export default function WholeCharPracticePage() {
     if (newCode.length < AUTO_COMMIT_LENGTH) return;
 
     // 码长档只认「恰好该长度」的编码；「全部」档保留"该字编码不足 4 码时第 4 键不追究"的容错
-    const isCorrect = codeLenNeed > 0
+    const isCorrect = activeCodeLenNeed > 0
       ? isExactCode(newCode, acceptedCodes)
       : isAutoCommitCorrect(newCode, acceptedCodes);
     if (!isCorrect) {
@@ -440,7 +466,7 @@ export default function WholeCharPracticePage() {
       setSplitAnimationStep(splitParts.length);
     }
     finishAnswer(isCorrect, key);
-  }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, codeLenNeed, splitParts.length, finishAnswer]);
+  }, [isPlaying, feedbackType, inputCode, currentItem.char, acceptedCodes, activeCodeLenNeed, splitParts.length, finishAnswer]);
 
   /** 空格上屏：不足 4 键时按空格立即判定（码表里的编码才算对），返回是否消费了这次空格 */
   const handleSpaceCommit = useCallback((): boolean => {
@@ -566,7 +592,7 @@ export default function WholeCharPracticePage() {
               <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
                 <div className="flex-1 flex items-center justify-center py-2 mb-6">
                   <button
-                    onClick={startPractice}
+                    onClick={() => startPractice()}
                     className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98]"
                   >
                     <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
@@ -612,12 +638,34 @@ export default function WholeCharPracticePage() {
                   </div>
                 )}
 
-                {completedRounds > 0 && (
-                  <p className="mt-3 text-center text-[11px] text-muted-foreground/60">
-                    已完成 <span className="font-mono-stat font-semibold text-foreground/70">{completedRounds}</span> 轮
-                    <span className="text-muted-foreground/40">（每轮 {learningPool.length} 个字各答一次）</span>
-                  </p>
-                )}
+                <PracticeStatsLine
+                  roundNo={completedRounds + 1}
+                  seen={roundSeen}
+                  total={activePool.length}
+                  accuracy={accuracy}
+                  totalPoints={totalPoints}
+                  extra={
+                    <>
+                      <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                        {currentConfig.label}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium">
+                        {codeLenLabels[codeLen]}
+                      </span>
+                    </>
+                  }
+                  className="mt-3"
+                />
+                <p className="mt-1 text-[11px] text-muted-foreground/60">
+                  已完成 {completedRounds} 轮（每轮 {activePool.length} 个字各答一次）
+                </p>
+
+                <ErrorItemsPanel
+                  items={errorItems}
+                  onDrill={reviewChars.length > 0 ? startReviewPractice : undefined}
+                  title="易错项（答错次数）"
+                  className="mt-4"
+                />
               </div>
 
               {/* 右：难度与设置 */}
@@ -695,6 +743,11 @@ export default function WholeCharPracticePage() {
               <Badge variant="outline" className="text-xs px-2.5 py-1.5 border-sky-500/40 text-sky-600 dark:text-sky-400">
                 {codeLenLabels[codeLen]}
               </Badge>
+              {reviewMode && (
+                <Badge variant="outline" className="text-xs px-2.5 py-1.5 border-red-500/40 text-red-600 dark:text-red-400">
+                  易错项练习
+                </Badge>
+              )}
               <button onClick={stopPractice}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors">
                 <RotateCcw className="h-3.5 w-3.5" /><span>退出</span>
@@ -709,38 +762,18 @@ export default function WholeCharPracticePage() {
                 <span className="hidden sm:inline">{showHint ? '提示开' : '提示关'}</span>
               </button>
             </div>
-            <div className="flex items-center gap-3 sm:gap-5 text-xs sm:text-sm">
-              <div className="flex items-center gap-1">
-                <Trophy className="h-3.5 w-3.5 text-amber-500" />
-                <span className="font-bold font-mono-stat">{stats.score}</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <Flame className={cn('h-3.5 w-3.5', stats.streak >= 10 ? 'text-orange-500' : 'text-muted-foreground')} />
-                <span className={cn('font-bold font-mono-stat', stats.streak >= 10 ? 'text-orange-500' : '')}>{stats.streak}x</span>
-              </div>
-              <div className="hidden sm:flex items-center gap-1">
-                <span className="text-muted-foreground">正确率</span>
-                <span className="font-bold font-mono-stat">{accuracy}%</span>
-              </div>
-            </div>
+            <PracticeStatsLine
+              roundNo={completedRounds + 1}
+              seen={roundSeen}
+              total={activePool.length}
+              accuracy={accuracy}
+              totalPoints={totalPoints}
+            />
           </div>
           <div className="mt-2">
             <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-              <span>
-                已掌握 <span className="font-bold text-primary/80 font-mono-stat">{masteredCount}</span>
-                {' · '}已练习 <span className="font-mono-stat">{practicedCount}</span>
-                <span className="text-muted-foreground/40"> / {learningPool.length}</span>
-                {completedRounds > 0 && (
-                  <span className="ml-1 text-sky-600 dark:text-sky-400 font-semibold">已完成 {completedRounds} 轮</span>
-                )}
-                {masteredCount === learningPool.length && (
-                  <span className="ml-1 text-emerald-600 dark:text-emerald-400 font-semibold">全部掌握</span>
-                )}
-              </span>
-              <span className="flex items-center gap-2">
-                <span>第 {completedRounds + 1} 轮 · 本轮 <span className="font-mono-stat text-foreground/70">{roundSeen}</span>/{learningPool.length}</span>
-                <span>今日 {todayStats.attempts}题</span>
-              </span>
+              <span>本轮进度</span>
+              <span className="font-mono-stat text-foreground/70">{roundSeen}/{activePool.length}</span>
             </div>
             <div className="progress-base h-1.5 relative overflow-hidden">
               <div className={cn(
@@ -936,32 +969,11 @@ export default function WholeCharPracticePage() {
           </div>
 
           <div className="space-y-3">
-            <div className="card-stats p-4">
-              <h3 className="font-bold text-sm text-foreground mb-3 flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-primary" />本轮统计
-              </h3>
-              {stats.totalAttempts === 0 ? (
-                <p className="text-xs text-muted-foreground/60 text-center py-2" style={{ fontFamily: "'Noto Serif SC', serif" }}>本轮尚未答题</p>
-              ) : (
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { label: '题数', value: stats.totalAttempts, icon: Target },
-                  { label: '正确', value: stats.correctAttempts, icon: CheckCircle2 },
-                  { label: '连击', value: stats.streak, icon: Flame },
-                  { label: '正确率', value: `${Math.round((stats.correctAttempts / Math.max(stats.totalAttempts, 1)) * 100)}%`, icon: BarChart3 },
-                ].map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <div key={item.label} className="text-center p-2 rounded-lg bg-card border border-border">
-                      <Icon className="h-3.5 w-3.5 mx-auto mb-1 text-muted-foreground" />
-                      <div className="text-lg font-bold font-mono-stat">{item.value}</div>
-                      <div className="text-[10px] text-muted-foreground">{item.label}</div>
-                    </div>
-                  );
-                })}
-              </div>
-              )}
-            </div>
+            <ErrorItemsPanel
+              items={errorItems}
+              onDrill={reviewChars.length > 0 ? startReviewPractice : undefined}
+              title="易错项（答错次数）"
+            />
 
             <div className="card-base p-3">
               <h4 className="font-semibold text-xs text-foreground mb-2 flex items-center gap-1.5">
@@ -989,32 +1001,6 @@ export default function WholeCharPracticePage() {
               </div>
             </div>
 
-            <Button variant="outline" size="sm" onClick={() => setShowStatsPanel(!showStatsPanel)} className="w-full gap-1.5 text-xs">
-              <BarChart3 className="h-3.5 w-3.5" />{showStatsPanel ? '收起统计' : '详细统计'}
-              {showStatsPanel ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
-            </Button>
-
-            {showStatsPanel && (
-              <div className="card-base p-3 animate-fade-in">
-                <h4 className="font-semibold text-xs text-foreground mb-2">最弱汉字</h4>
-                {weakestChars.length > 0 ? (
-                  <div className="space-y-1">
-                    {weakestChars.slice(0, 5).map((r, i) => (
-                      <div key={r.char} className="flex items-center gap-2 text-xs">
-                        <span className="w-3 text-muted-foreground">{i + 1}</span>
-                        <span className="text-sm w-5 text-center">{r.char}</span>
-                        <div className="flex-1 progress-base h-1.5">
-                          <div className="h-full rounded-full bg-red-400" style={{ width: `${Math.min(r.wrong * 20, 100)}%` }} />
-                        </div>
-                        <span className="text-muted-foreground text-[10px]">{r.wrong}次</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">暂无数据</p>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>

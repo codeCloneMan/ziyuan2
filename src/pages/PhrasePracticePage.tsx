@@ -12,18 +12,20 @@ import {
   isCompleteCodeAwaitingSpace,
   AUTO_COMMIT_LENGTH,
 } from '@/lib/code-commit';
-import { PracticeKeyboard, RoundCompleteToast } from '@/components/practice';
+import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import {
   usePhraseProgress,
   usePreferences,
-  useDailyStats,
+  useProgressStore,
+  PHRASE_WORD_LENS,
+  type PhraseWordLen,
 } from '@/store/progress-store';
 import type { PracticeLevel } from '@/types';
 import {
   Play, RotateCcw, Trophy, CheckCircle2, XCircle,
-  Zap, BookOpen, ArrowLeft, Flame,
+  Zap, BookOpen, ArrowLeft,
 } from 'lucide-react';
 
 // ============================================
@@ -42,6 +44,9 @@ const modeConfig: Record<PracticeLevel, { label: string; description: string; ic
   beginner: { label: '入门', description: '高频前500词', icon: BookOpen },
   advanced: { label: '进阶', description: '高频前5000词', icon: Zap },
 };
+
+/** 词长档标签 */
+const wordLenLabels: Record<PhraseWordLen, string> = { all: '全部', '2': '2字词', '4': '4字词' };
 
 /** 由静态词池构建题目：编码按「官方单字码表优先恰好键数」的规则推导 */
 function buildPhraseList(
@@ -82,7 +87,8 @@ export default function PhrasePracticePage() {
   const { progress: phraseProgress, recordAnswer, setMode: setStoreMode } = usePhraseProgress();
   const { preferences, setPref } = usePreferences();
   const phraseShowHint = preferences.phraseShowHint;
-  const todayStats = useDailyStats();
+  const { state: progressState } = useProgressStore();
+  const totalPoints = progressState.totalPoints;
 
   const rawLevel = preferences.phraseMode;
   const level: PracticeLevel = (rawLevel === 'beginner' || rawLevel === 'advanced') ? rawLevel : 'beginner';
@@ -114,16 +120,56 @@ export default function PhrasePracticePage() {
     currentPhraseRef.current = currentPhrase;
   });
 
+  // 词长档：'all' 全练；'2'/'4' 只练 2 字词 / 4 字词
+  const rawWordLen = preferences.phraseWordLen;
+  const wordLen: PhraseWordLen = PHRASE_WORD_LENS.includes(rawWordLen) ? rawWordLen : 'all';
+
   // 词组池（同步计算，全码索引已按字分组，构建足够快）
-  const phrasePool = useMemo(() => {
+  const allPhrases = useMemo(() => {
     if (!charCodeData) return [];
     return buildPhraseList(level, charCodeIndex);
   }, [level, charCodeData, charCodeIndex]);
+  const phrasePool = useMemo(
+    () => (wordLen === 'all' ? allPhrases : allPhrases.filter(p => p.phrase.length === Number(wordLen))),
+    [allPhrases, wordLen],
+  );
+  // 各词长档的词数（选择器上展示）
+  const wordLenCounts = useMemo(() => ({
+    all: allPhrases.length,
+    '2': allPhrases.filter(p => p.phrase.length === 2).length,
+    '4': allPhrases.filter(p => p.phrase.length === 4).length,
+  }), [allPhrases]);
   const poolReady = phrasePool.length > 0;
-  const poolCount = phrasePool.length;
 
-  // 轮次记录：一轮 = 当前词库每个词都答过至少一次；答完自动重开下一轮
-  const roundKey = `phrase:${level}`;
+  // 易错项练习：聚合逐词错次（跨难度/词长），前 20 个组池；独立轮次记录 phrase:review
+  const [reviewMode, setReviewMode] = useState(false);
+  const reviewItems = useMemo<PhraseItem[]>(() => {
+    const entries = Object.entries(phraseProgress.wrongCountMap);
+    if (entries.length === 0) return [];
+    return entries
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([p]) => {
+        const info = getPhraseCodeInfo(p, charCodeIndex);
+        return info ? { phrase: p, accepted: info.accepted, perChar: info.perChar } : null;
+      })
+      .filter((x): x is PhraseItem => x !== null);
+  }, [phraseProgress.wrongCountMap, charCodeIndex]);
+  const errorItems = useMemo(
+    () => Object.entries(phraseProgress.wrongCountMap)
+      .map(([phrase, wrong]) => ({ id: phrase, label: phrase, wrong }))
+      .sort((a, b) => b.wrong - a.wrong),
+    [phraseProgress.wrongCountMap],
+  );
+
+  const practicePool = reviewMode ? reviewItems : phrasePool;
+  const poolCount = practicePool.length;
+
+  // 轮次记录：一轮 = 当前词库每个词都答过至少一次；答完自动重开下一轮。
+  // 词长档 / 易错项练习各自独立记录；'all' 沿用旧 key，保留既有进度。
+  const roundKey = reviewMode
+    ? 'phrase:review'
+    : (wordLen === 'all' ? `phrase:${level}` : `phrase:${level}:${wordLen}`);
   const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(roundKey, poolCount);
 
   const advancePhrase = useCallback(() => {
@@ -189,14 +235,16 @@ export default function PhrasePracticePage() {
     setCurrentPhrase(null);
     setInputCode('');
     setSessionResults([]);
+    setReviewMode(false);
   }, [stop]);
 
-  const startPractice = useCallback(() => {
-    if (phrasePool.length === 0) return;
+  const startPractice = useCallback((poolOverride?: PhraseItem[]) => {
+    const pool = poolOverride ?? practicePool;
+    if (pool.length === 0) return;
     setStoreMode(level); // 真正开始练习时才记录 lastMode
     // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
     wrongQueueRef.current = [];
-    const shuffled = shuffleArray(phrasePool);
+    const shuffled = shuffleArray(pool);
     setPhraseQueue(shuffled);
     setCurrentIndex(0);
     setCurrentPhrase(shuffled[0]);
@@ -208,7 +256,14 @@ export default function PhrasePracticePage() {
     // 新一轮练习：本轮已答集合清零（已完成轮数是持久记录，保留）
     resetRound();
     start();
-  }, [phrasePool, level, setStoreMode, reset, resetRound, start]);
+  }, [practicePool, level, setStoreMode, reset, resetRound, start]);
+
+  /** 一键进入易错项练习（用错次前 20 的词组组池） */
+  const startReviewPractice = useCallback(() => {
+    if (reviewItems.length === 0) return;
+    setReviewMode(true);
+    startPractice(reviewItems);
+  }, [reviewItems, startPractice]);
 
   const handleLevelChange = useCallback((lvl: PracticeLevel) => {
     setPref('phraseMode', lvl);
@@ -218,7 +273,7 @@ export default function PhrasePracticePage() {
   const finishPhraseAnswer = useCallback((isCorrect: boolean, key: string, input: string) => {
     const phrase = currentPhraseRef.current;
     if (!phrase) return;
-    recordAnswer(isCorrect);
+    recordAnswer(isCorrect, phrase.phrase);
     setSessionResults(prev => [...prev, {
       phrase: phrase.phrase,
       input,
@@ -335,7 +390,7 @@ export default function PhrasePracticePage() {
                 <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
                   <div className="flex-1 flex flex-col items-center justify-center py-4 mb-6">
                     <button
-                      onClick={startPractice}
+                      onClick={() => startPractice()}
                       disabled={!poolReady}
                       className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                     >
@@ -345,22 +400,33 @@ export default function PhrasePracticePage() {
                     <p className="text-xs text-muted-foreground/70 mt-4">
                       {poolCount.toLocaleString()} 个词组 · 完整循环随机练习
                       {completedRounds > 0 && <> · 已完成 {completedRounds} 轮</>}
-                      {' · '}今日 {todayStats.attempts} 题
                     </p>
                   </div>
 
-                  {(phraseProgress.totalAttempts > 0 || phraseProgress.bestStreak > 0) && (
-                    <div className="rounded-xl border border-border/60 bg-muted/20 p-4 grid grid-cols-2 gap-4 text-center">
-                      <div>
-                        <div className="text-xl font-bold font-mono-stat text-foreground">{phraseProgress.totalAttempts}</div>
-                        <div className="text-xs text-muted-foreground">累计练习 · {phraseProgress.totalCorrect} 对</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold font-mono-stat text-amber-500">{phraseProgress.bestStreak}x</div>
-                        <div className="text-xs text-muted-foreground">历史最佳连击</div>
-                      </div>
-                    </div>
-                  )}
+                  <PracticeStatsLine
+                    roundNo={completedRounds + 1}
+                    seen={roundSeen}
+                    total={poolCount}
+                    accuracy={accuracy}
+                    totalPoints={totalPoints}
+                    extra={
+                      <>
+                        <span className="px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
+                          {level === 'beginner' ? '入门' : '进阶'}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 font-medium">
+                          {wordLenLabels[wordLen]}
+                        </span>
+                      </>
+                    }
+                    className="mb-3"
+                  />
+
+                  <ErrorItemsPanel
+                    items={errorItems}
+                    onDrill={reviewItems.length > 0 ? startReviewPractice : undefined}
+                    title="易错项（答错次数）"
+                  />
                 </div>
 
                 {/* 右：级别与设置 */}
@@ -385,6 +451,22 @@ export default function PhrasePracticePage() {
                     })}
                   </div>
 
+                  <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif">练习词长</h2>
+                  <div className="grid grid-cols-3 gap-1.5 mb-6">
+                    {PHRASE_WORD_LENS.map(len => (
+                      <button key={len} onClick={() => setPref('phraseWordLen', len)}
+                        className={cn('p-2 rounded-lg border text-center transition-all duration-200',
+                          wordLen === len
+                            ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                            : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                        <div className={cn('text-xs font-medium', wordLen === len ? 'text-foreground' : 'text-muted-foreground')}>
+                          {wordLenLabels[len]}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground/70 font-mono-stat">{wordLenCounts[len]}</div>
+                      </button>
+                    ))}
+                  </div>
+
                   <div className="flex items-center justify-between p-3 rounded-xl bg-muted/30">
                     <span className="text-xs text-muted-foreground">新词组自动显示答案提示</span>
                     <button onClick={() => setPref('phraseShowHint', !phraseShowHint)} aria-label="切换答案提示"
@@ -407,23 +489,20 @@ export default function PhrasePracticePage() {
           <div className="max-w-3xl mx-auto px-2 sm:px-4 md:px-6 lg:px-8">
             {/* 进度条 + 退出 */}
             <div className="mb-6">
-              <div className="flex justify-between text-sm items-center mb-2">
-                <span className="text-muted-foreground">
-                  第 {completedRounds + 1} 轮 · 本轮 <span className="font-mono-stat text-foreground/70">{roundSeen}</span>/{poolCount}
-                  {completedRounds > 0 && (
-                    <span className="ml-2 text-sky-600 dark:text-sky-400 font-semibold text-xs">已完成 {completedRounds} 轮</span>
-                  )}
-                </span>
-                <span className="flex items-center gap-1 text-muted-foreground">
-                  <Flame className={cn('h-3.5 w-3.5', stats.streak >= 10 ? 'text-orange-500' : 'text-muted-foreground')} />
-                  连击 <span className="font-mono-stat font-bold text-foreground">{stats.streak}</span>
-                </span>
-                <span className="text-muted-foreground">
-                  正确率 <span className="font-mono-stat font-bold text-foreground">{accuracy}%</span>
-                </span>
+              <div className="flex justify-between items-center gap-2 mb-2">
+                <PracticeStatsLine
+                  roundNo={completedRounds + 1}
+                  seen={roundSeen}
+                  total={poolCount}
+                  accuracy={accuracy}
+                  totalPoints={totalPoints}
+                  extra={reviewMode ? (
+                    <span className="px-2 py-0.5 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 font-medium">易错项练习</span>
+                  ) : undefined}
+                />
                 <button
                   onClick={stopPractice}
-                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:hover:bg-red-950/60 dark:border-red-800 transition-colors shrink-0"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />
                   退出
@@ -580,11 +659,6 @@ export default function PhrasePracticePage() {
               onBackspace={handleBackspace}
               onSpace={() => { if (!feedbackType) handleSpaceCommit(); }}
               headerLeft="编码键盘"
-              headerRight={
-                <span className="text-[10px] text-muted-foreground">
-                  得分 <span className="font-mono-stat font-bold text-foreground">{stats.score}</span>
-                </span>
-              }
             />
           </div>
         </section>
@@ -602,22 +676,14 @@ export default function PhrasePracticePage() {
               </p>
             </div>
 
-            <div className="grid gap-4 grid-cols-2 sm:grid-cols-4 mb-8">
+            <div className="grid gap-4 grid-cols-2 mb-8">
               <div className="p-4 rounded-lg bg-muted text-center">
                 <div className="text-2xl font-bold font-mono-stat text-emerald-600">{accuracy}%</div>
                 <div className="text-xs text-muted-foreground">正确率</div>
               </div>
               <div className="p-4 rounded-lg bg-muted text-center">
-                <div className="text-2xl font-bold font-mono-stat text-accent">{stats.maxStreak}</div>
-                <div className="text-xs text-muted-foreground">最高连击</div>
-              </div>
-              <div className="p-4 rounded-lg bg-muted text-center">
                 <div className="text-2xl font-bold font-mono-stat text-emerald-600">{stats.correctAttempts}</div>
                 <div className="text-xs text-muted-foreground">答对</div>
-              </div>
-              <div className="p-4 rounded-lg bg-muted text-center">
-                <div className="text-2xl font-bold font-mono-stat text-red-600">{stats.totalAttempts - stats.correctAttempts}</div>
-                <div className="text-xs text-muted-foreground">答错</div>
               </div>
             </div>
 
@@ -654,7 +720,7 @@ export default function PhrasePracticePage() {
             </div>
 
             <div className="flex gap-3 justify-center">
-              <Button onClick={startPractice} className="gap-2">
+              <Button onClick={() => startPractice()} className="gap-2">
                 <RotateCcw className="h-4 w-4" />
                 再来一次
               </Button>

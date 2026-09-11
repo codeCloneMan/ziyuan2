@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { ROOT_IMAGE_POOL, allImageIds, type RootImage } from '@/data/root-images';
+import { ROOT_IMAGE_POOL, allImageIds, rootImagePath, type RootImage } from '@/data/root-images';
 import { ROOT_IMAGE_MANIFEST, rootMappings } from '@/data/roots';
 import type { PracticeLevel } from '@/types';
 import { useCharCodeData } from '@/lib/data-loader';
@@ -9,8 +9,8 @@ import { calcMasteredRootCount } from '@/lib/mastered-count';
 import { useSpacedLearning } from '@/hooks/use-spaced-learning';
 import { usePracticeSession } from '@/hooks/use-practice-session';
 import { usePracticeRound } from '@/hooks/use-practice-round';
-import { useRootProgress, usePreferences, useDailyStats } from '@/store/progress-store';
-import { PracticeKeyboard, StatsSidePanel, PracticeStatusBar, RootDisplayCard, RoundCompleteToast } from '@/components/practice';
+import { useRootProgress, usePreferences, useProgressStore } from '@/store/progress-store';
+import { PracticeKeyboard, PracticeStatusBar, RootDisplayCard, RoundCompleteToast, ErrorItemsPanel, PracticeStatsLine } from '@/components/practice';
 import { Play, Sparkles, GraduationCap, Trash2, Trophy, CheckCircle2, Target } from 'lucide-react';
 
 const practiceStyleConfig: Record<PracticeLevel, { label: string; icon: typeof Sparkles; description: string }> = {
@@ -68,13 +68,26 @@ export default function PracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
   const { progress, recordAnswer, reset: resetRootProgress } = useRootProgress();
   const { preferences, setPref } = usePreferences();
-  const todayStats = useDailyStats();
+  const { state: progressState } = useProgressStore();
+  const totalPoints = progressState.totalPoints;
   const practiceStyle: PracticeLevel = preferences.rootMode;
   const isBeginner = practiceStyle === 'beginner';
 
-  // 轮次记录：一轮 = 390 张图每张都答过至少一次；答完自动重开下一轮
-  const roundKey = `root:${practiceStyle}`;
-  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(roundKey, allRootIds.length);
+  // 易错项练习：聚合错次取前 20 张图组池（独立轮次记录 root:review）
+  const [reviewMode, setReviewMode] = useState(false);
+  const reviewIds = useMemo(
+    () => ROOT_IMAGE_POOL
+      .filter(img => (progress.wrongCountMap[img.file] || 0) > 0)
+      .sort((a, b) => (progress.wrongCountMap[b.file] || 0) - (progress.wrongCountMap[a.file] || 0))
+      .slice(0, 20)
+      .map(img => img.file),
+    [progress.wrongCountMap],
+  );
+  const activeRootIds = reviewMode ? reviewIds : allRootIds;
+
+  // 轮次记录：一轮 = 池内每张图都答过至少一次；答完自动重开下一轮
+  const roundKey = reviewMode ? 'root:review' : `root:${practiceStyle}`;
+  const { completedRounds, seenCount: roundSeen, markSeen, resetRound } = usePracticeRound(roundKey, activeRootIds.length);
 
   // ============================================
   // 入门模式：间隔学习（艾宾浩斯算法）
@@ -136,15 +149,15 @@ export default function PracticePage() {
   const nextRoot = useCallback(() => {
     setPhoneticHint(null);
 
-    // 检查本次会话池是否已全部掌握（入门模式；进阶模式无完成判定）
-    if (isBeginner && spaced.pool.masteredPool.length === allRootIds.length) {
+    // 检查本次会话池是否已全部掌握（入门模式；进阶/易错项模式无完成判定）
+    if (isBeginner && !reviewMode && spaced.pool.masteredPool.length === allRootIds.length) {
       setShowCompletionModal(true);
       return;
     }
 
     let nextId: string | null = null;
 
-    if (isBeginner) {
+    if (isBeginner && !reviewMode) {
       nextId = spacedGetNextItem();
     } else {
       // 优先取错题（已隔 ≥3 步）
@@ -166,7 +179,7 @@ export default function PracticePage() {
     if (nextId) {
       setCurrentImage(imageById.get(nextId) ?? ROOT_IMAGE_POOL[0]);
     }
-  }, [isBeginner, spacedGetNextItem, spaced.pool]); // spacedGetNextItem/pool 均稳定，仅池变化时重建
+  }, [isBeginner, reviewMode, spacedGetNextItem, spaced.pool]); // spacedGetNextItem/pool 均稳定，仅池变化时重建
 
   // ============================================
   // 答错处理策略：
@@ -212,8 +225,8 @@ export default function PracticePage() {
     return seen.size;
   }, [progress.correctCountMap, progress.wrongCountMap]);
 
-  // 弱项字根图完整列表（按正确率升序），weakRootsCount 取总数
-  const weakRootsAll = useMemo(() => {
+  // 易错项（按错次降序，供 ErrorItemsPanel 展示 + 跳转练习）
+  const errorItems = useMemo(() => {
     return ROOT_IMAGE_POOL
       .map(img => ({
         file: img.file,
@@ -222,25 +235,24 @@ export default function PracticePage() {
         correct: progress.correctCountMap[img.file] || 0,
       }))
       .filter(r => r.wrong > 0)
-      .sort((a, b) => b.wrong - a.wrong || (a.correct / Math.max(a.correct + a.wrong, 1)) - (b.correct / Math.max(b.correct + b.wrong, 1)));
+      .map(r => ({ id: r.file, imageSrc: rootImagePath(r.file), wrong: r.wrong }));
   }, [progress]); // 依赖整个 progress 对象，满足 lint 且答题时正确重算
-
-  // 展示用：仅前 10 个最弱
-  const weakestRoots = useMemo(() => weakRootsAll.slice(0, 10), [weakRootsAll]);
 
   // ============================================
   // 练习生命周期
   // ============================================
 
-  const startPractice = useCallback(() => {
+  const startPractice = useCallback((poolOverride?: string[]) => {
+    const pool = poolOverride ?? activeRootIds;
+    if (pool.length === 0) return;
     // 只重置间隔学习池（会话从空池重新循序渐进），不清累计进度：
     // 首页进度/成就/键盘淡化均以累计 correctCountMap 为数据源，清空会导致数据归零
-    if (isBeginner) {
+    if (isBeginner && !reviewMode) {
       // 入门：重置间隔学习池（从头开始循序渐进）
       spacedResetProgress();
     } else {
-      // 进阶：所有字根洗牌，从第 0 个开始高速循环
-      shuffleQueueRef.current = shuffleInPlace([...allRootIds]);
+      // 进阶 / 易错项练习：池内字根洗牌，从第 0 个开始高速循环
+      shuffleQueueRef.current = shuffleInPlace([...pool]);
       shuffleIndexRef.current = -1; // nextRoot 首次调用会 +1 → 0
       // 清空上一轮遗留的错题队列，避免新练习开头插入旧错题
       wrongQueueRef.current = [];
@@ -254,13 +266,21 @@ export default function PracticePage() {
     // 首题由下方 useEffect 在渲染后生成：startPractice 内同步调用 nextRoot 会读到
     // 本次渲染的旧池（dispatch 后 store 状态在事件处理器内不更新），
     // 上一轮全部掌握时会导致立即重弹完成弹窗、无法重开练习。
-  }, [isBeginner, reset, resetRound, start, spacedResetProgress]);
+  }, [isBeginner, reviewMode, activeRootIds, reset, resetRound, start, spacedResetProgress]);
 
   const stopPractice = useCallback(() => {
     stop();
     setFirstTimeHint(null);
     setPhoneticHint(null);
+    setReviewMode(false);
   }, [stop]);
+
+  /** 一键进入易错项练习（错次前 20 张图组池） */
+  const startReviewPractice = useCallback(() => {
+    if (reviewIds.length === 0) return;
+    setReviewMode(true);
+    startPractice(reviewIds);
+  }, [reviewIds, startPractice]);
 
   const clearProgress = useCallback(() => {
     if (confirm('确定要清除当前模式的练习记录吗？')) {
@@ -395,7 +415,7 @@ export default function PracticePage() {
               <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
                 <div className="flex-1 flex items-center justify-center py-2 mb-6">
                   <button
-                    onClick={startPractice}
+                    onClick={() => startPractice()}
                     className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98]"
                   >
                     <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
@@ -405,9 +425,24 @@ export default function PracticePage() {
 
                 {!isBeginner && (
                   <p className="text-center text-xs text-muted-foreground/70 mb-4">
-                    {totalRoots} 张字根图随机洗牌高速轮转 · 今日已练 {todayStats.attempts} 题
+                    {totalRoots} 张字根图随机洗牌高速轮转
                   </p>
                 )}
+
+                <PracticeStatsLine
+                  roundNo={completedRounds + 1}
+                  seen={roundSeen}
+                  total={totalRoots}
+                  accuracy={accuracy}
+                  totalPoints={totalPoints}
+                  className="mb-4"
+                />
+                <ErrorItemsPanel
+                  items={errorItems}
+                  onDrill={reviewIds.length > 0 ? startReviewPractice : undefined}
+                  title="易错项（答错次数）"
+                  className="mb-4"
+                />
 
                 {(masteredCount > 0 || practicedCount > 0) && (
                   <div className={cn(
@@ -514,17 +549,12 @@ export default function PracticePage() {
       <PracticeStatusBar
         modeLabel={practiceStyleConfig[practiceStyle].label}
         stageModeLabel=""
-        stats={stats}
-        accuracy={accuracy}
-        masteredCount={masteredCount}
-        practicedCount={practicedCount}
-        totalRootsCount={totalRoots}
-        todayAttempts={todayStats.attempts}
-        cumulativeAttempts={progress.totalAttempts}
-        cumulativeAccuracy={progress.totalAttempts > 0 ? Math.round((progress.totalCorrect / progress.totalAttempts) * 100) : undefined}
-        completedRounds={completedRounds}
+        roundNo={completedRounds + 1}
         roundSeen={roundSeen}
-        roundTotal={totalRoots}
+        roundTotal={activeRootIds.length}
+        accuracy={accuracy}
+        totalPoints={totalPoints}
+        reviewMode={reviewMode}
         showHint={showHint}
         isSpeedMode={!isBeginner}
         onStop={stopPractice}
@@ -560,17 +590,13 @@ export default function PracticePage() {
             />
           </div>
 
-          <StatsSidePanel
-            stats={stats}
-            todayStats={todayStats}
-            masteredCount={masteredCount}
-            totalRootsCount={totalRoots}
-            weakestRoots={weakestRoots}
-            cumulative={{ attempts: progress.totalAttempts, correct: progress.totalCorrect }}
-            completedRounds={completedRounds}
-            roundSeen={roundSeen}
-            roundTotal={totalRoots}
-          />
+          <div className="space-y-3">
+            <ErrorItemsPanel
+              items={errorItems}
+              onDrill={reviewIds.length > 0 ? startReviewPractice : undefined}
+              title="易错项（答错次数）"
+            />
+          </div>
         </div>
       </div>
 

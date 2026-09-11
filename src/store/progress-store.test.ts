@@ -94,3 +94,29 @@ describe('progress-store 导入防御', () => {
     expect(JSON.parse(exportProgress()).rounds).toEqual({});
   });
 });
+
+describe('统计精简后的积分与清洗', () => {
+  it('积分规则：答对 +1、答错 0（不再有连击加成/扣分）', async () => {
+    const { calcAnswerPoints } = await import('./progress-store');
+    expect(calcAnswerPoints(true)).toBe(1);
+    expect(calcAnswerPoints(false)).toBe(0);
+  });
+
+  it('词组/文章的逐项错次图被清洗，偏好档位非法值回退', () => {
+    const corrupt = {
+      ...createDefaultState(),
+      phrase: { ...createDefaultState().phrase, correctCountMap: { 无法: 'x' }, wrongCountMap: { 无法: 3, 万岁: -1 } },
+      article: { correctCountMap: 5, wrongCountMap: { 的: 2 } },
+      preferences: { ...createDefaultState().preferences, wholeCharCodeLen: '9', phraseWordLen: '3' },
+    };
+    const result = importProgressFromJSON(JSON.stringify(corrupt));
+    expect(result.success).toBe(true);
+    const imported = JSON.parse(exportProgress());
+    expect(imported.phrase.wrongCountMap).toEqual({ 无法: 3 });
+    expect(imported.phrase.correctCountMap).toEqual({});
+    expect(imported.article.wrongCountMap).toEqual({ 的: 2 });
+    expect(imported.article.correctCountMap).toEqual({});
+    expect(imported.preferences.wholeCharCodeLen).toBe('all');
+    expect(imported.preferences.phraseWordLen).toBe('all');
+  });
+});

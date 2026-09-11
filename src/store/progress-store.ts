@@ -81,6 +81,9 @@ export interface PhraseProgress {
   bestStreak: number;
   lastMode: string;
   lastPracticeAt: number;
+  /** 逐词作答统计（键=词组），供"易错项"使用 */
+  correctCountMap: Record<string, number>;
+  wrongCountMap: Record<string, number>;
 }
 
 /** 练习难度级别（三页面统一）：入门/进阶 */
@@ -95,6 +98,15 @@ export type WholeCharCodeLen = 'all' | '1' | '2' | '3' | '4';
 
 export const WHOLE_CHAR_CODE_LENS: readonly WholeCharCodeLen[] = ['all', '1', '2', '3', '4'];
 
+/**
+ * 词组练习的"词长档"：
+ * - 'all'：全部词长都练
+ * - '2' / '4'：只练 2 字词 / 4 字词
+ */
+export type PhraseWordLen = 'all' | '2' | '4';
+
+export const PHRASE_WORD_LENS: readonly PhraseWordLen[] = ['all', '2', '4'];
+
 export interface Preferences {
   theme: 'light' | 'dark';
   practiceStyle: string;
@@ -102,9 +114,19 @@ export interface Preferences {
   charSetRange: PracticeLevel;
   phraseMode: PracticeLevel;
   wholeCharCodeLen: WholeCharCodeLen;
+  phraseWordLen: PhraseWordLen;
   showHint: boolean;
   wholeCharShowHint: boolean;
   phraseShowHint: boolean;
+}
+
+/** 文章练习进度（逐字记录，供易错项使用） */
+export interface ArticleProgress {
+  correctCountMap: Record<string, number>;
+  wrongCountMap: Record<string, number>;
+  totalAttempts: number;
+  totalCorrect: number;
+  lastPracticeAt: number;
 }
 
 export interface DailyStat {
@@ -118,6 +140,7 @@ export interface ProgressState {
   root: RootProgress;
   wholeChar: WholeCharProgress;
   phrase: PhraseProgress;
+  article: ArticleProgress;
   spacedPools: Record<string, SpacedPool>;
   /**
    * 各练习池已完成轮数（poolKey → 轮数）。
@@ -153,6 +176,14 @@ const defaultWholeChar: WholeCharProgress = {
   currentMode: 'progressive',
 };
 
+const defaultArticle: ArticleProgress = {
+  correctCountMap: {},
+  wrongCountMap: {},
+  totalAttempts: 0,
+  totalCorrect: 0,
+  lastPracticeAt: 0,
+};
+
 const defaultPhrase: PhraseProgress = {
   totalAttempts: 0,
   totalCorrect: 0,
@@ -160,6 +191,8 @@ const defaultPhrase: PhraseProgress = {
   bestStreak: 0,
   lastMode: '',
   lastPracticeAt: 0,
+  correctCountMap: {},
+  wrongCountMap: {},
 };
 
 const defaultPreferences: Preferences = {
@@ -169,6 +202,7 @@ const defaultPreferences: Preferences = {
   charSetRange: 'beginner',
   phraseMode: 'beginner',
   wholeCharCodeLen: 'all',
+  phraseWordLen: 'all',
   showHint: true,
   wholeCharShowHint: true,
   phraseShowHint: true,
@@ -180,6 +214,7 @@ export function createDefaultState(): ProgressState {
     root: { ...defaultRoot },
     wholeChar: { ...defaultWholeChar },
     phrase: { ...defaultPhrase },
+    article: { ...defaultArticle },
     spacedPools: {},
     rounds: {},
     achievements: [],
@@ -187,6 +222,16 @@ export function createDefaultState(): ProgressState {
     totalPoints: 0,
     dailyStats: {},
   };
+}
+
+/** 清洗「键 → 次数」映射：只保留正整数次数，防止损坏数据导致渲染崩溃 */
+function sanitizeCountMap(input: unknown): Record<string, number> {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (k && typeof v === 'number' && Number.isFinite(v) && v > 0) out[k] = Math.floor(v);
+  }
+  return out;
 }
 
 function normalizeState(partial: Partial<ProgressState>): ProgressState {
@@ -202,6 +247,7 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   if (!validLevels.includes(prefs.charSetRange as PracticeLevel)) prefs.charSetRange = 'beginner';
   if (!validLevels.includes(prefs.phraseMode as PracticeLevel)) prefs.phraseMode = 'beginner';
   if (!WHOLE_CHAR_CODE_LENS.includes(prefs.wholeCharCodeLen as WholeCharCodeLen)) prefs.wholeCharCodeLen = 'all';
+  if (!PHRASE_WORD_LENS.includes(prefs.phraseWordLen as PhraseWordLen)) prefs.phraseWordLen = 'all';
 
   // 嵌套字段类型防御：导入文件/localStorage 可能损坏（如 correctCountMap 变成字符串），
   // 非plain object 的分段一律回退默认值，避免下游 .filter/Object.keys 崩溃
@@ -211,6 +257,7 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
   const partialRoot = isPlainObject(partial.root) ? partial.root : {};
   const partialWholeChar = isPlainObject(partial.wholeChar) ? partial.wholeChar : {};
   const partialPhrase = isPlainObject(partial.phrase) ? partial.phrase : {};
+  const partialArticle = isPlainObject(partial.article) ? partial.article : {};
   const partialPools = isPlainObject(partial.spacedPools) ? partial.spacedPools : defaults.spacedPools;
   const partialDaily = isPlainObject(partial.dailyStats) ? partial.dailyStats : defaults.dailyStats;
 
@@ -240,7 +287,18 @@ function normalizeState(partial: Partial<ProgressState>): ProgressState {
     version: CURRENT_VERSION,
     root: mergedRoot,
     wholeChar: { ...defaults.wholeChar, ...partialWholeChar },
-    phrase: { ...defaults.phrase, ...partialPhrase },
+    phrase: {
+      ...defaults.phrase,
+      ...partialPhrase,
+      correctCountMap: sanitizeCountMap((partialPhrase as Partial<PhraseProgress>).correctCountMap),
+      wrongCountMap: sanitizeCountMap((partialPhrase as Partial<PhraseProgress>).wrongCountMap),
+    },
+    article: {
+      ...defaults.article,
+      ...partialArticle,
+      correctCountMap: sanitizeCountMap((partialArticle as Partial<ArticleProgress>).correctCountMap),
+      wrongCountMap: sanitizeCountMap((partialArticle as Partial<ArticleProgress>).wrongCountMap),
+    },
     preferences: prefs,
     spacedPools: partialPools,
     rounds: sanitizeRounds(partial.rounds),
@@ -263,10 +321,12 @@ function getTodayKey(): string {
   return `${d.getFullYear()}-${m}-${day}`;
 }
 
-function calculatePoints(currentStreak: number, isCorrect: boolean): number {
-  if (!isCorrect) return -5;
-  const streakBonus = Math.min(currentStreak, 10);
-  return 10 + streakBonus;
+/**
+ * 积分规则（统计精简后）：答对 +1、答错 0。
+ * 不再有连击加成与答错扣分——积分 = 累计答对次数，等级阈值沿用原表。
+ */
+export function calcAnswerPoints(isCorrect: boolean): number {
+  return isCorrect ? 1 : 0;
 }
 
 function updateDailyStats(
@@ -296,8 +356,9 @@ export type ProgressAction =
   | { type: 'WHOLE_CHAR_ANSWER'; mode: string; char: string; isCorrect: boolean }
   | { type: 'WHOLE_CHAR_SET_MODE'; mode: string }
   | { type: 'WHOLE_CHAR_RESET_MODE'; mode: string }
-  | { type: 'PHRASE_ANSWER'; isCorrect: boolean }
+  | { type: 'PHRASE_ANSWER'; isCorrect: boolean; phrase?: string }
   | { type: 'PHRASE_SET_MODE'; mode: string }
+  | { type: 'ARTICLE_ANSWER'; char: string; isCorrect: boolean }
   | { type: 'SPACED_RECORD'; poolKey: string; itemId: string; isCorrect: boolean; allItemIds: string[] }
   | { type: 'SPACED_RESET'; poolKey: string; allItemIds: string[] }
   | { type: 'ROUND_COMPLETE'; poolKey: string }
@@ -323,7 +384,7 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
       }
       root.totalAttempts++;
       root.lastPracticeAt = Date.now();
-      const points = calculatePoints(oldStreak, isCorrect);
+      const points = calcAnswerPoints(isCorrect);
       return {
         ...state,
         root,
@@ -368,7 +429,7 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
         bestStreak: Math.max(m.bestStreak, newStreak),
         lastPracticeAt: Date.now(),
       };
-      const points = calculatePoints(oldStreak, isCorrect);
+      const points = calcAnswerPoints(isCorrect);
       return {
         ...state,
         wholeChar: { ...wholeChar, modes },
@@ -389,10 +450,37 @@ export function reducer(state: ProgressState, action: ProgressAction): ProgressS
       phrase.streak = newStreak;
       phrase.bestStreak = Math.max(phrase.bestStreak, newStreak);
       phrase.lastPracticeAt = Date.now();
-      const points = calculatePoints(oldStreak, action.isCorrect);
+      // 逐词记录（易错项用）：本次词组答对/答错次数
+      if (action.phrase) {
+        if (action.isCorrect) {
+          phrase.correctCountMap = { ...phrase.correctCountMap, [action.phrase]: (phrase.correctCountMap[action.phrase] ?? 0) + 1 };
+        } else {
+          phrase.wrongCountMap = { ...phrase.wrongCountMap, [action.phrase]: (phrase.wrongCountMap[action.phrase] ?? 0) + 1 };
+        }
+      }
+      const points = calcAnswerPoints(action.isCorrect);
       return {
         ...state,
         phrase,
+        totalPoints: Math.max(0, state.totalPoints + points),
+        dailyStats: updateDailyStats(state.dailyStats, action.isCorrect, points),
+      };
+    }
+
+    case 'ARTICLE_ANSWER': {
+      const article = { ...state.article };
+      article.totalAttempts++;
+      if (action.isCorrect) {
+        article.totalCorrect++;
+        article.correctCountMap = { ...article.correctCountMap, [action.char]: (article.correctCountMap[action.char] ?? 0) + 1 };
+      } else {
+        article.wrongCountMap = { ...article.wrongCountMap, [action.char]: (article.wrongCountMap[action.char] ?? 0) + 1 };
+      }
+      article.lastPracticeAt = Date.now();
+      const points = calcAnswerPoints(action.isCorrect);
+      return {
+        ...state,
+        article,
         totalPoints: Math.max(0, state.totalPoints + points),
         dailyStats: updateDailyStats(state.dailyStats, action.isCorrect, points),
       };
@@ -831,7 +919,7 @@ export function useWholeCharProgress() {
 export function usePhraseProgress() {
   const { state, dispatch } = useProgressStore();
   const recordAnswer = useCallback(
-    (isCorrect: boolean) => dispatch({ type: 'PHRASE_ANSWER', isCorrect }),
+    (isCorrect: boolean, phrase?: string) => dispatch({ type: 'PHRASE_ANSWER', isCorrect, phrase }),
     [dispatch],
   );
   const setMode = useCallback(
@@ -843,6 +931,15 @@ export function usePhraseProgress() {
     recordAnswer,
     setMode,
   };
+}
+
+export function useArticleProgress() {
+  const { state, dispatch } = useProgressStore();
+  const recordChar = useCallback(
+    (char: string, isCorrect: boolean) => dispatch({ type: 'ARTICLE_ANSWER', char, isCorrect }),
+    [dispatch],
+  );
+  return { progress: state.article, recordChar };
 }
 
 export function useSpacedPool(poolKey: string, allItemIds: string[]) {
