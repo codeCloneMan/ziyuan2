@@ -54,6 +54,10 @@ async function recoverFromStaleDeploy(): Promise<void> {
 /** 路由级错误兜底页（替代 React Router 默认的英文开发者报错页） */
 function RouteErrorElement() {
   const error = useRouteError();
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __routeError?: string }).__routeError =
+      error instanceof Error ? (error.stack ?? error.message) : String(error ?? '');
+  }
   const message = error instanceof Error ? error.message : String(error ?? '');
   const isChunkError = CHUNK_ERROR_RE.test(message);
 

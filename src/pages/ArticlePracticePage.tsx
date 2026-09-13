@@ -39,7 +39,9 @@ const SEG_LEN_OPTIONS: { value: SegmentLength; label: string }[] = [
   { value: 100, label: '100' },
   { value: 50, label: '50' },
   { value: 20, label: '20' },
+  { value: 15, label: '15' },
   { value: 10, label: '10' },
+  { value: 5, label: '5' },
 ];
 
 /** 准度门槛可选项：0 = 不设门槛，其余 = 准度达标才能进入下一段 */
@@ -271,6 +273,8 @@ export default function ArticlePracticePage() {
   const segFirstItemRef = useRef(-1);
   const blockedRef = useRef(false);
   const pausedRef = useRef(false);
+  const isPlayingRef = useRef(false);
+  const elapsedMsRef = useRef(0);
 
   // 当前段题目信息
   const accuracy = correctCount + wrongCount > 0
@@ -300,7 +304,9 @@ export default function ArticlePracticePage() {
     segFirstItemRef.current = segFirstItem;
     blockedRef.current = !!segResult || !!articleDone;
     pausedRef.current = paused;
-  }, [cursor, items, segLastItem, segFirstItem, segResult, articleDone, paused]);
+    isPlayingRef.current = isPlaying;
+    elapsedMsRef.current = elapsedMs;
+  }, [cursor, items, segLastItem, segFirstItem, segResult, articleDone, paused, isPlaying, elapsedMs]);
 
   // 计时：敲下第一个键后开始，每 0.5s 刷新；段结算 / 暂停时停止
   useEffect(() => {
@@ -313,6 +319,24 @@ export default function ArticlePracticePage() {
   const startTimerIfNeeded = useCallback(() => {
     if (startedAtRef.current === 0) startedAtRef.current = Date.now();
   }, []);
+
+  /** 继续（把计时接回当前累计，并聚焦打字框）——genda「光标回到输入区自动恢复」 */
+  const resumePractice = useCallback(() => {
+    setPaused(p => {
+      if (!p) return p;
+      startedAtRef.current = startedAtRef.current === 0 ? 0 : Date.now() - elapsedMsRef.current;
+      return false;
+    });
+    setTimeout(() => imeInputRef.current?.focus(), 0);
+  }, []);
+
+  /** 暂停（genda「光标离开输入区自动暂停」） */
+  const pausePractice = useCallback(() => {
+    setPaused(p => {
+      if (p || !isPlayingRef.current || blockedRef.current) return p;
+      return true;
+    });
+  }, [isPlayingRef]);
 
   /**
    * 当前段变化（切段 / 打乱本段 / 开始练习）后，把光标对到该段第一个题目。
@@ -536,8 +560,9 @@ export default function ArticlePracticePage() {
     const produced: Record<number, string> = {};
     const correctIdx: number[] = [];
     while (consumed < val.length && idx <= last && idx < itms.length) {
-      const it = itms[idx];
       const ch = val[consumed];
+      if (/\s/.test(ch)) { consumed++; continue; } // 粘贴带进的空白不算题
+      const it = itms[idx];
       let ok = ch === it.char;
       if (!ok && isPunctItem(it)) ok = ch === it.key; // 半角键打的标点也算对
       produced[idx] = ch;
@@ -681,13 +706,8 @@ export default function ArticlePracticePage() {
       }
       if (e.key === 'Escape' || (paused && e.key === 'Enter')) {
         e.preventDefault();
-        if (paused) {
-          startedAtRef.current = startedAtRef.current === 0 ? 0 : Date.now() - elapsedMs;
-          setPaused(false);
-          imeInputRef.current?.focus();
-        } else {
-          setPaused(true);
-        }
+        if (paused) resumePractice();
+        else pausePractice();
         return;
       }
       if (paused) return;
@@ -695,6 +715,9 @@ export default function ArticlePracticePage() {
       if (e.ctrlKey && e.key.toLowerCase() === 'j' && !(segResult && !segResult.pass)) { e.preventDefault(); goToSegment(Math.min(segments.length - 1, segIndex + 1)); return; }
       if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); goToSegment(segIndex, true); return; }
       if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); goToSegment(segIndex); return; }
+      // F 键快捷键（跟打器口径:F3 重打本段 / F4 打乱本段)
+      if (e.key === 'F3') { e.preventDefault(); goToSegment(segIndex); return; }
+      if (e.key === 'F4') { e.preventDefault(); goToSegment(segIndex, true); return; }
       if (e.key === 'Backspace') {
         // 输入框里还有内容 → 让输入框自己删；空了 → 回退上一个已打出的字
         if (imeInputRef.current && document.activeElement === imeInputRef.current && imeInputRef.current.value.length > 0) return;
@@ -714,7 +737,7 @@ export default function ArticlePracticePage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPlaying, paused, elapsedMs, segIndex, segments.length, segResult, articleDone, goToSegment, undoLastChar, startPractice, startTimerIfNeeded]);
+  }, [isPlaying, paused, elapsedMs, segIndex, segments.length, segResult, articleDone, goToSegment, undoLastChar, startPractice, startTimerIfNeeded, resumePractice, pausePractice]);
 
   if (dataLoading || !charCodeData) {
     return (
@@ -732,6 +755,13 @@ export default function ArticlePracticePage() {
   const segTotal = segments.length;
 
   /** 左栏：速度仪表 + 计时 + 开关组（木易 / 玫枫跟打器样式） */
+  // 今日统计（木易「今日错/对」口径）；数据量小,直接算,不用 hook（避免放在早退 return 之后）
+  const todayKey = new Date().toDateString();
+  let todayChars = 0, todayWrong = 0, todaySegs = 0;
+  for (const r of history) {
+    if (new Date(r.t).toDateString() === todayKey) { todayChars += r.chars; todayWrong += r.wrong; todaySegs++; }
+  }
+
   const leftPanel = (
     <div className="space-y-3">
       {/* 速度仪表 */}
@@ -761,6 +791,25 @@ export default function ArticlePracticePage() {
         </div>
         <div className="text-[10px] text-muted-foreground mt-0.5">
           {paused ? '已暂停' : (timerStarted ? '本段用时' : '从第一个键开始计时')}
+        </div>
+      </div>
+
+      {/* 今日统计（木易「今日错/对」口径） */}
+      <div className="rounded-xl border border-border/50 bg-card p-3">
+        <div className="text-[10px] text-muted-foreground mb-1.5">今日</div>
+        <div className="grid grid-cols-3 gap-1">
+          <div className="text-center">
+            <div className="font-mono-stat text-sm font-semibold">{todayChars}</div>
+            <div className="text-[10px] text-muted-foreground">字数</div>
+          </div>
+          <div className="text-center">
+            <div className={cn('font-mono-stat text-sm font-semibold', todayWrong > 0 && 'text-red-500')}>{todayWrong}</div>
+            <div className="text-[10px] text-muted-foreground">错字</div>
+          </div>
+          <div className="text-center">
+            <div className="font-mono-stat text-sm font-semibold">{todaySegs}</div>
+            <div className="text-[10px] text-muted-foreground">段</div>
+          </div>
         </div>
       </div>
 
@@ -909,18 +958,26 @@ export default function ArticlePracticePage() {
           {/* 工具条：操作 / 段导航 / 文章下拉 */}
           <div className="flex flex-wrap items-center gap-1.5 mb-3">
             <button
-              onClick={() => {
-                if (paused) { startedAtRef.current = startedAtRef.current === 0 ? 0 : Date.now() - elapsedMs; setPaused(false); }
-                else setPaused(true);
-              }}
+              onClick={() => { if (paused) resumePractice(); else pausePractice(); }}
               disabled={!!segResult || !!articleDone}
               className={cn(toolBtn, 'disabled:opacity-40',
                 paused
                   ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                   : 'border-border/60 bg-card text-muted-foreground hover:text-foreground')}
-              title="暂停 / 继续（Esc）"
+              title="暂停 / 继续（Esc；光标离开打字框也会自动暂停）"
             >
               <Pause className="h-3.5 w-3.5" />{paused ? '继续' : '暂停'}
+            </button>
+            <button
+              onClick={() => {
+                const pool = DEFAULT_ARTICLES.filter(a => a.id !== selectedId);
+                const pick = pool[Math.floor(Math.random() * pool.length)];
+                if (pick) selectArticle(pick.id);
+              }}
+              className={cn(toolBtn, 'border-border/60 bg-card text-muted-foreground hover:text-foreground')}
+              title="随机换一篇（木易跟打器口径）"
+            >
+              🎲 随机
             </button>
             <button onClick={() => goToSegment(segIndex, true)} disabled={!!segResult || !!articleDone}
               className={cn(toolBtn, 'border-border/60 bg-card text-muted-foreground hover:text-foreground disabled:opacity-40')}
@@ -1089,6 +1146,8 @@ export default function ArticlePracticePage() {
                 undoLastChar();
               }
             }}
+            onBlur={() => pausePractice()}
+            onFocus={() => { if (paused) resumePractice(); }}
             placeholder={paused ? '已暂停 · 按 Esc 继续' : '请用电脑自己的输入法在这里打字（对错自动判断）…'}
             className="mt-3 w-full rounded-xl border border-border/60 bg-card px-4 py-3 text-lg focus:outline-none focus:border-primary/50 disabled:opacity-60"
           />
