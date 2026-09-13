@@ -275,6 +275,8 @@ export default function ArticlePracticePage() {
   const pausedRef = useRef(false);
   const isPlayingRef = useRef(false);
   const elapsedMsRef = useRef(0);
+  /** 上屏单元栈：每次 IME 上屏(单字/词组)一组,退格按组整体撤销 */
+  const committedGroupsRef = useRef<{ items: Array<{ idx: number; ok: boolean; produced: string; wasChar: boolean }> }[]>([]);
 
   // 当前段题目信息
   const accuracy = correctCount + wrongCount > 0
@@ -330,13 +332,13 @@ export default function ArticlePracticePage() {
     setTimeout(() => imeInputRef.current?.focus(), 0);
   }, []);
 
-  /** 暂停（genda「光标离开输入区自动暂停」） */
+  /** 暂停（genda「光标离开输入区自动暂停」）；还没开始打字时失焦不暂停,免得没打字就被锁住 */
   const pausePractice = useCallback(() => {
     setPaused(p => {
-      if (p || !isPlayingRef.current || blockedRef.current) return p;
+      if (p || !isPlayingRef.current || blockedRef.current || startedAtRef.current === 0) return p;
       return true;
     });
-  }, [isPlayingRef]);
+  }, []);
 
   /**
    * 当前段变化（切段 / 打乱本段 / 开始练习）后，把光标对到该段第一个题目。
@@ -376,6 +378,7 @@ export default function ArticlePracticePage() {
     setPaused(false);
     keyStatsRef.current = {};
     idealKeysRef.current = 0;
+    committedGroupsRef.current = [];
     startedAtRef.current = 0;
     setElapsedMs(0);
     imeValueRef.current = '';
@@ -394,6 +397,7 @@ export default function ArticlePracticePage() {
     setSegIndex(i);
     setSegNonce(n => n + 1);
     resetSegmentStats();
+    setTimeout(() => imeInputRef.current?.focus(), 30);
   }, [segments, resetSegmentStats]);
 
   /** 段结算：记成绩 → 判准度门槛 → 按「完成段策略」走向（参数显式传入，避免读到未刷新的 state） */
@@ -559,6 +563,8 @@ export default function ArticlePracticePage() {
     let firstWrongChar: string | null = null;
     const produced: Record<number, string> = {};
     const correctIdx: number[] = [];
+    /** 本次上屏单元（词组 / 单字）：回退按整体撤销 */
+    const commitGroup: { items: Array<{ idx: number; ok: boolean; produced: string; wasChar: boolean }> } = { items: [] };
     while (consumed < val.length && idx <= last && idx < itms.length) {
       const ch = val[consumed];
       if (/\s/.test(ch)) { consumed++; continue; } // 粘贴带进的空白不算题
@@ -570,6 +576,8 @@ export default function ArticlePracticePage() {
       if (isCharItem(it)) recordChar(it.char, ok);
       if (ok) { correct++; idealKeysRef.current += 1; correctIdx.push(idx); }
       else { wrong++; if (!firstWrongChar) firstWrongChar = it.char; }
+      // 记入本次上屏单元（跟打器口径:一次上屏 = 一个「字词」,回退时整体撤销）
+      commitGroup.items.push({ idx, ok, produced: ch, wasChar: isCharItem(it) });
       idx++;
       consumed++;
     }
@@ -579,6 +587,7 @@ export default function ArticlePracticePage() {
       if (imeInputRef.current) imeInputRef.current.value = '';
       return;
     }
+    if (commitGroup.items.length > 0) committedGroupsRef.current.push(commitGroup);
     const rest = val.slice(consumed);
     imeValueRef.current = rest;
     if (imeInputRef.current) imeInputRef.current.value = rest;
@@ -604,29 +613,41 @@ export default function ArticlePracticePage() {
   }, [markSeen, recordChar, startTimerIfNeeded, completeSegment, correctCount, wrongCount, keyStrokes, undoCount]);
 
   /** 退格：输入框已空时删掉上一个已打出的字（打对的也删），光标退回重打，记一次回改 */
+  /**
+   * 退格（跟打器口径）：撤销**上一次上屏的字词单元**——
+   * 打词上屏两个字，一次退格整体退回；打单字则退一个字。
+   * 记一次回改，光标退回单元开头重打。
+   */
   const undoLastChar = useCallback(() => {
     if (pausedRef.current || blockedRef.current) return;
-    const prevIdx = cursorRef.current - 1;
-    if (prevIdx < (segFirstItemRef.current >= 0 ? segFirstItemRef.current : 0)) return;
-    const itms = itemsRef.current;
-    const item = itms[prevIdx];
-    if (!item) return;
-    const produced = producedChars[prevIdx];
-    const wasCorrect = produced === undefined || produced === item.char;
-    if (isCharItem(item)) retractChar(item.char, wasCorrect);
+    const groups = committedGroupsRef.current;
+    const group = groups[groups.length - 1];
+    if (!group || group.items.length === 0) return;
+    groups.pop();
+    const startIdx = group.items[0].idx;
+    if (startIdx < (segFirstItemRef.current >= 0 ? segFirstItemRef.current : 0)) return;
+    let correct = 0, wrong = 0;
+    for (const g of group.items) {
+      if (g.ok) correct++;
+      else wrong++;
+      if (g.wasChar) {
+        const ch = (itemsRef.current[g.idx] as { char?: string } | undefined)?.char;
+        if (ch) retractChar(ch, g.ok);
+      }
+    }
     setProducedChars(prev => {
-      if (prev[prevIdx] === undefined) return prev;
       const next = { ...prev };
-      delete next[prevIdx];
+      for (const g of group.items) delete next[g.idx];
       return next;
     });
-    if (wasCorrect) setCorrectCount(c => Math.max(0, c - 1));
-    else setWrongCount(c => Math.max(0, c - 1));
+    if (correct > 0) setCorrectCount(c => Math.max(0, c - correct));
+    if (wrong > 0) setWrongCount(c => Math.max(0, c - wrong));
     setUndoCount(c => c + 1);
     keyStatsRef.current['⌫'] = (keyStatsRef.current['⌫'] ?? 0) + 1;
     setWrongFlash(null);
-    setCursor(prevIdx);
-  }, [producedChars, retractChar]);
+    setCursor(startIdx);
+    imeInputRef.current?.focus();
+  }, [retractChar]);
 
   /** 选择文章 = 立即以该文开练（同页切换） */
   const selectArticle = useCallback((id: string) => {
@@ -665,6 +686,7 @@ export default function ArticlePracticePage() {
     totalsRef.current = { chars: 0, correct: 0, wrong: 0, keys: 0, ideal: 0, ms: 0, segs: 0, speeds: [] };
     keyStatsRef.current = {};
     idealKeysRef.current = 0;
+    committedGroupsRef.current = [];
     setPracticeText(t);
     setSegIndex(0);
     setSegNonce(n => n + 1);
@@ -725,9 +747,13 @@ export default function ArticlePracticePage() {
         undoLastChar();
         return;
       }
-      // 任意可打印按键：从第一个键开始计时并计入击键 / 按键分布（打字本身交给系统输入法）
+      // 任意可打印按键：从第一个键开始计时并计入击键 / 按键分布（打字本身交给系统输入法）。
+      // 打字板没聚焦时先聚焦它——像跟打网站一样,直接开打,不用先点输入框。
       if (e.key.length === 1 || e.key === 'Process' || e.keyCode === 229) {
         startTimerIfNeeded();
+        if (document.activeElement !== imeInputRef.current) {
+          imeInputRef.current?.focus();
+        }
         if (e.key.length === 1) {
           setKeyStrokes(k => k + 1);
           const kk = e.key.toLowerCase();
@@ -1109,6 +1135,39 @@ export default function ArticlePracticePage() {
                 })}
               </div>
             </div>
+            {/* 打字板：跟打网站口径——直接贴在对照文字下方,聚焦后用系统输入法打字 */}
+            <div className="border-t border-border/50 bg-muted/10 px-4 sm:px-6">
+              <input
+                ref={imeInputRef}
+                type="text"
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                disabled={!!segResult || !!articleDone || paused}
+                onChange={e => {
+                  imeValueRef.current = e.target.value;
+                  if (!composingRef.current) consumeInput();
+                }}
+                onCompositionStart={() => { composingRef.current = true; }}
+                onCompositionEnd={e => {
+                  composingRef.current = false;
+                  imeValueRef.current = (e.target as HTMLInputElement).value;
+                  consumeInput();
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') e.preventDefault();
+                  if (e.key === 'Backspace' && (e.target as HTMLInputElement).value.length === 0) {
+                    e.preventDefault();
+                    undoLastChar();
+                  }
+                }}
+                onBlur={() => pausePractice()}
+                onFocus={() => { if (paused) resumePractice(); }}
+                placeholder={paused ? '已暂停 · 按 Esc 或点击这里继续…' : '在这里用电脑输入法打字（拼音 / 双拼 / 五笔…）…'}
+                className="w-full bg-transparent px-0 py-3 text-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-60"
+              />
+            </div>
             <div className="flex items-center gap-3 border-t border-border/50 bg-muted/20 px-4 sm:px-6 py-1.5 text-[11px] sm:text-xs text-muted-foreground">
               <span className="ml-auto truncate font-mono-stat">
                 {reviewMode && <span className="text-red-500 mr-1">易错字练习 · </span>}
@@ -1119,38 +1178,6 @@ export default function ArticlePracticePage() {
               </span>
             </div>
           </div>
-
-          {/* 系统输入法打字框：上屏一个字比对一个字，网站只判对错 */}
-          <input
-            ref={imeInputRef}
-            type="text"
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            disabled={!!segResult || !!articleDone || paused}
-            onChange={e => {
-              imeValueRef.current = e.target.value;
-              if (!composingRef.current) consumeInput();
-            }}
-            onCompositionStart={() => { composingRef.current = true; }}
-            onCompositionEnd={e => {
-              composingRef.current = false;
-              imeValueRef.current = (e.target as HTMLInputElement).value;
-              consumeInput();
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') e.preventDefault();
-              if (e.key === 'Backspace' && (e.target as HTMLInputElement).value.length === 0) {
-                e.preventDefault();
-                undoLastChar();
-              }
-            }}
-            onBlur={() => pausePractice()}
-            onFocus={() => { if (paused) resumePractice(); }}
-            placeholder={paused ? '已暂停 · 按 Esc 继续' : '请用电脑自己的输入法在这里打字（对错自动判断）…'}
-            className="mt-3 w-full rounded-xl border border-border/60 bg-card px-4 py-3 text-lg focus:outline-none focus:border-primary/50 disabled:opacity-60"
-          />
 
           {/* 段结算 / 全文完成面板 */}
           {segResultPanel}
@@ -1173,7 +1200,7 @@ export default function ArticlePracticePage() {
           )}
           {!minimal && (
             <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
-              用电脑自己的输入法（拼音 / 双拼 / 五笔…）在打字框里打字；退格删完已上屏的字后，再按 = 回退上一个字重打
+              用电脑输入法（拼音 / 双拼 / 五笔…）直接跟打；退格 = 回退上一次上屏的字词（打词退整词），并记一次回改
             </div>
           )}
 
