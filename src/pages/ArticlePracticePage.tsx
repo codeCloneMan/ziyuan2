@@ -9,16 +9,19 @@ import {
 import { buildArticleItems, isCharItem, isPunctItem } from '@/lib/article-items';
 import { buildArticlePhrases, phraseAtCursor } from '@/lib/article-phrases';
 import { isCompleteCodeAwaitingSpace, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
+import {
+  splitSegments, shuffleRangeText, shuffleFullText, type SegmentLength,
+} from '@/lib/article-segments';
 import { PracticeKeyboard, RoundCompleteToast, PracticeStatsLine, ErrorItemsPanel } from '@/components/practice';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useArticleProgress } from '@/store/progress-store';
 import { charFrequency } from '@/data/charFrequency';
 import {
-  DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY, COMMON500_ARTICLE_ID, ARTICLE_SHUFFLE_KEY,
-  shuffledCommon500Text,
+  DEFAULT_ARTICLES, CUSTOM_ARTICLE_KEY,
 } from '@/data/articles';
 import {
-  Play, RotateCcw, BookOpen, ArrowLeft, Eye, EyeOff, Trash2, FileText, Keyboard, Shuffle,
+  Play, RotateCcw, BookOpen, ArrowLeft, ArrowRight, Eye, EyeOff, Trash2, FileText, Keyboard,
+  Shuffle, Repeat, ListOrdered, Gauge, ChevronsRight,
 } from 'lucide-react';
 
 /** 跟打器式固定窗口显示的行数（每行 = 原文一行 + 紧跟其下的跟打行，当前字固定在第 ARTICLE_ROWS-1 行） */
@@ -30,6 +33,80 @@ const CELL_EM = `${ROW_LINE_HEIGHT * 2}em`;
 
 /** 未打过的字，下方跟打位留空但必须占位，否则行高会塌 */
 const NBSP = '\u00A0';
+
+/** 段长可选项（跟打器口径：全文即文章模式） */
+const SEG_LEN_OPTIONS: { value: SegmentLength; label: string }[] = [
+  { value: 'all', label: '全文' },
+  { value: 200, label: '200' },
+  { value: 100, label: '100' },
+  { value: 50, label: '50' },
+  { value: 20, label: '20' },
+];
+
+/** 准度门槛可选项：0 = 不设门槛，其余 = 准度达标才能进入下一段 */
+const ACC_GATE_OPTIONS = [0, 90, 95, 98, 100];
+
+/** 乱序模式：关 / 打乱本段 / 打乱全文 */
+type ShuffleMode = 'off' | 'seg' | 'full';
+
+/** 练习方式设置（本机记忆） */
+interface ArticleSettings {
+  segLen: SegmentLength;
+  shuffleMode: ShuffleMode;
+  autoNext: boolean;
+  /** 最低准度（0 = 关） */
+  accGate: number;
+}
+
+const SETTINGS_KEY = 'ziyuan-article-settings-v1';
+
+function loadSettings(): ArticleSettings {
+  const fallback: ArticleSettings = { segLen: 'all', shuffleMode: 'off', autoNext: true, accGate: 0 };
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) {
+      // 兼容旧版「常用字 500 乱序」开关：开过就默认全文乱序
+      if (localStorage.getItem('ziyuan-article-shuffle-v1') === '1') {
+        return { ...fallback, shuffleMode: 'full' };
+      }
+      return fallback;
+    }
+    const saved = JSON.parse(raw) as Partial<ArticleSettings>;
+    return {
+      segLen: SEG_LEN_OPTIONS.some(o => o.value === saved.segLen) ? (saved.segLen as SegmentLength) : 'all',
+      shuffleMode: saved.shuffleMode === 'seg' || saved.shuffleMode === 'full' ? saved.shuffleMode : 'off',
+      autoNext: saved.autoNext !== false,
+      accGate: ACC_GATE_OPTIONS.includes(saved.accGate ?? 0) ? (saved.accGate ?? 0) : 0,
+    };
+  } catch { return fallback; }
+}
+
+function saveSettings(s: ArticleSettings) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch { /* 隐私模式忽略 */ }
+}
+
+/** 段完成后的结算面板状态 */
+interface SegmentResult {
+  pass: boolean;
+  accuracy: number;
+  /** 本段速度（字/分） */
+  speed: number;
+  /** 本段用时（秒） */
+  seconds: number;
+  /** 本段错字数 */
+  wrong: number;
+  /** 自动进入下一段的剩余秒数（0 = 不自动） */
+  autoIn: number;
+}
+
+/** 全文完成后的结算面板状态 */
+interface ArticleDoneStats {
+  chars: number;
+  correct: number;
+  wrong: number;
+  seconds: number;
+  segments: number;
+}
 
 /** 候选框里的候选项：单个汉字，或本文里能一次上屏的官方词组 */
 interface Candidate {
@@ -69,11 +146,16 @@ export default function ArticlePracticePage() {
 
   const [reviewMode, setReviewMode] = useState(false);
 
-  // 常用字 500 的乱序开关：开启后每次开始练习重新打乱（本机记忆）
-  const [shuffleOn, setShuffleOn] = useState<boolean>(() => {
-    try { return localStorage.getItem(ARTICLE_SHUFFLE_KEY) === '1'; } catch { return false; }
-  });
-  const [shuffledText, setShuffledText] = useState('');
+  // ============ 练习方式设置（分段 / 乱序 / 自动发文 / 准度门槛） ============
+  const [settings, setSettings] = useState<ArticleSettings>(loadSettings);
+  const { segLen, shuffleMode, autoNext, accGate } = settings;
+  const updateSettings = useCallback((patch: Partial<ArticleSettings>) => {
+    setSettings(prev => {
+      const next = { ...prev, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  }, []);
 
   // 易错字练习：聚合错次取前 20 个字
   const reviewChars = useMemo(
@@ -92,35 +174,34 @@ export default function ArticlePracticePage() {
   );
 
   const selectedArticle = DEFAULT_ARTICLES.find(a => a.id === selectedId);
-  const isCommon500 = selectedId === COMMON500_ARTICLE_ID;
-  const canShuffle = !!selectedArticle?.shufflable;
   const baseText = selectedId === 'custom'
     ? customText
-    : (isCommon500 && shuffleOn ? (shuffledText || selectedArticle?.text || '') : (selectedArticle?.text ?? ''));
+    : (selectedArticle?.text ?? '');
   const activeText = reviewMode ? reviewChars.join('') : baseText;
   const sourceLabel = reviewMode
     ? '易错字练习'
     : (selectedId === 'custom' ? '自定义文本' : (selectedArticle?.title ?? ''));
-  const shuffleActive = isCommon500 && shuffleOn && !reviewMode;
 
-  /** 开/关乱序：开启时立刻打乱一次，并本机记住 */
-  const toggleShuffle = useCallback(() => {
-    setShuffleOn(prev => {
-      const next = !prev;
-      try {
-        if (next) localStorage.setItem(ARTICLE_SHUFFLE_KEY, '1');
-        else localStorage.removeItem(ARTICLE_SHUFFLE_KEY);
-      } catch { /* 隐私模式忽略 */ }
-      if (next) setShuffledText(shuffledCommon500Text());
-      else setShuffledText('');
-      return next;
-    });
-  }, []);
+  // ============ 练习正文（全文乱序 / 打乱某段都在这份文本上原地改） ============
+  /** 正在练习的文本；开始练习时按乱序模式生成，打乱本段时局部替换 */
+  const [practiceText, setPracticeText] = useState('');
+  const [segIndex, setSegIndex] = useState(0);
+
+  const segments = useMemo(
+    () => (charCodeData ? splitSegments(practiceText, segLen) : []),
+    [practiceText, segLen, charCodeData],
+  );
+  const currentSeg = segments[segIndex];
 
   // ============ 题目序列 ============
-  const items = useMemo(
-    () => (charCodeData ? buildArticleItems(activeText, charCodeIndex) : []),
+  // 开始页的题目数按当前所选文章预览计算（练习文本要等开始时才生成）
+  const previewItems = useMemo(
+    () => (charCodeData && activeText ? buildArticleItems(activeText, charCodeIndex) : []),
     [charCodeData, activeText, charCodeIndex],
+  );
+  const items = useMemo(
+    () => (charCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex) : []),
+    [charCodeData, practiceText, charCodeIndex],
   );
   const itemIndexByTextIndex = useMemo(() => {
     const m = new Map<number, number>();
@@ -128,12 +209,26 @@ export default function ArticlePracticePage() {
     return m;
   }, [items]);
 
+  /** 当前段第一 / 最后一个题目的下标（items 里；段内没有可打题 = -1） */
+  const segFirstItem = useMemo(() => {
+    if (!currentSeg) return -1;
+    return items.findIndex(it => it.textIndex >= currentSeg.start);
+  }, [items, currentSeg]);
+  const segLastItem = useMemo(() => {
+    if (!currentSeg) return -1;
+    // 从后往前找第一个落在段内的题目
+    for (let i = items.length - 1; i >= 0; i--) {
+      if (items[i].textIndex < currentSeg.end) return i;
+    }
+    return -1;
+  }, [items, currentSeg]);
+
   // 本文里能用的官方词组（词组码 → 词）；词组码来自官方词表 + 单字码表取码规则
   const articlePhrases = useMemo(
-    () => (charCodeData && phrasesData
-      ? buildArticlePhrases(activeText, charCodeIndex, phrasesData)
+    () => (charCodeData && phrasesData && practiceText
+      ? buildArticlePhrases(practiceText, charCodeIndex, phrasesData)
       : { byCode: new Map<string, string[]>(), codesOf: new Map<string, string[]>() }),
-    [charCodeData, phrasesData, activeText, charCodeIndex],
+    [charCodeData, phrasesData, practiceText, charCodeIndex],
   );
 
 
@@ -149,15 +244,23 @@ export default function ArticlePracticePage() {
   const [wrongFlash, setWrongFlash] = useState<string | null>(null);
   // 打错的字留下的「你实际打出的字」（item 下标 → 字；打不出字记 '✕'），在字下方红色常显
   const [producedChars, setProducedChars] = useState<Record<number, string>>({});
+  /** 本段累计（重打本段时归零） */
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
   /** 回改次数：退回去重打的次数（跟打器口径） */
   const [undoCount, setUndoCount] = useState(0);
+  /** 段结算 / 全文结算面板 */
+  const [segResult, setSegResult] = useState<SegmentResult | null>(null);
+  const [articleDone, setArticleDone] = useState<ArticleDoneStats | null>(null);
+  /** 全文累计（跨段累加，用于完成面板） */
+  const totalsRef = useRef({ chars: 0, correct: 0, wrong: 0, keys: 0, ms: 0, segs: 0 });
   const [showHint, setShowHint] = useState(false);
   const [roundToast, setRoundToast] = useState<number | null>(null);
   // 打字工具口径：击键数（含上屏空格）与用时，用于算速度 / 击键 / 码长
   const [keyStrokes, setKeyStrokes] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  // 自动下一段的倒计时句柄，切段 / 退出时要清掉
+  const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 触屏设备默认展开虚拟键盘，桌面默认收起，保持「纯打字工具」的干净版面
   const [showKeyboard, setShowKeyboard] = useState(() => {
     try {
@@ -220,28 +323,42 @@ export default function ArticlePracticePage() {
   const current = isPlaying ? items[cursor] : undefined;
   /** 当前题目是汉字时的信息（标点没有编码） */
   const currentChar = current && isCharItem(current) ? current : undefined;
-  const awaitingCommit = !!current && !feedback && (
+  const awaitingCommit = !!current && !feedback && !segResult && (
     (!!currentChar && isCompleteCodeAwaitingSpace(inputCode, currentChar.codes)) || !!phraseNow
   );
+  /** 本段准度（结算与门槛判定共用） */
   const accuracy = correctCount + wrongCount > 0
     ? Math.round((correctCount / (correctCount + wrongCount)) * 100)
     : 0;
-
-  // 打字工具三项指标：速度（字/分）、击键（击/秒）、码长（平均每字击键数）
+  /** 打字工具三项指标：速度（字/分）、击键（击/秒）、码长（平均每字击键数） */
   const committed = correctCount + wrongCount;
   const elapsedSec = elapsedMs / 1000;
   const speed = elapsedSec > 1 ? Math.round(committed / (elapsedSec / 60)) : 0;
   const kps = elapsedSec > 1 ? keyStrokes / elapsedSec : 0;
   const avgLen = committed > 0 ? keyStrokes / committed : 0;
 
-  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current); }, []);
+  useEffect(() => () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+  }, []);
 
-  // 计时：练习中每 0.5s 刷新一次用时，速度才会跟着动
+  // 计时：练习中每 0.5s 刷新一次用时，速度才会跟着动；段结算时暂停
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || segResult || articleDone) return;
     const t = setInterval(() => setElapsedMs(Date.now() - startedAtRef.current), 500);
     return () => clearInterval(t);
-  }, [isPlaying]);
+  }, [isPlaying, segResult, articleDone]);
+
+  /**
+   * 当前段变化（切段 / 打乱本段 / 开始练习）后，把光标对到该段第一个题目。
+   * 打乱本段会原地替换 practiceText，段边界不变，这里统一对位。
+   */
+  useEffect(() => {
+    if (!isPlaying || !currentSeg) return;
+    const first = items.findIndex(it => it.textIndex >= currentSeg.start);
+    setCursor(first === -1 ? 0 : first);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [segIndex, practiceText, isPlaying, segLen]);
 
   // 跟打器式固定窗口：面板高度 = 4 行，当前字固定在窗口内第 3 行，上下自动滚。
   // 行高与当前位置都用 getBoundingClientRect 的小数值量（offsetHeight/offsetTop 取整会累积出 1~2px 行缝）。
@@ -290,27 +407,90 @@ export default function ArticlePracticePage() {
     return () => window.removeEventListener('resize', place);
   }, [inputCode, candidates, cursor, isPlaying]);
 
-  /** 进位 n 个题目（n>1 = 一次上屏了多个字的词组）；走完全文 = 完成一轮 */
-  const advance = useCallback((count = 1) => {
-    const next = cursor + count;
-    if (next >= items.length) {
-      // 走完全文 = 完成一轮，自动重开下一轮（速度统计同步归零重新计）
+  /** 本段归零重新开始（不改段序） */
+  const resetSegmentStats = useCallback(() => {
+    setProducedChars({});
+    setUndoCount(0);
+    setCorrectCount(0);
+    setWrongCount(0);
+    setKeyStrokes(0);
+    setInputCode('');
+    setFeedback(null);
+    setWrongFlash(null);
+    setSegResult(null);
+    startedAtRef.current = Date.now();
+    setElapsedMs(0);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+  }, []);
+
+  /** 跳到第 i 段；reshuffle = 进入前先把该段字符打乱 */
+  const goToSegment = useCallback((i: number, reshuffle = false) => {
+    const target = segments[i];
+    if (!target) return;
+    if (reshuffle) {
+      setPracticeText(prev => shuffleRangeText(prev, target.start, target.end));
+    }
+    setSegIndex(i);
+    resetSegmentStats();
+  }, [segments, resetSegmentStats]);
+
+  /** 段结算：判准度门槛，决定放行 / 拦下重打；放行时按设置自动进下一段 */
+  const completeSegment = useCallback(() => {
+    const segCommitted = correctCount + wrongCount;
+    const segAcc = segCommitted > 0 ? Math.round((correctCount / segCommitted) * 100) : 100;
+    const segSpeed = elapsedSec > 1 ? Math.round(segCommitted / (elapsedSec / 60)) : 0;
+    // 累计全文成绩
+    totalsRef.current = {
+      chars: totalsRef.current.chars + segCommitted,
+      correct: totalsRef.current.correct + correctCount,
+      wrong: totalsRef.current.wrong + wrongCount,
+      keys: totalsRef.current.keys + keyStrokes,
+      ms: totalsRef.current.ms + elapsedMs,
+      segs: totalsRef.current.segs + 1,
+    };
+    const gated = accGate > 0 && segAcc < accGate;
+    const isLast = segIndex >= segments.length - 1;
+    if (gated) {
+      setSegResult({ pass: false, accuracy: segAcc, speed: segSpeed, seconds: elapsedSec, wrong: wrongCount, autoIn: 0 });
+      return;
+    }
+    if (isLast) {
+      // 全文完成：计一轮
+      const totals = totalsRef.current;
+      setArticleDone({
+        chars: totals.chars,
+        correct: totals.correct,
+        wrong: totals.wrong,
+        seconds: Math.round(totals.ms / 1000),
+        segments: totals.segs,
+      });
       setRoundToast(completedRounds + 1);
       resetRound();
-      setProducedChars({});
-      setUndoCount(0);
-      setCorrectCount(0);
-      setWrongCount(0);
-      setKeyStrokes(0);
-      startedAtRef.current = Date.now();
-      setElapsedMs(0);
-      setCursor(0);
+      return;
+    }
+    const autoIn = autoNext ? 1 : 0;
+    setSegResult({ pass: true, accuracy: segAcc, speed: segSpeed, seconds: elapsedSec, wrong: wrongCount, autoIn });
+    if (autoNext) {
+      if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+      autoNextTimerRef.current = setTimeout(() => goToSegment(segIndex + 1), 1200);
+    }
+  }, [correctCount, wrongCount, keyStrokes, elapsedSec, elapsedMs, accGate, segIndex, segments.length,
+    autoNext, completedRounds, resetRound, goToSegment]);
+
+  /** 进位 n 个题目（n>1 = 一次上屏了多个字的词组）；越过本段最后一个题目 = 本段完成 */
+  const advance = useCallback((count = 1) => {
+    const next = cursor + count;
+    const last = segLastItem;
+    if (next > last || last < 0) {
+      // 打完本段 → 结算（门槛 / 自动下一段都在这里处理）
+      completeSegment();
     } else {
       setCursor(next);
     }
     setInputCode('');
     setFeedback(null);
-  }, [cursor, items.length, completedRounds, resetRound]);
+  }, [cursor, segLastItem, completeSegment]);
 
   /**
    * 上屏一次输入的结果：produced = 你实际打出的内容（1 个字，或一个多字词组；
@@ -323,7 +503,7 @@ export default function ArticlePracticePage() {
     typedCode: string,
     trigger: 'keys' | 'space' | 'pick' | 'punct',
   ) => {
-    if (!current) return;
+    if (!current || segResult || articleDone) return;
     const n = produced ? [...produced].length : 1;
     const expected = items.slice(cursor, cursor + n).map(it => it.char).join('');
     const ok = produced !== null && produced === expected;
@@ -362,7 +542,7 @@ export default function ArticlePracticePage() {
       advance(n);
       timerRef.current = setTimeout(() => setWrongFlash(null), 1200);
     }
-  }, [current, cursor, items, recordChar, markSeen, advance]);
+  }, [current, cursor, items, recordChar, markSeen, advance, segResult, articleDone]);
 
   /**
    * 满 4 键自动顶屏 / 空格上屏。两种上屏：
@@ -382,12 +562,12 @@ export default function ArticlePracticePage() {
 
   /** 数字键 / 点击候选：直接选中该候选项上屏（单字或词组） */
   const pickCandidate = useCallback((candidate: Candidate) => {
-    if (!isPlaying || !current || feedback === 'correct' || !inputCode) return;
+    if (!isPlaying || !current || feedback === 'correct' || segResult || !inputCode) return;
     commitProduced(candidate.text, inputCode, 'pick');
-  }, [isPlaying, current, feedback, inputCode, commitProduced]);
+  }, [isPlaying, current, feedback, inputCode, segResult, commitProduced]);
 
   const handleKeyPress = useCallback((key: string) => {
-    if (!isPlaying || !current || feedback === 'correct') return;
+    if (!isPlaying || !current || feedback === 'correct' || segResult || articleDone) return;
     // 标点题目：按映射键（, . \ ; : " < >> [ ] ` - ^ ~ …）或输入法直接上屏的全角标点
     if (isPunctItem(current)) {
       if (key === current.key || key === current.char) commitProduced(current.char, key, 'punct');
@@ -398,25 +578,26 @@ export default function ArticlePracticePage() {
     setInputCode(newCode);
     if (newCode.length < AUTO_COMMIT_LENGTH) return;
     commitCode(newCode, 'keys');
-  }, [isPlaying, current, feedback, inputCode, commitCode, commitProduced]);
+  }, [isPlaying, current, feedback, inputCode, segResult, articleDone, commitCode, commitProduced]);
 
   const handleSpaceCommit = useCallback((): boolean => {
-    if (!isPlaying || !current || !inputCode || feedback === 'correct') return false;
+    if (!isPlaying || !current || !inputCode || feedback === 'correct' || segResult || articleDone) return false;
     commitCode(inputCode, 'space');
     return true;
-  }, [isPlaying, current, inputCode, feedback, commitCode]);
+  }, [isPlaying, current, inputCode, feedback, segResult, articleDone, commitCode]);
 
   /**
    * 退格：有正在敲的码先删码；码删空后再按 → **删掉上一个已打出的字**（打对的也删），
    * 光标退回那一个字重打，并撤销那次的记录（按最终结果算），记一次「回改」。
    */
   const handleBackspace = useCallback(() => {
-    if (!isPlaying || feedback === 'correct') return;
+    if (!isPlaying || feedback === 'correct' || segResult || articleDone) return;
     if (inputCode) {
       setInputCode(prev => prev.slice(0, -1));
       return;
     }
     const prevIdx = cursor - 1;
+    if (prevIdx < (segFirstItem >= 0 ? segFirstItem : 0)) return;
     const item = items[prevIdx];
     if (!item) return;
     const produced = producedChars[prevIdx];
@@ -437,13 +618,54 @@ export default function ArticlePracticePage() {
     setCursor(prevIdx);
     setInputCode('');
     setFeedback(null);
-  }, [isPlaying, feedback, inputCode, cursor, items, producedChars, retractChar]);
+  }, [isPlaying, feedback, inputCode, cursor, items, producedChars, retractChar, segResult, articleDone, segFirstItem]);
+
+  /**
+   * 开始练习（或重打全文）：按当前文章与乱序模式生成练习文本，回到第 1 段。
+   * textOverride = 从其他入口（如易错字练习）带进来的文本。
+   */
+  const startPractice = useCallback((textOverride?: string) => {
+    const sourceText = textOverride ?? activeText;
+    if (!sourceText.trim() || !charCodeData) return;
+    const t = shuffleMode === 'full' ? shuffleFullText(sourceText) : sourceText;
+    if (!t.trim()) return;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
+    totalsRef.current = { chars: 0, correct: 0, wrong: 0, keys: 0, ms: 0, segs: 0 };
+    setPracticeText(t);
+    setSegIndex(0);
+    setArticleDone(null);
+    setSegResult(null);
+    setProducedChars({});
+    setCorrectCount(0);
+    setWrongCount(0);
+    setUndoCount(0);
+    setKeyStrokes(0);
+    setInputCode('');
+    setFeedback(null);
+    setWrongFlash(null);
+    startedAtRef.current = Date.now();
+    setElapsedMs(0);
+    resetRound();
+    setIsPlaying(true);
+    // 开始页内容比练习区高，浏览器滚动锚定会把窗口带偏、把顶部统计行顶到导航栏后面
+    window.scrollTo({ top: 0 });
+  }, [activeText, charCodeData, shuffleMode, resetRound]);
 
   // 物理键盘
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (!isPlaying) return;
-      if (e.isComposing || e.keyCode === 229) return;
+      if (!isPlaying || articleDone) {
+        // 全文完成面板：回车 = 重打全文
+        if (articleDone && e.key === 'Enter') { e.preventDefault(); startPractice(); }
+        return;
+      }
+      // 跟打器快捷键：上一段 / 下一段 / 打乱本段 / 重打本段
+      if (e.ctrlKey && e.key.toLowerCase() === 'u') { e.preventDefault(); goToSegment(Math.max(0, segIndex - 1)); return; }
+      // 准度门槛拦下时不允许跳下一段(与界面按钮一致)
+      if (e.ctrlKey && e.key.toLowerCase() === 'j' && !(segResult && !segResult.pass)) { e.preventDefault(); goToSegment(Math.min(segments.length - 1, segIndex + 1)); return; }
+      if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); goToSegment(segIndex, true); return; }
+      if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); goToSegment(segIndex); return; }
       if (e.key === 'Escape') { setIsPlaying(false); return; }
       if (e.key === 'Backspace') { e.preventDefault(); handleBackspace(); return; }
       if (e.key === ' ') { e.preventDefault(); handleSpaceCommit(); return; }
@@ -465,29 +687,8 @@ export default function ArticlePracticePage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPlaying, current, handleKeyPress, handleSpaceCommit, handleBackspace, pickCandidate]);
-
-  const startPractice = useCallback((text?: string) => {
-    // 乱序开启时，每次开始练习都重新打乱一次
-    const t = text ?? (shuffleActive ? shuffledCommon500Text() : activeText);
-    if (!t.trim() || !charCodeData) return;
-    if (shuffleActive) setShuffledText(t);
-    if (timerRef.current) clearTimeout(timerRef.current);
-    setCursor(0);
-    setInputCode('');
-    setFeedback(null);
-    setProducedChars({});
-    setCorrectCount(0);
-    setWrongCount(0);
-    setUndoCount(0);
-    setKeyStrokes(0);
-    startedAtRef.current = Date.now();
-    setElapsedMs(0);
-    resetRound();
-    setIsPlaying(true);
-    // 开始页内容比练习区高，浏览器滚动锚定会把窗口带偏、把顶部统计行顶到导航栏后面
-    window.scrollTo({ top: 0 });
-  }, [activeText, charCodeData, resetRound, shuffleActive]);
+  }, [isPlaying, current, handleKeyPress, handleSpaceCommit, handleBackspace, pickCandidate,
+    goToSegment, segIndex, segments.length, articleDone, startPractice, segResult]);
 
   if (dataLoading || !charCodeData) {
     return (
@@ -500,8 +701,85 @@ export default function ArticlePracticePage() {
     );
   }
 
-  const chars = [...activeText];
+  const chars = [...practiceText];
   const itemCount = items.length;
+  const previewCount = previewItems.length;
+  const segTotal = segments.length;
+
+  /** 段完成结算面板（通过 → 绿色；被准度门槛拦下 → 红色） */
+  const segResultPanel = segResult && !articleDone && (
+    <div className={cn(
+      'mt-3 rounded-xl border p-4 text-center',
+      segResult.pass
+        ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
+        : 'border-red-500/40 bg-red-500/[0.06]',
+    )}>
+      {segResult.pass ? (
+        <>
+          <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
+            本段完成 · 准度 {segResult.accuracy}%
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            速度 {segResult.speed} 字/分 · 用时 {segResult.seconds.toFixed(1)} 秒 · 错 {segResult.wrong} 字
+            {segResult.autoIn > 0 && <span className="text-primary"> · 即将自动进入下一段…</span>}
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="text-lg font-semibold text-red-600 dark:text-red-400">
+            准度未达标 · {segResult.accuracy}%（要求 {accGate}%）
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            需要达到 {accGate}% 的准度才能进入下一段 · 重打本段（速度 {segResult.speed} 字/分 · 错 {segResult.wrong} 字）
+          </div>
+        </>
+      )}
+      <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+        <Button size="sm" className="gap-1.5 text-xs"
+          onClick={() => goToSegment(segIndex)}>
+          <Repeat className="h-3.5 w-3.5" />重打本段
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+          onClick={() => goToSegment(segIndex, true)}>
+          <Shuffle className="h-3.5 w-3.5" />打乱重打
+        </Button>
+        {segResult.pass && segIndex < segTotal - 1 && (
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+            onClick={() => goToSegment(segIndex + 1)}>
+            下一段<ChevronsRight className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+
+  /** 全文完成面板 */
+  const articleDonePanel = articleDone && (
+    <div className="mt-3 rounded-xl border border-primary/40 bg-primary/[0.05] p-5 text-center">
+      <div className="text-xl font-semibold">全文完成 🎉</div>
+      <div className="mt-2 flex items-center justify-center gap-x-4 gap-y-1 flex-wrap text-xs text-muted-foreground">
+        <span>共 <b className="text-foreground">{articleDone.segments}</b> 段</span>
+        <span><b className="text-foreground">{articleDone.chars}</b> 字</span>
+        <span>用时 <b className="text-foreground">{articleDone.seconds}</b> 秒</span>
+        <span>速度 <b className="text-foreground">
+          {articleDone.seconds > 1 ? Math.round(articleDone.chars / (articleDone.seconds / 60)) : 0}
+        </b> 字/分</span>
+        <span>准度 <b className="text-foreground">
+          {articleDone.chars > 0 ? Math.round((articleDone.correct / articleDone.chars) * 100) : 0}%
+        </b></span>
+        <span>错 <b className="text-red-500">{articleDone.wrong}</b> 字</span>
+      </div>
+      <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
+        <Button size="sm" className="gap-1.5 text-xs" onClick={() => startPractice()}>
+          <RotateCcw className="h-3.5 w-3.5" />重打全文<kbd className="ml-1 px-1 py-0.5 text-[10px] bg-primary/15 rounded font-mono">Enter</kbd>
+        </Button>
+        <Button size="sm" variant="outline" className="gap-1.5 text-xs"
+          onClick={() => { setIsPlaying(false); setArticleDone(null); }}>
+          返回选择文章
+        </Button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="min-h-screen bg-background">
@@ -512,15 +790,14 @@ export default function ArticlePracticePage() {
             <div className="max-w-4xl mx-auto">
               <header className="text-center mb-8 sm:mb-10">
                 <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-                  文章<span className="text-gradient-primary">练习</span>
+                  文章<span className="text-gradient-primary">跟打</span>
                 </h1>
                 <p className="text-muted-foreground max-w-lg mx-auto">
-                  照着文章逐字打编码，没有输入框：打出的字直接跟在原文每个字的下方（打对的变浅、打错的红字留痕）。
-                  满 4 键自动上屏、不足 4 键按空格；<span className="text-foreground/80">标点也要打</span>（「，」按
+                  跟打器式练习：长文可按段长切成分段逐段打，支持打乱本段 / 全文、重打、自动下一段，
+                  还能<span className="text-foreground/80">设置最低准度——达标了才能进入下一段</span>。
+                  满 4 键自动上屏、不足 4 键按空格；标点也要打（「，」按
                   <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">,</kbd>、「。」按
-                  <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">.</kbd>、「、」按
-                  <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">\</kbd>），
-                  <span className="text-foreground/80">词组</span>可以在词的开头一次打出来（打全词组码后空格 / 满 4 键上屏整个词）。
+                  <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">.</kbd>）。
                 </p>
               </header>
 
@@ -529,7 +806,7 @@ export default function ArticlePracticePage() {
                   <div className="flex-1 flex items-center justify-center py-2 mb-6">
                     <button
                       onClick={() => startPractice()}
-                      disabled={!baseText.trim() || itemCount === 0}
+                      disabled={!baseText.trim() || previewCount === 0}
                       className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
                     >
                       <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
@@ -537,8 +814,10 @@ export default function ArticlePracticePage() {
                     </button>
                   </div>
                   <p className="text-center text-xs text-muted-foreground/70 mb-4">
-                    当前文章：{sourceLabel} · 可练 {itemCount} 字 · 已完成 {completedRounds} 轮
-                    {shuffleActive && <span className="ml-1 text-primary">· 乱序</span>}
+                    当前文章：{sourceLabel} · 可练 {previewCount} 字 · 已完成 {completedRounds} 轮
+                    {segLen !== 'all' && <span> · 每段 {segLen} 字</span>}
+                    {shuffleMode !== 'off' && <span className="text-primary"> · 乱序{shuffleMode === 'full' ? '（全文）' : '（本段）'}</span>}
+                    {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 ≥ {accGate}%</span>}
                   </p>
                   <PracticeStatsLine
                     roundNo={completedRounds + 1}
@@ -554,81 +833,152 @@ export default function ArticlePracticePage() {
                   />
                 </div>
 
-                <div className="lg:col-span-2 card-base !rounded-2xl p-6">
-                  <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif">选择文章</h2>
-                  <div className="space-y-2 mb-5">
-                    {DEFAULT_ARTICLES.map(a => (
-                      <button key={a.id} onClick={() => { setSelectedId(a.id); setReviewMode(false); }}
-                        className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200',
-                          selectedId === a.id && !reviewMode
+                <div className="lg:col-span-2 card-base !rounded-2xl p-6 space-y-5">
+                  {/* ===== 文章选择 ===== */}
+                  <div>
+                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif">选择文章</h2>
+                    <div className="space-y-2 mb-4">
+                      {DEFAULT_ARTICLES.map(a => (
+                        <button key={a.id} onClick={() => { setSelectedId(a.id); setReviewMode(false); }}
+                          className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200',
+                            selectedId === a.id && !reviewMode
+                              ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                              : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <BookOpen className="h-4 w-4 text-muted-foreground" />
+                            {a.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground/70 mt-0.5">{a.source} · {[...a.text].length} 字</div>
+                        </button>
+                      ))}
+                      <button onClick={() => { setSelectedId('custom'); setReviewMode(false); setShowEditor(true); }}
+                        disabled={!customText.trim()}
+                        className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200 disabled:opacity-50',
+                          selectedId === 'custom' && !reviewMode
                             ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
                             : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
                         <div className="flex items-center gap-2 text-sm font-medium">
-                          <BookOpen className="h-4 w-4 text-muted-foreground" />
-                          {a.title}
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          自定义文本
                         </div>
-                        <div className="text-xs text-muted-foreground/70 mt-0.5">{a.source} · {[...a.text].length} 字</div>
+                        <div className="text-xs text-muted-foreground/70 mt-0.5">
+                          {customText.trim() ? `${[...customText].length} 字` : '还没粘贴内容'}
+                        </div>
                       </button>
-                    ))}
-                    <button onClick={() => { setSelectedId('custom'); setReviewMode(false); setShowEditor(true); }}
-                      disabled={!customText.trim()}
-                      className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200 disabled:opacity-50',
-                        selectedId === 'custom' && !reviewMode
-                          ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
-                          : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                        自定义文本
+                    </div>
+                    <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-3"
+                      onClick={() => setShowEditor(v => !v)}>
+                      <FileText className="h-3.5 w-3.5" />{showEditor ? '收起编辑框' : '粘贴 / 编辑自定义文本'}
+                    </Button>
+                    {customText.trim() && (
+                      <Button variant="ghost" size="sm" className="w-full gap-1.5 text-xs text-red-400 hover:text-red-600"
+                        onClick={() => saveCustom('')}>
+                        <Trash2 className="h-3.5 w-3.5" />清除自定义文本
+                      </Button>
+                    )}
+                    {showEditor && (
+                      <div className="mt-3">
+                        <textarea
+                          value={draftText}
+                          onChange={e => setDraftText(e.target.value)}
+                          rows={8}
+                          placeholder="把要练习的文章粘贴到这里（标点按对应键打，如「，」按 , 「。」按 . 「、」按 \）"
+                          className="w-full text-xs p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
+                        />
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-[11px] text-muted-foreground">{[...draftText].length} 字</span>
+                          <Button size="sm" className="gap-1.5 text-xs" onClick={() => saveCustom(draftText)}>
+                            保存并使用
+                          </Button>
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground/70 mt-0.5">
-                        {customText.trim() ? `${[...customText].length} 字` : '还没粘贴内容'}
-                      </div>
-                    </button>
+                    )}
                   </div>
 
-                  {/* 常用字 500 的乱序开关（只有支持乱序的文章才显示） */}
-                  {canShuffle && !reviewMode && (
+                  {/* ===== 练习方式设置 ===== */}
+                  <div className="border-t border-border/50 pt-4">
+                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif flex items-center gap-1.5">
+                      <ListOrdered className="h-3.5 w-3.5" />练习方式
+                    </h2>
+
+                    {/* 段长 */}
+                    <div className="mb-3">
+                      <div className="text-[11px] text-muted-foreground mb-1.5">段长（切成分段逐段打，「全文」= 文章模式）</div>
+                      <div className="flex gap-1 flex-wrap">
+                        {SEG_LEN_OPTIONS.map(o => (
+                          <button key={String(o.value)}
+                            onClick={() => updateSettings({ segLen: o.value })}
+                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                              segLen === o.value
+                                ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                                : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 乱序 */}
+                    <div className="mb-3">
+                      <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                        <Shuffle className="h-3 w-3" />乱序（打乱练习时也会重新打乱）
+                      </div>
+                      <div className="flex gap-1 flex-wrap">
+                        {([['off', '关'], ['seg', '本段'], ['full', '全文']] as const).map(([v, label]) => (
+                          <button key={v}
+                            onClick={() => updateSettings({ shuffleMode: v })}
+                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                              shuffleMode === v
+                                ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                                : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 准度门槛 */}
+                    <div className="mb-3">
+                      <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                        <Gauge className="h-3 w-3" />最低准度（不达标不能进入下一段，需重打本段）
+                      </div>
+                      <div className="flex gap-1 flex-wrap">
+                        {ACC_GATE_OPTIONS.map(v => (
+                          <button key={v}
+                            onClick={() => updateSettings({ accGate: v })}
+                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                              accGate === v
+                                ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium'
+                                : 'border-border/60 text-muted-foreground hover:border-amber-500/30')}>
+                            {v === 0 ? '关' : `${v}%`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 自动下一段 */}
                     <button
-                      onClick={toggleShuffle}
-                      className={cn('w-full flex items-center gap-2 p-2.5 mb-3 rounded-xl border text-left text-xs transition-colors',
-                        shuffleOn
+                      onClick={() => updateSettings({ autoNext: !autoNext })}
+                      className={cn('w-full flex items-center gap-2 p-2.5 rounded-xl border text-left text-xs transition-colors',
+                        autoNext
                           ? 'border-primary/40 bg-primary/[0.06] text-primary'
                           : 'border-border/50 text-muted-foreground hover:border-primary/25')}
                     >
-                      <Shuffle className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-medium">乱序练习</span>
-                      <span className="ml-auto text-[11px] opacity-80">{shuffleOn ? '已开 · 每次开始重新打乱' : '已关 · 按字频序'}</span>
+                      <ChevronsRight className="h-3.5 w-3.5 shrink-0" />
+                      <span className="font-medium">自动下一段</span>
+                      <span className="ml-auto text-[11px] opacity-80">
+                        {autoNext ? '已开 · 本段达标后自动进入下一段' : '已关 · 打完本段手动选下一段'}
+                      </span>
                     </button>
-                  )}
 
-                  <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-3"
-                    onClick={() => setShowEditor(v => !v)}>
-                    <FileText className="h-3.5 w-3.5" />{showEditor ? '收起编辑框' : '粘贴 / 编辑自定义文本'}
-                  </Button>
-                  {customText.trim() && (
-                    <Button variant="ghost" size="sm" className="w-full gap-1.5 text-xs text-red-400 hover:text-red-600"
-                      onClick={() => saveCustom('')}>
-                      <Trash2 className="h-3.5 w-3.5" />清除自定义文本
-                    </Button>
-                  )}
-
-                  {showEditor && (
-                    <div className="mt-3">
-                      <textarea
-                        value={draftText}
-                        onChange={e => setDraftText(e.target.value)}
-                        rows={8}
-                        placeholder="把要练习的文章粘贴到这里（标点按对应键打，如「，」按 , 「。」按 . 「、」按 \）"
-                        className="w-full text-xs p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
-                      />
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-[11px] text-muted-foreground">{[...draftText].length} 字</span>
-                        <Button size="sm" className="gap-1.5 text-xs" onClick={() => saveCustom(draftText)}>
-                          保存并使用
-                        </Button>
-                      </div>
-                    </div>
-                  )}
+                    <p className="mt-3 text-[11px] text-muted-foreground/70 leading-relaxed">
+                      打字中的快捷键：<kbd className="px-1 rounded bg-muted font-mono">Ctrl+U</kbd> 上一段 ·
+                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+J</kbd> 下一段 ·
+                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+Y</kbd> 重打本段 ·
+                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+K</kbd> 打乱本段 ·
+                      <kbd className="px-1 rounded bg-muted font-mono">Esc</kbd> 退出
+                    </p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -652,13 +1002,15 @@ export default function ArticlePracticePage() {
                 ) : undefined}
               />
               <div className="flex items-center gap-x-2 sm:gap-x-3 text-[11px] sm:text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">第 {Math.min(segIndex + 1, segTotal || 1)}/{segTotal || 1} 段</span>
+                <span className="text-border">|</span>
                 <span>速度 <span className="font-mono-stat font-semibold text-foreground">{speed}</span> 字/分</span>
                 <span className="text-border">|</span>
                 <span>击键 <span className="font-mono-stat font-semibold text-foreground">{kps.toFixed(2)}</span></span>
                 <span className="text-border">|</span>
                 <span>码长 <span className="font-mono-stat font-semibold text-foreground">{avgLen.toFixed(2)}</span></span>
                 <button
-                  onClick={() => { setIsPlaying(false); setInputCode(''); setFeedback(null); setReviewMode(false); }}
+                  onClick={() => { setIsPlaying(false); setArticleDone(null); setSegResult(null); setReviewMode(false); }}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800 transition-colors shrink-0"
                 >
                   <ArrowLeft className="h-3.5 w-3.5" />退出
@@ -671,7 +1023,7 @@ export default function ArticlePracticePage() {
             <div className="h-1 rounded-full bg-muted overflow-hidden mb-3">
               <div
                 className="h-full rounded-full bg-primary transition-all duration-300"
-                style={{ width: `${itemCount > 0 ? Math.min(100, Math.round((committed / itemCount) * 100)) : 0}%` }}
+                style={{ width: `${itemCount > 0 ? Math.min(100, Math.round((committed / Math.max(1, itemCount)) * 100)) : 0}%` }}
               />
             </div>
 
@@ -776,15 +1128,21 @@ export default function ArticlePracticePage() {
                   {showHint ? '提示开' : '提示关'}
                 </button>
                 <span className="ml-auto truncate font-mono-stat">
-                  第 {completedRounds + 1} 段 · {sourceLabel} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
+                  {segLen !== 'all' && <>第 {segIndex + 1}/{segTotal} 段 · </>}
+                  {sourceLabel} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
                   {undoCount > 0 && <span className="text-primary"> · 回改 {undoCount}</span>}
-                  {shuffleActive && <span className="text-primary"> · 乱序</span>}
+                  {shuffleMode !== 'off' && <span className="text-primary"> · 乱序</span>}
+                  {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 {accuracy}% / {accGate}%</span>}
                 </span>
               </div>
             </div>
 
+            {/* 段结算 / 全文完成面板 */}
+            {segResultPanel}
+            {articleDonePanel}
+
             {/* 输入法候选窗：跟随「正在敲的码」浮动在字下方（fixed 定位，见上面的 useLayoutEffect） */}
-            {isPlaying && !feedback && inputCode && candidates.length > 0 && (
+            {isPlaying && !feedback && !segResult && !articleDone && inputCode && candidates.length > 0 && (
               <div
                 ref={candBoxRef}
                 className="fixed z-40 flex flex-wrap items-center gap-0.5 max-w-[min(92vw,640px)] rounded-lg border border-primary/30 bg-card/98 px-2 py-1 shadow-lg shadow-black/10 backdrop-blur"
@@ -813,7 +1171,7 @@ export default function ArticlePracticePage() {
               </div>
             )}
 
-            {showHint && current && (
+            {showHint && current && !segResult && !articleDone && (
               <div className="text-center text-xs font-mono text-amber-600 dark:text-amber-400 mt-2">
                 {isCharItem(current)
                   ? <>{current.char} → {current.codes.map(c => c.toUpperCase()).join(' / ')}</>
@@ -828,12 +1186,12 @@ export default function ArticlePracticePage() {
                 {phraseNow && <span> · 第 1 个候选是词组「{phraseNow}」，一次上屏</span>}
               </div>
             )}
-            {wrongFlash && (
+            {wrongFlash && !segResult && (
               <div className="text-center text-xs text-red-600 dark:text-red-400 mt-2">
                 「{wrongFlash}」打错了 · 可退格回退改掉（也可继续往下打）
               </div>
             )}
-            {current && isPunctItem(current) && !feedback && (
+            {current && isPunctItem(current) && !feedback && !segResult && !articleDone && (
               <div className="flex items-center justify-center mt-3">
                 <button
                   onClick={() => handleKeyPress(current.key)}
@@ -849,21 +1207,28 @@ export default function ArticlePracticePage() {
               退格：先删正在敲的码；码删空后再按 = 删掉上一个已打出的字（标点也算，打对的也删），回到那一个字重打
             </div>
 
-            <div className="flex items-center justify-center gap-2 mt-4">
+            <div className="flex items-center justify-center gap-2 mt-4 flex-wrap">
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                onClick={() => goToSegment(segIndex)} disabled={!!segResult || !!articleDone}>
+                <Repeat className="h-3.5 w-3.5" />重打本段
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                onClick={() => goToSegment(segIndex, true)} disabled={!!segResult || !!articleDone}>
+                <Shuffle className="h-3.5 w-3.5" />打乱本段
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                onClick={() => goToSegment(Math.max(0, segIndex - 1))} disabled={segIndex === 0}>
+                <ArrowLeft className="h-3.5 w-3.5" />上一段
+              </Button>
+              <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                onClick={() => goToSegment(Math.min(segTotal - 1, segIndex + 1))}
+                disabled={segIndex >= segTotal - 1 || (segResult !== null && !segResult.pass)}>
+                下一段<ArrowRight className="h-3.5 w-3.5" />
+              </Button>
               <Button variant="outline" size="sm" className="gap-1.5 text-xs"
                 onClick={() => startPractice()}>
                 <RotateCcw className="h-3.5 w-3.5" />从头再来
               </Button>
-              {canShuffle && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className={cn('gap-1.5 text-xs', shuffleOn && 'border-primary/50 text-primary')}
-                  onClick={() => { toggleShuffle(); startPractice(); }}
-                >
-                  <Shuffle className="h-3.5 w-3.5" />乱序：{shuffleOn ? '开' : '关'}
-                </Button>
-              )}
               <Button variant="outline" size="sm" className="gap-1.5 text-xs"
                 onClick={() => {
                   setShowKeyboard(v => {
@@ -883,7 +1248,7 @@ export default function ArticlePracticePage() {
                   feedbackType={feedback}
                   onKeyPress={handleKeyPress}
                   onBackspace={handleBackspace}
-                  onSpace={() => { if (!feedback) handleSpaceCommit(); }}
+                  onSpace={() => { if (!feedback && !segResult) handleSpaceCommit(); }}
                   headerLeft="编码键盘"
                   headerRight={<span className="text-[10px] text-muted-foreground">{cursor + 1}/{itemCount}</span>}
                 />
