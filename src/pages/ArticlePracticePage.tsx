@@ -248,6 +248,8 @@ export default function ArticlePracticePage() {
   }, []);
 
   const [reviewMode, setReviewMode] = useState(false);
+  /** 下拉面板当前展开的标签（同页展开，不跳页）；'none' = 全部收起 */
+  const [panelTab, setPanelTab] = useState<'none' | 'articles' | 'settings' | 'history' | 'heatmap'>('none');
 
   // ============ 练习方式设置（分段 / 乱序 / 自动发文 / 准度门槛） ============
   const [settings, setSettings] = useState<ArticleSettings>(loadSettings);
@@ -299,11 +301,6 @@ export default function ArticlePracticePage() {
   const currentSeg = segments[segIndex];
 
   // ============ 题目序列 ============
-  // 开始页的题目数按当前所选文章预览计算（练习文本要等开始时才生成）
-  const previewItems = useMemo(
-    () => (effectiveCodeData && activeText ? buildArticleItems(activeText, charCodeIndex) : []),
-    [effectiveCodeData, activeText, charCodeIndex],
-  );
   const items = useMemo(
     () => (effectiveCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex) : []),
     [effectiveCodeData, practiceText, charCodeIndex],
@@ -828,6 +825,39 @@ export default function ArticlePracticePage() {
     window.scrollTo({ top: 0 });
   }, [activeText, effectiveCodeData, shuffleMode, resetRound]);
 
+  /** 选择文章 = 立即以该文开练（同页切换，不跳页） */
+  const selectArticle = useCallback((id: string) => {
+    if (id === 'custom') {
+      if (!customText.trim()) return;
+      setSelectedId('custom');
+      setReviewMode(false);
+      startPractice(customText);
+      return;
+    }
+    const art = DEFAULT_ARTICLES.find(a => a.id === id);
+    if (!art) return;
+    setSelectedId(id);
+    setReviewMode(false);
+    startPractice(art.text);
+  }, [customText, startPractice]);
+
+  /** 进入页面自动开练；切换码表方案后按当前文章重开 */
+  const schemeName = customScheme?.name ?? '';
+  const bootRef = useRef(false);
+  const prevSchemeRef = useRef(schemeName);
+  useEffect(() => {
+    if (bootRef.current || !effectiveCodeData || !activeText.trim()) return;
+    bootRef.current = true;
+    startPractice();
+  }, [effectiveCodeData, activeText, startPractice]);
+  useEffect(() => {
+    if (prevSchemeRef.current === schemeName) return;
+    prevSchemeRef.current = schemeName;
+    bootRef.current = true;
+    if (isPlaying && !reviewMode) startPractice();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemeName]);
+
   // 物理键盘
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -896,7 +926,6 @@ export default function ArticlePracticePage() {
 
   const chars = [...practiceText];
   const itemCount = items.length;
-  const previewCount = previewItems.length;
   const segTotal = segments.length;
 
   /** 段完成结算面板（通过 → 绿色；被准度门槛拦下 → 红色） */
@@ -967,8 +996,8 @@ export default function ArticlePracticePage() {
           <RotateCcw className="h-3.5 w-3.5" />重打全文<kbd className="ml-1 px-1 py-0.5 text-[10px] bg-primary/15 rounded font-mono">Enter</kbd>
         </Button>
         <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-          onClick={() => { setIsPlaying(false); setArticleDone(null); }}>
-          返回选择文章
+          onClick={() => { setArticleDone(null); setPanelTab('articles'); }}>
+          选其他文章 / 查看历史
         </Button>
       </div>
     </div>
@@ -976,337 +1005,10 @@ export default function ArticlePracticePage() {
 
   return (
     <div className="min-h-screen bg-background">
-      {/* ===== 选择文章 ===== */}
-      {!isPlaying && (
-        <div className="min-h-[calc(100vh-3.5rem)] bg-mesh">
-          <section className="container-page py-10 sm:py-16">
-            <div className="max-w-4xl mx-auto">
-              <header className="text-center mb-8 sm:mb-10">
-                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
-                  文章<span className="text-gradient-primary">跟打</span>
-                </h1>
-                <p className="text-muted-foreground max-w-lg mx-auto">
-                  跟打器式练习：长文可按段长切成分段逐段打，支持打乱本段 / 全文、重打、自动下一段，
-                  还能<span className="text-foreground/80">设置最低准度——达标了才能进入下一段</span>。
-                  满 4 键自动上屏、不足 4 键按空格；标点也要打（「，」按
-                  <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">,</kbd>、「。」按
-                  <kbd className="mx-0.5 px-1 rounded bg-muted font-mono text-[10px]">.</kbd>）。
-                </p>
-              </header>
-
-              <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 sm:gap-5">
-                <div className="lg:col-span-3 card-base !rounded-2xl p-6 sm:p-8 flex flex-col">
-                  <div className="flex-1 flex items-center justify-center py-2 mb-6">
-                    <button
-                      onClick={() => startPractice()}
-                      disabled={!baseText.trim() || previewCount === 0}
-                      className="group inline-flex items-center gap-3 rounded-2xl bg-primary text-primary-foreground px-10 py-4 text-lg font-medium shadow-lg shadow-primary/25 transition-all duration-300 hover:shadow-xl hover:shadow-primary/30 hover:-translate-y-0.5 active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none"
-                    >
-                      <Play className="h-5 w-5 transition-transform group-hover:scale-110" />
-                      开始练习
-                    </button>
-                  </div>
-                  <p className="text-center text-xs text-muted-foreground/70 mb-4">
-                    当前文章：{sourceLabel} · 方案 {customScheme?.name ?? '字源形码'} · 可练 {previewCount} 字 · 已完成 {completedRounds} 轮
-                    {segLen !== 'all' && <span> · 每段 {segLen} 字</span>}
-                    {shuffleMode !== 'off' && <span className="text-primary"> · 乱序{shuffleMode === 'full' ? '（全文）' : '（本段）'}</span>}
-                    {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 ≥ {accGate}%</span>}
-                  </p>
-                  <PracticeStatsLine
-                    roundNo={completedRounds + 1}
-                    seen={roundSeen}
-                    total={itemCount}
-                    accuracy={accuracy}
-                      className="mb-4"
-                  />
-                  <ErrorItemsPanel
-                    items={errorItems}
-                    onDrill={reviewChars.length > 0 ? () => { setReviewMode(true); startPractice(reviewChars.join('')); } : undefined}
-                    title="易错字（答错次数）"
-                  />
-                </div>
-
-                <div className="lg:col-span-2 card-base !rounded-2xl p-6 space-y-5">
-                  {/* ===== 文章选择 ===== */}
-                  <div>
-                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif">选择文章</h2>
-                    <div className="space-y-2 mb-4">
-                      {DEFAULT_ARTICLES.map(a => (
-                        <button key={a.id} onClick={() => { setSelectedId(a.id); setReviewMode(false); }}
-                          className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200',
-                            selectedId === a.id && !reviewMode
-                              ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
-                              : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
-                          <div className="flex items-center gap-2 text-sm font-medium">
-                            <BookOpen className="h-4 w-4 text-muted-foreground" />
-                            {a.title}
-                          </div>
-                          <div className="text-xs text-muted-foreground/70 mt-0.5">{a.source} · {[...a.text].length} 字</div>
-                        </button>
-                      ))}
-                      <button onClick={() => { setSelectedId('custom'); setReviewMode(false); setShowEditor(true); }}
-                        disabled={!customText.trim()}
-                        className={cn('w-full p-3 rounded-xl border text-left transition-all duration-200 disabled:opacity-50',
-                          selectedId === 'custom' && !reviewMode
-                            ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
-                            : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          自定义文本
-                        </div>
-                        <div className="text-xs text-muted-foreground/70 mt-0.5">
-                          {customText.trim() ? `${[...customText].length} 字` : '还没粘贴内容'}
-                        </div>
-                      </button>
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-3"
-                      onClick={() => setShowEditor(v => !v)}>
-                      <FileText className="h-3.5 w-3.5" />{showEditor ? '收起编辑框' : '粘贴 / 编辑自定义文本'}
-                    </Button>
-                    {customText.trim() && (
-                      <Button variant="ghost" size="sm" className="w-full gap-1.5 text-xs text-red-400 hover:text-red-600"
-                        onClick={() => saveCustom('')}>
-                        <Trash2 className="h-3.5 w-3.5" />清除自定义文本
-                      </Button>
-                    )}
-                    {showEditor && (
-                      <div className="mt-3">
-                        {/* 文本处理工具（跟打器口径：去换行 / 去空格 / 标点全半角互换） */}
-                        <div className="flex items-center gap-1 flex-wrap mb-1.5">
-                          {([
-                            ['去换行', (s: string) => s.replace(/\n+/g, '')],
-                            ['去空格', (s: string) => s.replace(/[ \t\u3000]+/g, '')],
-                            ['标点→中文', (s: string) => s.replace(/[,.;:?!]/g, ch => ({ ',': '，', '.': '。', ';': '；', ':': '：', '?': '？', '!': '！' }[ch] ?? ch)).replace(/"/g, '“').replace(/'/g, '‘')],
-                            ['标点→英文', (s: string) => s.replace(/[，。；：？！]/g, ch => ({ '，': ',', '。': '.', '；': ';', '：': ':', '？': '?', '！': '!' }[ch] ?? ch))],
-                          ] as const).map(([label, fn]) => (
-                            <button key={label}
-                              onClick={() => setDraftText(d => fn(d))}
-                              className="px-2 py-0.5 rounded-md border border-border/60 text-[11px] text-muted-foreground hover:border-primary/30 hover:text-foreground transition-colors">
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                        <textarea
-                          value={draftText}
-                          onChange={e => setDraftText(e.target.value)}
-                          rows={8}
-                          placeholder="把要练习的文章粘贴到这里（标点按对应键打，如「，」按 , 「。」按 . 「、」按 \）"
-                          className="w-full text-xs p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
-                        />
-                        <div className="flex items-center justify-between mt-2">
-                          <span className="text-[11px] text-muted-foreground">{[...draftText].length} 字</span>
-                          <Button size="sm" className="gap-1.5 text-xs" onClick={() => saveCustom(draftText)}>
-                            保存并使用
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ===== 练习方式设置 ===== */}
-                  <div className="border-t border-border/50 pt-4">
-                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif flex items-center gap-1.5">
-                      <Keyboard className="h-3.5 w-3.5" />码表方案
-                    </h2>
-                    <div className="flex gap-1 flex-wrap mb-2">
-                      <button
-                        onClick={clearScheme}
-                        className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                          !usingCustomScheme
-                            ? 'border-primary/50 bg-primary/10 text-primary font-medium'
-                            : 'border-border/60 text-muted-foreground hover:border-primary/30')}
-                      >
-                        字源形码 · 内置
-                      </button>
-                      <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                          usingCustomScheme
-                            ? 'border-primary/50 bg-primary/10 text-primary font-medium'
-                            : 'border-border/60 text-muted-foreground hover:border-primary/30')}
-                      >
-                        {customScheme ? `${customScheme.name}（${customScheme.entries.length} 条）` : '上传码表文件'}
-                      </button>
-                    </div>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".txt,.yaml,.yml,.dict,.csv,text/plain"
-                      className="hidden"
-                      onChange={e => {
-                        const f = e.target.files?.[0];
-                        if (f) void onSchemeFile(f);
-                        e.target.value = '';
-                      }}
-                    />
-                    <p className="text-[11px] text-muted-foreground/70 leading-relaxed mb-2">
-                      支持其它输入法方案的码表（通用「编码 字」/ Rime / 虎码等格式，UTF-8）。
-                      打字判定、候选框、最长码长都按该方案来；词组是字源官方取码，其它方案只打单字。
-                    </p>
-                    <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-2"
-                      onClick={() => {
-                        setShowSchemeEditor(v => {
-                          const next = !v;
-                          // 展开时带上当前方案的码表原文，便于在原有基础上修改
-                          if (next && !schemeDraft) setSchemeDraft(customScheme?.raw ?? '');
-                          return next;
-                        });
-                        setSchemeError(null);
-                      }}>
-                      <FileText className="h-3.5 w-3.5" />
-                      {showSchemeEditor
-                        ? '收起码表编辑框'
-                        : (customScheme ? '查看 / 更换码表文本' : '粘贴码表文本')}
-                    </Button>
-                    {showSchemeEditor && (
-                      <div>
-                        <textarea
-                          value={schemeDraft}
-                          onChange={e => { setSchemeDraft(e.target.value); setSchemeError(null); }}
-                          rows={5}
-                          placeholder={'每行一条：编码 字（或 字 编码 / Rime 格式）\n例如：\nma 马\ngo 哥\t99'}
-                          className="w-full text-xs font-mono p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
-                        />
-                        <div className="flex items-center justify-between mt-2 gap-2">
-                          <span className="text-[11px] text-red-500 truncate">{schemeError}</span>
-                          <Button size="sm" className="gap-1.5 text-xs shrink-0"
-                            disabled={!schemeDraft.trim()}
-                            onClick={() => applyScheme('粘贴的码表', schemeDraft)}>
-                            使用此码表
-                          </Button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="border-t border-border/50 pt-4">
-                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif flex items-center gap-1.5">
-                      <ListOrdered className="h-3.5 w-3.5" />练习方式
-                    </h2>
-
-                    {/* 段长 */}
-                    <div className="mb-3">
-                      <div className="text-[11px] text-muted-foreground mb-1.5">段长（切成分段逐段打，「全文」= 文章模式）</div>
-                      <div className="flex gap-1 flex-wrap">
-                        {SEG_LEN_OPTIONS.map(o => (
-                          <button key={String(o.value)}
-                            onClick={() => updateSettings({ segLen: o.value })}
-                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                              segLen === o.value
-                                ? 'border-primary/50 bg-primary/10 text-primary font-medium'
-                                : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
-                            {o.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 乱序 */}
-                    <div className="mb-3">
-                      <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
-                        <Shuffle className="h-3 w-3" />乱序（打乱练习时也会重新打乱）
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {([['off', '关'], ['seg', '本段'], ['full', '全文']] as const).map(([v, label]) => (
-                          <button key={v}
-                            onClick={() => updateSettings({ shuffleMode: v })}
-                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                              shuffleMode === v
-                                ? 'border-primary/50 bg-primary/10 text-primary font-medium'
-                                : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 准度门槛 */}
-                    <div className="mb-3">
-                      <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
-                        <Gauge className="h-3 w-3" />最低准度（不达标不能进入下一段，需重打本段）
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {ACC_GATE_OPTIONS.map(v => (
-                          <button key={v}
-                            onClick={() => updateSettings({ accGate: v })}
-                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                              accGate === v
-                                ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium'
-                                : 'border-border/60 text-muted-foreground hover:border-amber-500/30')}>
-                            {v === 0 ? '关' : `${v}%`}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 完成段策略（自动发文 / 重复模式） */}
-                    <div>
-                      <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
-                        <ChevronsRight className="h-3 w-3" />打完一段后（自动发文 / 重复模式）
-                      </div>
-                      <div className="flex gap-1 flex-wrap">
-                        {AFTER_SEG_OPTIONS.map(o => (
-                          <button key={o.value} title={o.hint}
-                            onClick={() => updateSettings({ afterSeg: o.value })}
-                            className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
-                              afterSeg === o.value
-                                ? 'border-primary/50 bg-primary/10 text-primary font-medium'
-                                : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
-                            {o.label}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* 极简模式 */}
-                    <button
-                      onClick={() => updateSettings({ minimal: !minimal })}
-                      className={cn('w-full flex items-center gap-2 p-2.5 mt-3 rounded-xl border text-left text-xs transition-colors',
-                        minimal
-                          ? 'border-primary/40 bg-primary/[0.06] text-primary'
-                          : 'border-border/50 text-muted-foreground hover:border-primary/25')}
-                    >
-                      <AlignLeft className="h-3.5 w-3.5 shrink-0" />
-                      <span className="font-medium">极简模式</span>
-                      <span className="ml-auto text-[11px] opacity-80">
-                        {minimal ? '已开 · 练习中隐藏辅助说明与按钮行' : '已关'}
-                      </span>
-                    </button>
-
-                    <p className="mt-3 text-[11px] text-muted-foreground/70 leading-relaxed">
-                      打字中的快捷键：<kbd className="px-1 rounded bg-muted font-mono">Esc</kbd> 暂停/继续 ·
-                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+U</kbd> 上一段 ·
-                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+J</kbd> 下一段 ·
-                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+Y</kbd> 重打本段 ·
-                      <kbd className="px-1 rounded bg-muted font-mono">Ctrl+K</kbd> 打乱本段
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* ===== 跟打历史 + 按键热图（genda「历史样式 / 键盘统计」） ===== */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 mt-4 sm:mt-5">
-                <div className="card-base !rounded-2xl p-6">
-                  <ArticleHistoryTable
-                    records={history}
-                    onClear={() => { clearHistory(); setHistory([]); }}
-                  />
-                </div>
-                <div className="card-base !rounded-2xl p-6">
-                  <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif">按键统计</h2>
-                  <KeyHeatmap counts={aggregateKeys(history)} />
-                </div>
-              </div>
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* ===== 练习区（打字工具样式：正文在上、打出的字回显在下） ===== */}
-      {isPlaying && (
-        <section className="py-3 sm:py-6">
-          <div className="max-w-3xl mx-auto px-3 sm:px-6">
-            {/* 顶部：轮次 / 本轮进度 / 正确率 + 速度 / 击键 / 码长 + 退出 */}
+      {/* ===== 跟打工作台：单页布局。打字区常驻，文章 / 设置 / 历史 / 热图 从下方面板条下拉展开，不跳页 ===== */}
+      <section className="py-3 sm:py-6">
+        <div className="max-w-3xl mx-auto px-3 sm:px-6">
+            {/* 顶部：轮次 / 本轮进度 / 正确率 + 速度 / 击键 / 码长 + 暂停 / 极简 */}
             <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 mb-2">
               <PracticeStatsLine
                 roundNo={completedRounds + 1}
@@ -1344,12 +1046,6 @@ export default function ArticlePracticePage() {
                       : 'text-muted-foreground bg-muted/40 hover:text-foreground border-border/60')}
                 >
                   <AlignLeft className="h-3.5 w-3.5" />极简
-                </button>
-                <button
-                  onClick={() => { setIsPlaying(false); setArticleDone(null); setSegResult(null); setReviewMode(false); }}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 dark:text-red-400 dark:bg-red-950/40 dark:border-red-800 transition-colors shrink-0"
-                >
-                  <ArrowLeft className="h-3.5 w-3.5" />退出
                 </button>
               </div>
             </div>
@@ -1517,8 +1213,8 @@ export default function ArticlePracticePage() {
                     <Play className="h-3.5 w-3.5" />继续打字
                   </Button>
                   <Button size="sm" variant="outline" className="gap-1.5 text-xs"
-                    onClick={() => { setIsPlaying(false); setSegResult(null); setReviewMode(false); }}>
-                    退出练习
+                    onClick={() => { setSegResult(null); setArticleDone(null); setPaused(false); setPanelTab('articles'); }}>
+                    选其他文章
                   </Button>
                 </div>
               </div>
@@ -1601,6 +1297,304 @@ export default function ArticlePracticePage() {
             </div>
             )}
 
+            {/* ===== 下拉面板条：文章 / 设置 / 历史 / 热图，同页展开 ===== */}
+            {!minimal && (
+              <div className="mt-4 rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
+                <div className="flex items-center gap-1 flex-wrap px-3 py-2 border-b border-border/50 bg-muted/20">
+                  {([
+                    ['articles', '选择文章', BookOpen],
+                    ['settings', '练习方式', ListOrdered],
+                    ['history', '跟打历史', FileText],
+                    ['heatmap', '按键统计', Gauge],
+                  ] as const).map(([v, label, Icon]) => (
+                    <button key={v}
+                      onClick={() => setPanelTab(t => (t === v ? 'none' : v))}
+                      className={cn('flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs transition-colors',
+                        panelTab === v
+                          ? 'bg-primary/10 text-primary font-medium'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground')}>
+                      <Icon className="h-3.5 w-3.5" />
+                      {label}
+                      {v === 'history' && history.length > 0 && <span className="text-[10px] opacity-70">({history.length})</span>}
+                    </button>
+                  ))}
+                  <span className="ml-auto text-[11px] text-muted-foreground/70 truncate pl-2">
+                    {sourceLabel} · 方案 {customScheme?.name ?? '字源形码'}
+                  </span>
+                </div>
+
+                {/* —— 选择文章（含自定义文本 / 易错字） —— */}
+                {panelTab === 'articles' && (
+                  <div className="p-4 space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {DEFAULT_ARTICLES.map(a => (
+                        <button key={a.id} onClick={() => selectArticle(a.id)}
+                          className={cn('p-3 rounded-xl border text-left transition-all duration-200',
+                            selectedId === a.id && !reviewMode
+                              ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                              : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                          <div className="flex items-center gap-2 text-sm font-medium">
+                            <BookOpen className="h-4 w-4 text-muted-foreground" />
+                            {a.title}
+                          </div>
+                          <div className="text-xs text-muted-foreground/70 mt-0.5">{a.source} · {[...a.text].length} 字</div>
+                        </button>
+                      ))}
+                      <button onClick={() => selectArticle('custom')}
+                        disabled={!customText.trim()}
+                        className={cn('p-3 rounded-xl border text-left transition-all duration-200 disabled:opacity-50',
+                          selectedId === 'custom' && !reviewMode
+                            ? 'border-primary/40 bg-primary/[0.05] shadow-sm'
+                            : 'border-border/50 hover:border-primary/25 hover:bg-primary/[0.02]')}>
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <FileText className="h-4 w-4 text-muted-foreground" />
+                          自定义文本
+                        </div>
+                        <div className="text-xs text-muted-foreground/70 mt-0.5">
+                          {customText.trim() ? `${[...customText].length} 字 · 点击练习` : '在下方粘贴内容'}
+                        </div>
+                      </button>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap mb-2">
+                        <Button variant="outline" size="sm" className="gap-1.5 text-xs"
+                          onClick={() => setShowEditor(v => !v)}>
+                          <FileText className="h-3.5 w-3.5" />{showEditor ? '收起编辑框' : '粘贴 / 编辑自定义文本'}
+                        </Button>
+                        {customText.trim() && (
+                          <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-red-400 hover:text-red-600"
+                            onClick={() => saveCustom('')}>
+                            <Trash2 className="h-3.5 w-3.5" />清除自定义文本
+                          </Button>
+                        )}
+                      </div>
+                      {showEditor && (
+                        <div>
+                          <div className="flex items-center gap-1 flex-wrap mb-1.5">
+                            {([
+                              ['去换行', (s: string) => s.replace(/\n+/g, '')],
+                              ['去空格', (s: string) => s.replace(/[ \t\u3000]+/g, '')],
+                              ['标点→中文', (s: string) => s.replace(/[,.;:?!]/g, ch => ({ ',': '，', '.': '。', ';': '；', ':': '：', '?': '？', '!': '！' }[ch] ?? ch)).replace(/"/g, '“').replace(/'/g, '‘')],
+                              ['标点→英文', (s: string) => s.replace(/[，。；：？！]/g, ch => ({ '，': ',', '。': '.', '；': ';', '：': ':', '？': '?', '！': '!' }[ch] ?? ch))],
+                            ] as const).map(([label, fn]) => (
+                              <button key={label}
+                                onClick={() => setDraftText(d => fn(d))}
+                                className="px-2 py-0.5 rounded-md border border-border/60 text-[11px] text-muted-foreground hover:border-primary/30 hover:text-foreground transition-colors">
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <textarea
+                            value={draftText}
+                            onChange={e => setDraftText(e.target.value)}
+                            rows={6}
+                            placeholder="把要练习的文章粘贴到这里（标点按对应键打，如「，」按 , 「。」按 . 「、」按 \）"
+                            className="w-full text-xs p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
+                          />
+                          <div className="flex items-center justify-between mt-2">
+                            <span className="text-[11px] text-muted-foreground">{[...draftText].length} 字</span>
+                            <Button size="sm" className="gap-1.5 text-xs" onClick={() => saveCustom(draftText)}>
+                              保存并使用
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <ErrorItemsPanel
+                      items={errorItems}
+                      onDrill={reviewChars.length > 0 ? () => { setReviewMode(true); startPractice(reviewChars.join('')); } : undefined}
+                      title="易错字（答错次数）"
+                    />
+                  </div>
+                )}
+
+                {/* —— 练习方式（码表方案 + 段长 / 乱序 / 准度 / 完成后策略 / 极简） —— */}
+                {panelTab === 'settings' && (
+                  <div className="p-4 space-y-4">
+                    <div>
+                      <h3 className="text-xs font-semibold text-muted-foreground mb-2 font-serif flex items-center gap-1.5">
+                        <Keyboard className="h-3.5 w-3.5" />码表方案
+                      </h3>
+                      <div className="flex gap-1 flex-wrap mb-2">
+                        <button
+                          onClick={clearScheme}
+                          className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                            !usingCustomScheme
+                              ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                              : 'border-border/60 text-muted-foreground hover:border-primary/30')}
+                        >
+                          字源形码 · 内置
+                        </button>
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                            usingCustomScheme
+                              ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                              : 'border-border/60 text-muted-foreground hover:border-primary/30')}
+                        >
+                          {customScheme ? `${customScheme.name}（${customScheme.entries.length} 条）` : '上传码表文件'}
+                        </button>
+                      </div>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".txt,.yaml,.yml,.dict,.csv,text/plain"
+                        className="hidden"
+                        onChange={e => {
+                          const f = e.target.files?.[0];
+                          if (f) void onSchemeFile(f);
+                          e.target.value = '';
+                        }}
+                      />
+                      <p className="text-[11px] text-muted-foreground/70 leading-relaxed mb-2">
+                        支持其它输入法方案的码表（通用「编码 字」/ Rime / 虎码等格式，UTF-8）。
+                        打字判定、候选框、最长码长都按该方案来；词组是字源官方取码，其它方案只打单字。
+                      </p>
+                      <Button variant="outline" size="sm" className="gap-1.5 text-xs mb-2"
+                        onClick={() => {
+                          setShowSchemeEditor(v => {
+                            const next = !v;
+                            if (next && !schemeDraft) setSchemeDraft(customScheme?.raw ?? '');
+                            return next;
+                          });
+                          setSchemeError(null);
+                        }}>
+                        <FileText className="h-3.5 w-3.5" />
+                        {showSchemeEditor ? '收起码表编辑框' : (customScheme ? '查看 / 更换码表文本' : '粘贴码表文本')}
+                      </Button>
+                      {showSchemeEditor && (
+                        <div>
+                          <textarea
+                            value={schemeDraft}
+                            onChange={e => { setSchemeDraft(e.target.value); setSchemeError(null); }}
+                            rows={5}
+                            placeholder={'每行一条：编码 字（或 字 编码 / Rime 格式）\n例如：\nma 马\ngo 哥\t99'}
+                            className="w-full text-xs font-mono p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
+                          />
+                          <div className="flex items-center justify-between mt-2 gap-2">
+                            <span className="text-[11px] text-red-500 truncate">{schemeError}</span>
+                            <Button size="sm" className="gap-1.5 text-xs shrink-0"
+                              disabled={!schemeDraft.trim()}
+                              onClick={() => applyScheme('粘贴的码表', schemeDraft)}>
+                              使用此码表
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                      <div>
+                        <div className="text-[11px] text-muted-foreground mb-1.5">段长（「全文」= 文章模式）</div>
+                        <div className="flex gap-1 flex-wrap">
+                          {SEG_LEN_OPTIONS.map(o => (
+                            <button key={String(o.value)}
+                              onClick={() => updateSettings({ segLen: o.value })}
+                              className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                                segLen === o.value
+                                  ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                                  : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <Shuffle className="h-3 w-3" />乱序（开始练习时打乱）
+                        </div>
+                        <div className="flex gap-1 flex-wrap">
+                          {([['off', '关'], ['seg', '本段'], ['full', '全文']] as const).map(([v, label]) => (
+                            <button key={v}
+                              onClick={() => updateSettings({ shuffleMode: v })}
+                              className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                                shuffleMode === v
+                                  ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                                  : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <Gauge className="h-3 w-3" />最低准度（不达标不能进下一段）
+                        </div>
+                        <div className="flex gap-1 flex-wrap">
+                          {ACC_GATE_OPTIONS.map(v => (
+                            <button key={v}
+                              onClick={() => updateSettings({ accGate: v })}
+                              className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                                accGate === v
+                                  ? 'border-amber-500/50 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium'
+                                  : 'border-border/60 text-muted-foreground hover:border-amber-500/30')}>
+                              {v === 0 ? '关' : `${v}%`}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-[11px] text-muted-foreground mb-1.5 flex items-center gap-1">
+                          <ChevronsRight className="h-3 w-3" />打完一段后（自动发文 / 重复）
+                        </div>
+                        <div className="flex gap-1 flex-wrap">
+                          {AFTER_SEG_OPTIONS.map(o => (
+                            <button key={o.value} title={o.hint}
+                              onClick={() => updateSettings({ afterSeg: o.value })}
+                              className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                                afterSeg === o.value
+                                  ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                                  : 'border-border/60 text-muted-foreground hover:border-primary/30')}>
+                              {o.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => updateSettings({ minimal: !minimal })}
+                        className={cn('flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                          minimal
+                            ? 'border-primary/40 bg-primary/[0.06] text-primary'
+                            : 'border-border/50 text-muted-foreground hover:border-primary/25')}
+                      >
+                        <AlignLeft className="h-3.5 w-3.5" />极简模式：{minimal ? '开' : '关'}
+                      </button>
+                      <span className="text-[11px] text-muted-foreground/70">
+                        快捷键：<kbd className="px-1 rounded bg-muted font-mono">Esc</kbd> 暂停/继续 ·
+                        <kbd className="px-1 rounded bg-muted font-mono">Ctrl+U</kbd> 上一段 ·
+                        <kbd className="px-1 rounded bg-muted font-mono">Ctrl+J</kbd> 下一段 ·
+                        <kbd className="px-1 rounded bg-muted font-mono">Ctrl+Y</kbd> 重打本段 ·
+                        <kbd className="px-1 rounded bg-muted font-mono">Ctrl+K</kbd> 打乱本段
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* —— 跟打历史 —— */}
+                {panelTab === 'history' && (
+                  <div className="p-4">
+                    <ArticleHistoryTable
+                      records={history}
+                      onClear={() => { clearHistory(); setHistory([]); }}
+                      defaultOpen
+                    />
+                  </div>
+                )}
+
+                {/* —— 按键统计热图 —— */}
+                {panelTab === 'heatmap' && (
+                  <div className="p-4 overflow-x-auto">
+                    <KeyHeatmap counts={aggregateKeys(history)} />
+                  </div>
+                )}
+              </div>
+            )}
+
             {showKeyboard && (
               <div className="mt-3">
                 <PracticeKeyboard
@@ -1617,7 +1611,6 @@ export default function ArticlePracticePage() {
             )}
           </div>
         </section>
-      )}
 
       <RoundCompleteToast roundNo={roundToast} onClose={() => setRoundToast(null)} />
     </div>
