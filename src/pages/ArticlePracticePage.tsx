@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 
 /** 跟打器式固定窗口显示的行数（每行 = 原文一行 + 紧跟其下的跟打行，当前字固定在第 ARTICLE_ROWS-1 行） */
-const ARTICLE_ROWS = 4;
+const ARTICLE_ROWS = 10;
 
 /** 原文行/跟打行共用的行高倍数 */
 const ROW_LINE_HEIGHT = 1.45;
@@ -274,7 +274,7 @@ export default function ArticlePracticePage() {
   const pausedRef = useRef(false);
   const isPlayingRef = useRef(false);
   const elapsedMsRef = useRef(0);
-  /** 上屏单元栈：每次 IME 上屏(单字/词组)一组,退格按组整体撤销 */
+  /** 上屏记录栈：每次 IME 上屏一组字(单字/词组),退格按字逐个撤销 */
   const committedGroupsRef = useRef<{ items: Array<{ idx: number; ok: boolean; produced: string; wasChar: boolean }> }[]>([]);
 
   // 当前段题目信息
@@ -361,7 +361,7 @@ export default function ArticlePracticePage() {
     const cur = currentCellRef.current as HTMLElement | null;
     if (cur) {
       const curTop = cur.getBoundingClientRect().top - board.getBoundingClientRect().top + board.scrollTop;
-      board.scrollTop = Math.max(0, curTop - lineH * (ARTICLE_ROWS - 2));
+      board.scrollTop = Math.max(0, curTop - lineH * (Math.floor(ARTICLE_ROWS / 2) - 1));
     }
   }, [cursor, isPlaying, items]);
 
@@ -613,38 +613,35 @@ export default function ArticlePracticePage() {
 
   /** 退格：输入框已空时删掉上一个已打出的字（打对的也删），光标退回重打，记一次回改 */
   /**
-   * 退格（跟打器口径）：撤销**上一次上屏的字词单元**——
-   * 打词上屏两个字，一次退格整体退回；打单字则退一个字。
-   * 记一次回改，光标退回单元开头重打。
+   * 退格：**只撤销最后一个上屏的字**（打词上屏两个字,就按两次退格逐字回退）。
+   * 每按一次记一次回改,光标退到该字重打。
    */
   const undoLastChar = useCallback(() => {
     if (pausedRef.current || blockedRef.current) return;
     const groups = committedGroupsRef.current;
     const group = groups[groups.length - 1];
-    if (!group || group.items.length === 0) return;
-    groups.pop();
-    const startIdx = group.items[0].idx;
-    if (startIdx < (segFirstItemRef.current >= 0 ? segFirstItemRef.current : 0)) return;
-    let correct = 0, wrong = 0;
-    for (const g of group.items) {
-      if (g.ok) correct++;
-      else wrong++;
-      if (g.wasChar) {
-        const ch = (itemsRef.current[g.idx] as { char?: string } | undefined)?.char;
-        if (ch) retractChar(ch, g.ok);
-      }
+    if (!group) return;
+    const item = group.items[group.items.length - 1];
+    if (!item) { groups.pop(); return; }
+    if (item.idx < (segFirstItemRef.current >= 0 ? segFirstItemRef.current : 0)) return;
+    group.items.pop();
+    if (group.items.length === 0) groups.pop();
+    if (item.wasChar) {
+      const ch = (itemsRef.current[item.idx] as { char?: string } | undefined)?.char;
+      if (ch) retractChar(ch, item.ok);
     }
     setProducedChars(prev => {
+      if (prev[item.idx] === undefined) return prev;
       const next = { ...prev };
-      for (const g of group.items) delete next[g.idx];
+      delete next[item.idx];
       return next;
     });
-    if (correct > 0) setCorrectCount(c => Math.max(0, c - correct));
-    if (wrong > 0) setWrongCount(c => Math.max(0, c - wrong));
+    if (item.ok) setCorrectCount(c => Math.max(0, c - 1));
+    else setWrongCount(c => Math.max(0, c - 1));
     setUndoCount(c => c + 1);
     keyStatsRef.current['⌫'] = (keyStatsRef.current['⌫'] ?? 0) + 1;
     setWrongFlash(null);
-    setCursor(startIdx);
+    setCursor(item.idx);
     imeInputRef.current?.focus();
   }, [retractChar]);
 
@@ -742,13 +739,8 @@ export default function ArticlePracticePage() {
       // 暂停中按任意打字键 = 直接唤醒打字板继续（不丢状态）
       if (paused && e.key.length === 1) { e.preventDefault(); resumePractice(); return; }
       if (paused) return;
-      if (e.key === 'Backspace') {
-        // 输入框里还有内容 → 让输入框自己删；空了 → 回退上一个已打出的字
-        if (imeInputRef.current && document.activeElement === imeInputRef.current && imeInputRef.current.value.length > 0) return;
-        e.preventDefault();
-        undoLastChar();
-        return;
-      }
+      // Backspace 由打字板自己的 onKeyDown 处理（此处不再重复处理,避免一次按键回退两个字）
+      if (e.key === 'Backspace') return;
       // 任意可打印按键：从第一个键开始计时并计入击键 / 按键分布（打字本身交给系统输入法）。
       // 打字板没聚焦时先聚焦它——像跟打网站一样,直接开打,不用先点输入框。
       if (e.key.length === 1 || e.key === 'Process' || e.keyCode === 229) {
@@ -1212,7 +1204,7 @@ export default function ArticlePracticePage() {
           )}
           {!minimal && (
             <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
-              上 = 原文对照，下 = 你的跟打（打错红字留痕）；输入框已隐藏，直接用电脑输入法打字即可；退格 = 回退上一次上屏的字词（打词退整词）
+              上 = 原文对照，下 = 你的跟打（打错红字留痕）；输入框已隐藏，直接用电脑输入法打字即可；退格 = 回退上一个字（逐字回退）
             </div>
           )}
 
