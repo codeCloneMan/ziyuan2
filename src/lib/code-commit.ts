@@ -38,8 +38,13 @@ export function isSpaceCommitCorrect(input: string, accepted: readonly string[])
 }
 
 /**
- * 是否已打出一条完整编码（且不足 4 码）→ 提示"按空格上屏"。
+ * 是否已打出一条完整编码（且不足 maxLen 码）→ 提示"按空格上屏"。
+ * maxLen = 当前码表的最长码长（自定义方案的码长不一定是 4）。
  */
-export function isCompleteCodeAwaitingSpace(input: string, accepted: readonly string[]): boolean {
-  return input.length > 0 && input.length < AUTO_COMMIT_LENGTH && accepted.includes(input);
+export function isCompleteCodeAwaitingSpace(
+  input: string,
+  accepted: readonly string[],
+  maxLen: number = AUTO_COMMIT_LENGTH,
+): boolean {
+  return input.length > 0 && input.length < maxLen && accepted.includes(input);
 }

@@ -9,6 +9,8 @@ import {
 import { buildArticleItems, isCharItem, isPunctItem } from '@/lib/article-items';
 import { buildArticlePhrases, phraseAtCursor } from '@/lib/article-phrases';
 import { isCompleteCodeAwaitingSpace, AUTO_COMMIT_LENGTH } from '@/lib/code-commit';
+import { parseCodeTable } from '@/lib/code-table-parser';
+import type { CharCodeLike } from '@/lib/full-codes';
 import {
   splitSegments, shuffleRangeText, shuffleFullText, type SegmentLength,
 } from '@/lib/article-segments';
@@ -59,6 +61,36 @@ interface ArticleSettings {
 }
 
 const SETTINGS_KEY = 'ziyuan-article-settings-v1';
+
+// ============ 码表方案（内置 / 自定义上传，支持其它输入法方案） ============
+const SCHEME_KEY = 'ziyuan-article-scheme-v1';
+
+interface CustomScheme {
+  name: string;
+  /** 码表原文（本机记忆，刷新后重新解析） */
+  raw: string;
+  entries: CharCodeLike[];
+}
+
+function loadCustomScheme(): CustomScheme | null {
+  try {
+    const stored = localStorage.getItem(SCHEME_KEY);
+    if (!stored) return null;
+    const { name, raw } = JSON.parse(stored) as { name?: string; raw?: string };
+    if (!raw) return null;
+    const entries = parseCodeTable(raw);
+    if (entries.length === 0) return null;
+    return { name: name || '自定义码表', raw, entries };
+  } catch { return null; }
+}
+
+function saveCustomScheme(name: string, raw: string) {
+  try { localStorage.setItem(SCHEME_KEY, JSON.stringify({ name, raw })); } catch { /* 超出配额等忽略 */ }
+}
+
+function clearCustomScheme() {
+  try { localStorage.removeItem(SCHEME_KEY); } catch { /* 忽略 */ }
+}
 
 function loadSettings(): ArticleSettings {
   const fallback: ArticleSettings = { segLen: 'all', shuffleMode: 'off', autoNext: true, accGate: 0 };
@@ -119,10 +151,52 @@ interface Candidate {
 export default function ArticlePracticePage() {
   const { data: charCodeData, loading: dataLoading } = useCharCodeData();
   const { data: phrasesData } = useBuiltinPhrases();
+
+  // ============ 码表方案：默认字源形码；上传自定义码表后按该方案判定与出候选 ============
+  const [customScheme, setCustomScheme] = useState<CustomScheme | null>(loadCustomScheme);
+  const [schemeDraft, setSchemeDraft] = useState('');
+  const [showSchemeEditor, setShowSchemeEditor] = useState(false);
+  const [schemeError, setSchemeError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const applyScheme = useCallback((name: string, raw: string) => {
+    const entries = parseCodeTable(raw);
+    if (entries.length === 0) {
+      setSchemeError('没有解析出有效的码表条目：每行需含「编码 + 字」，如 `ma 马` 或 `马\tma`（支持 Rime / 通用码表格式）');
+      return;
+    }
+    setSchemeError(null);
+    setCustomScheme({ name: name.trim() || '自定义码表', raw, entries });
+    saveCustomScheme(name.trim() || '自定义码表', raw);
+  }, []);
+
+  const clearScheme = useCallback(() => {
+    setCustomScheme(null);
+    setSchemeError(null);
+    clearCustomScheme();
+  }, []);
+
+  const onSchemeFile = useCallback(async (file: File) => {
+    const raw = await file.text();
+    applyScheme(file.name.replace(/\.(txt|yaml|yml|dict|csv)$/i, ''), raw);
+  }, [applyScheme]);
+
+  // 生效码表：自定义方案优先；词组是字源官方词表取码，其它方案不启用词组
+  const effectiveCodeData = customScheme ? customScheme.entries : charCodeData;
+  const usingCustomScheme = !!customScheme;
   const charCodeIndex = useMemo(
-    () => (charCodeData ? buildFullCodeIndex(charCodeData) : new Map<string, FullCodeInfo>()),
-    [charCodeData],
+    () => (effectiveCodeData ? buildFullCodeIndex(effectiveCodeData) : new Map<string, FullCodeInfo>()),
+    [effectiveCodeData],
   );
+  /** 当前码表的最长码长（打满即自动上屏；内置方案为 4，自定义方案按码表自适应） */
+  const autoCommitLen = useMemo(() => {
+    let max = 0;
+    for (const info of charCodeIndex.values()) {
+      if (info.fullCode.length > max) max = info.fullCode.length;
+    }
+    return max > 0 ? Math.min(max, 10) : AUTO_COMMIT_LENGTH;
+  }, [charCodeIndex]);
+
   const { progress: articleProgress, recordChar, retractChar } = useArticleProgress();
 
   // ============ 文章选择 / 自定义文本 ============
@@ -196,12 +270,12 @@ export default function ArticlePracticePage() {
   // ============ 题目序列 ============
   // 开始页的题目数按当前所选文章预览计算（练习文本要等开始时才生成）
   const previewItems = useMemo(
-    () => (charCodeData && activeText ? buildArticleItems(activeText, charCodeIndex) : []),
-    [charCodeData, activeText, charCodeIndex],
+    () => (effectiveCodeData && activeText ? buildArticleItems(activeText, charCodeIndex) : []),
+    [effectiveCodeData, activeText, charCodeIndex],
   );
   const items = useMemo(
-    () => (charCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex) : []),
-    [charCodeData, practiceText, charCodeIndex],
+    () => (effectiveCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex) : []),
+    [effectiveCodeData, practiceText, charCodeIndex],
   );
   const itemIndexByTextIndex = useMemo(() => {
     const m = new Map<number, number>();
@@ -223,12 +297,13 @@ export default function ArticlePracticePage() {
     return -1;
   }, [items, currentSeg]);
 
-  // 本文里能用的官方词组（词组码 → 词）；词组码来自官方词表 + 单字码表取码规则
+  // 本文里能用的官方词组（词组码 → 词）；词组码来自官方词表 + 单字码表取码规则。
+  // 自定义码表方案下官方词组码不再适用，不启用词组（只打单字）。
   const articlePhrases = useMemo(
-    () => (charCodeData && phrasesData && practiceText
+    () => (charCodeData && phrasesData && practiceText && !usingCustomScheme
       ? buildArticlePhrases(practiceText, charCodeIndex, phrasesData)
       : { byCode: new Map<string, string[]>(), codesOf: new Map<string, string[]>() }),
-    [charCodeData, phrasesData, practiceText, charCodeIndex],
+    [charCodeData, phrasesData, practiceText, charCodeIndex, usingCustomScheme],
   );
 
 
@@ -324,7 +399,7 @@ export default function ArticlePracticePage() {
   /** 当前题目是汉字时的信息（标点没有编码） */
   const currentChar = current && isCharItem(current) ? current : undefined;
   const awaitingCommit = !!current && !feedback && !segResult && (
-    (!!currentChar && isCompleteCodeAwaitingSpace(inputCode, currentChar.codes)) || !!phraseNow
+    (!!currentChar && isCompleteCodeAwaitingSpace(inputCode, currentChar.codes, autoCommitLen)) || !!phraseNow
   );
   /** 本段准度（结算与门槛判定共用） */
   const accuracy = correctCount + wrongCount > 0
@@ -574,11 +649,11 @@ export default function ArticlePracticePage() {
       return;
     }
     const newCode = inputCode + key;
-    if (newCode.length > AUTO_COMMIT_LENGTH) return;
+    if (newCode.length > autoCommitLen) return;
     setInputCode(newCode);
-    if (newCode.length < AUTO_COMMIT_LENGTH) return;
+    if (newCode.length < autoCommitLen) return;
     commitCode(newCode, 'keys');
-  }, [isPlaying, current, feedback, inputCode, segResult, articleDone, commitCode, commitProduced]);
+  }, [isPlaying, current, feedback, inputCode, autoCommitLen, segResult, articleDone, commitCode, commitProduced]);
 
   const handleSpaceCommit = useCallback((): boolean => {
     if (!isPlaying || !current || !inputCode || feedback === 'correct' || segResult || articleDone) return false;
@@ -626,7 +701,7 @@ export default function ArticlePracticePage() {
    */
   const startPractice = useCallback((textOverride?: string) => {
     const sourceText = textOverride ?? activeText;
-    if (!sourceText.trim() || !charCodeData) return;
+    if (!sourceText.trim() || !effectiveCodeData) return;
     const t = shuffleMode === 'full' ? shuffleFullText(sourceText) : sourceText;
     if (!t.trim()) return;
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -650,7 +725,7 @@ export default function ArticlePracticePage() {
     setIsPlaying(true);
     // 开始页内容比练习区高，浏览器滚动锚定会把窗口带偏、把顶部统计行顶到导航栏后面
     window.scrollTo({ top: 0 });
-  }, [activeText, charCodeData, shuffleMode, resetRound]);
+  }, [activeText, effectiveCodeData, shuffleMode, resetRound]);
 
   // 物理键盘
   useEffect(() => {
@@ -690,7 +765,7 @@ export default function ArticlePracticePage() {
   }, [isPlaying, current, handleKeyPress, handleSpaceCommit, handleBackspace, pickCandidate,
     goToSegment, segIndex, segments.length, articleDone, startPractice, segResult]);
 
-  if (dataLoading || !charCodeData) {
+  if (!usingCustomScheme && (dataLoading || !charCodeData)) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -814,7 +889,7 @@ export default function ArticlePracticePage() {
                     </button>
                   </div>
                   <p className="text-center text-xs text-muted-foreground/70 mb-4">
-                    当前文章：{sourceLabel} · 可练 {previewCount} 字 · 已完成 {completedRounds} 轮
+                    当前文章：{sourceLabel} · 方案 {customScheme?.name ?? '字源形码'} · 可练 {previewCount} 字 · 已完成 {completedRounds} 轮
                     {segLen !== 'all' && <span> · 每段 {segLen} 字</span>}
                     {shuffleMode !== 'off' && <span className="text-primary"> · 乱序{shuffleMode === 'full' ? '（全文）' : '（本段）'}</span>}
                     {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 ≥ {accGate}%</span>}
@@ -896,6 +971,81 @@ export default function ArticlePracticePage() {
                   </div>
 
                   {/* ===== 练习方式设置 ===== */}
+                  <div className="border-t border-border/50 pt-4">
+                    <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif flex items-center gap-1.5">
+                      <Keyboard className="h-3.5 w-3.5" />码表方案
+                    </h2>
+                    <div className="flex gap-1 flex-wrap mb-2">
+                      <button
+                        onClick={clearScheme}
+                        className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                          !usingCustomScheme
+                            ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                            : 'border-border/60 text-muted-foreground hover:border-primary/30')}
+                      >
+                        字源形码 · 内置
+                      </button>
+                      <button
+                        onClick={() => fileInputRef.current?.click()}
+                        className={cn('px-2.5 py-1 rounded-lg border text-xs transition-colors',
+                          usingCustomScheme
+                            ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                            : 'border-border/60 text-muted-foreground hover:border-primary/30')}
+                      >
+                        {customScheme ? `${customScheme.name}（${customScheme.entries.length} 条）` : '上传码表文件'}
+                      </button>
+                    </div>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".txt,.yaml,.yml,.dict,.csv,text/plain"
+                      className="hidden"
+                      onChange={e => {
+                        const f = e.target.files?.[0];
+                        if (f) void onSchemeFile(f);
+                        e.target.value = '';
+                      }}
+                    />
+                    <p className="text-[11px] text-muted-foreground/70 leading-relaxed mb-2">
+                      支持其它输入法方案的码表（通用「编码 字」/ Rime / 虎码等格式，UTF-8）。
+                      打字判定、候选框、最长码长都按该方案来；词组是字源官方取码，其它方案只打单字。
+                    </p>
+                    <Button variant="outline" size="sm" className="w-full gap-1.5 text-xs mb-2"
+                      onClick={() => {
+                        setShowSchemeEditor(v => {
+                          const next = !v;
+                          // 展开时带上当前方案的码表原文，便于在原有基础上修改
+                          if (next && !schemeDraft) setSchemeDraft(customScheme?.raw ?? '');
+                          return next;
+                        });
+                        setSchemeError(null);
+                      }}>
+                      <FileText className="h-3.5 w-3.5" />
+                      {showSchemeEditor
+                        ? '收起码表编辑框'
+                        : (customScheme ? '查看 / 更换码表文本' : '粘贴码表文本')}
+                    </Button>
+                    {showSchemeEditor && (
+                      <div>
+                        <textarea
+                          value={schemeDraft}
+                          onChange={e => { setSchemeDraft(e.target.value); setSchemeError(null); }}
+                          rows={5}
+                          placeholder={'每行一条：编码 字（或 字 编码 / Rime 格式）\n例如：\nma 马\ngo 哥\t99'}
+                          className="w-full text-xs font-mono p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
+                        />
+                        <div className="flex items-center justify-between mt-2 gap-2">
+                          <span className="text-[11px] text-red-500 truncate">{schemeError}</span>
+                          <Button size="sm" className="gap-1.5 text-xs shrink-0"
+                            disabled={!schemeDraft.trim()}
+                            onClick={() => applyScheme('粘贴的码表', schemeDraft)}>
+                            使用此码表
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="border-t border-border/50 pt-4">
                     <h2 className="text-sm font-semibold text-muted-foreground mb-3 font-serif flex items-center gap-1.5">
                       <ListOrdered className="h-3.5 w-3.5" />练习方式
@@ -1129,7 +1279,7 @@ export default function ArticlePracticePage() {
                 </button>
                 <span className="ml-auto truncate font-mono-stat">
                   {segLen !== 'all' && <>第 {segIndex + 1}/{segTotal} 段 · </>}
-                  {sourceLabel} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
+                  {sourceLabel} · 方案 {customScheme?.name ?? '字源形码'} · 共 {itemCount} 字 · 均码 {avgLen.toFixed(2)} · 错字 {wrongCount}
                   {undoCount > 0 && <span className="text-primary"> · 回改 {undoCount}</span>}
                   {shuffleMode !== 'off' && <span className="text-primary"> · 乱序</span>}
                   {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 {accuracy}% / {accGate}%</span>}
