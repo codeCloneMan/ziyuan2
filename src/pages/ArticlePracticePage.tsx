@@ -24,9 +24,8 @@ import {
 /** 跟打器式固定窗口显示的行数（每行 = 原文一行 + 紧跟其下的跟打行，当前字固定在第 ARTICLE_ROWS-1 行） */
 const ARTICLE_ROWS = 4;
 
-/** 原文行/跟打行共用的行高倍数与字格高度（2 行 × 1.45em） */
+/** 原文行/跟打行共用的行高倍数 */
 const ROW_LINE_HEIGHT = 1.45;
-const CELL_EM = `${ROW_LINE_HEIGHT * 2}em`;
 
 /** 未打过的字，下方跟打位留空但必须占位，否则行高会塌 */
 const NBSP = '\u00A0';
@@ -1068,110 +1067,120 @@ export default function ArticlePracticePage() {
             />
           </div>
 
-          {/* 正文面板：跟打器式 4 行固定窗口，每个字正下方跟「打出来的字」 */}
-          <div className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden">
-            <div className="px-4 sm:px-6 py-4">
-              <div
-                ref={boardRef}
-                onClick={() => imeInputRef.current?.focus()}
-                className="relative overflow-hidden flex flex-wrap content-start text-2xl sm:text-3xl cursor-text"
-              >
-                {chars.map((ch, ti) => {
-                  if (ch === '\n') return <span key={ti} className="basis-full h-0" />;
-                  const itemIdx = itemIndexByTextIndex.get(ti);
-                  if (itemIdx === undefined) {
-                    return (
-                      <span key={ti} data-cell className="inline-flex flex-col items-start text-muted-foreground/35" style={{ width: '1em', height: CELL_EM }}>
-                        <span style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}>{ch}</span>
-                        <span style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}>{NBSP}</span>
-                      </span>
-                    );
-                  }
-                  const isCurrent = itemIdx === cursor;
-                  const isDone = itemIdx < cursor;
-                  const producedChar = producedChars[itemIdx];
-
-                  // 跟打行：打对 → 显示该字；打错 → 显示你实际打出的那个字（红字留痕）；
-                  // 当前位置 → 闪烁光标。
-                  let bottom: ReactNode = NBSP;
-                  let bottomCls = 'text-muted-foreground/30';
-                  if (isCurrent) {
-                    bottom = <span className="inline-block w-[2px] h-[1em] align-middle bg-primary/70 animate-pulse" />;
-                  } else if (isDone) {
-                    if (producedChar !== undefined) {
-                      bottom = producedChar;
-                      bottomCls = 'text-red-500 font-bold';
-                    } else {
-                      bottom = ch;
-                      bottomCls = 'text-foreground/70';
-                    }
-                  }
-
+          {/* 正文面板（跟打网站标准结构）：同一卡片内 = 对照区（上,原文随打字变色） + 跟打区（下,你打出的字实时镜像）。真实输入框隐藏,仍接收输入法 */}
+          <div className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden relative">
+            {/* 隐藏的真实输入框：接收系统输入法组合与上屏,视觉上不出现 */}
+            <input
+              ref={imeInputRef}
+              type="text"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              disabled={!!segResult || !!articleDone || paused}
+              onChange={e => {
+                imeValueRef.current = e.target.value;
+                if (!composingRef.current) consumeInput();
+              }}
+              onCompositionStart={() => { composingRef.current = true; }}
+              onCompositionEnd={e => {
+                composingRef.current = false;
+                imeValueRef.current = (e.target as HTMLInputElement).value;
+                consumeInput();
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') e.preventDefault();
+                if (e.key === 'Backspace' && (e.target as HTMLInputElement).value.length === 0) {
+                  e.preventDefault();
+                  undoLastChar();
+                }
+              }}
+              onBlur={() => pausePractice()}
+              onFocus={() => { if (paused) resumePractice(); }}
+              aria-label="打字输入"
+              className="absolute opacity-0 h-px w-px left-0 top-0 pointer-events-none"
+            />
+            {/* 对照区：原文,已打对→实色,打错→红底,当前→高亮光标,未打→常规 */}
+            <div
+              ref={boardRef}
+              className="relative overflow-hidden"
+              onClick={() => imeInputRef.current?.focus()}
+            >
+              <div className="cursor-text px-4 sm:px-6 pt-4 pb-2 flex flex-wrap content-start text-2xl sm:text-3xl">
+              {chars.map((ch, ti) => {
+                if (ch === '\n') return <span key={ti} className="basis-full h-0" />;
+                const itemIdx = itemIndexByTextIndex.get(ti);
+                if (itemIdx === undefined) {
                   return (
-                    <span
-                      key={ti}
-                      data-cell
-                      ref={isCurrent ? currentCellRef : undefined}
-                      className="inline-flex flex-col items-start"
-                      style={{ width: '1em', height: CELL_EM }}
-                    >
-                      <span
-                        className={cn(
-                          'rounded-[3px] transition-colors',
-                          isCurrent && 'bg-foreground/[0.10] font-semibold',
-                          isDone && producedChar !== undefined && 'text-red-600 dark:text-red-400',
-                          isDone && producedChar === undefined && 'text-muted-foreground/40',
-                          !isCurrent && !isDone && 'text-foreground/85',
-                        )}
-                        style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}
-                      >
-                        {ch}
-                      </span>
-                      <span
-                        className={cn('whitespace-nowrap', bottomCls)}
-                        style={{ fontSize: '1em', lineHeight: ROW_LINE_HEIGHT }}
-                      >
-                        {bottom}
-                      </span>
+                    <span key={ti} data-cell className="inline-block text-muted-foreground/50" style={{ width: '1em', lineHeight: ROW_LINE_HEIGHT }}>
+                      {ch}
                     </span>
                   );
-                })}
+                }
+                const isCurrent = itemIdx === cursor;
+                const isDone = itemIdx < cursor;
+                const producedChar = producedChars[itemIdx];
+                const wrong = isDone && producedChar !== undefined && producedChar !== ch;
+                return (
+                  <span
+                    key={ti}
+                    data-cell
+                    ref={isCurrent ? currentCellRef : undefined}
+                    className={cn(
+                      'inline-block rounded-[3px] transition-colors',
+                      isCurrent && 'bg-primary/[0.14] font-semibold ring-1 ring-primary/40',
+                      wrong && 'bg-red-500/15 text-red-500',
+                      isDone && !wrong && 'text-emerald-700 dark:text-emerald-400/90',
+                      !isCurrent && !isDone && 'text-foreground/85',
+                    )}
+                    style={{ width: '1em', lineHeight: ROW_LINE_HEIGHT }}
+                  >
+                    {ch}
+                  </span>
+                );
+              })}
+              </div>
+              {/* 跟打区：你打出的内容,与对照区同布局实时镜像（跟打网站的「跟打行」） */}
+              <div className="px-4 sm:px-6 pb-4 pt-2 border-t border-border/40 flex flex-wrap content-start text-2xl sm:text-3xl bg-muted/[0.15]">
+              {chars.map((ch, ti) => {
+                if (ch === '\n') return <span key={ti} className="basis-full h-0" />;
+                const itemIdx = itemIndexByTextIndex.get(ti);
+                if (itemIdx === undefined) {
+                  return (
+                    <span key={ti} className="inline-block text-transparent" style={{ width: '1em', lineHeight: ROW_LINE_HEIGHT }}>
+                      {NBSP}
+                    </span>
+                  );
+                }
+                const isCurrent = itemIdx === cursor;
+                const isDone = itemIdx < cursor;
+                const producedChar = producedChars[itemIdx];
+                let body: ReactNode = NBSP;
+                let cls = 'text-muted-foreground/25';
+                if (isCurrent) {
+                  body = <span className="inline-block w-[3px] h-[1em] align-middle bg-primary animate-pulse rounded-full" />;
+                  cls = '';
+                } else if (isDone) {
+                  if (producedChar !== undefined && producedChar !== ch) {
+                    body = producedChar;
+                    cls = 'text-red-500 font-bold';
+                  } else {
+                    body = ch;
+                    cls = 'text-foreground';
+                  }
+                } else {
+                  body = ch;
+                }
+                return (
+                  <span key={ti} className={cn('inline-block whitespace-pre', cls)} style={{ width: '1em', lineHeight: ROW_LINE_HEIGHT }}>
+                    {body}
+                  </span>
+                );
+              })}
               </div>
             </div>
-            {/* 打字板：跟打网站口径——直接贴在对照文字下方,聚焦后用系统输入法打字 */}
-            <div className="border-t border-border/50 bg-muted/10 px-4 sm:px-6">
-              <input
-                ref={imeInputRef}
-                type="text"
-                autoComplete="off"
-                autoCorrect="off"
-                autoCapitalize="off"
-                spellCheck={false}
-                disabled={!!segResult || !!articleDone || paused}
-                onChange={e => {
-                  imeValueRef.current = e.target.value;
-                  if (!composingRef.current) consumeInput();
-                }}
-                onCompositionStart={() => { composingRef.current = true; }}
-                onCompositionEnd={e => {
-                  composingRef.current = false;
-                  imeValueRef.current = (e.target as HTMLInputElement).value;
-                  consumeInput();
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') e.preventDefault();
-                  if (e.key === 'Backspace' && (e.target as HTMLInputElement).value.length === 0) {
-                    e.preventDefault();
-                    undoLastChar();
-                  }
-                }}
-                onBlur={() => pausePractice()}
-                onFocus={() => { if (paused) resumePractice(); }}
-                placeholder={paused ? '已暂停 · 按 Esc 或点击这里继续…' : '在这里用电脑输入法打字（拼音 / 双拼 / 五笔…）…'}
-                className="w-full bg-transparent px-0 py-3 text-xl text-foreground placeholder:text-muted-foreground/50 focus:outline-none disabled:opacity-60"
-              />
-            </div>
             <div className="flex items-center gap-3 border-t border-border/50 bg-muted/20 px-4 sm:px-6 py-1.5 text-[11px] sm:text-xs text-muted-foreground">
+              <span className="text-muted-foreground/60 shrink-0">上=原文 · 下=跟打</span>
               <span className="ml-auto truncate font-mono-stat">
                 {reviewMode && <span className="text-red-500 mr-1">易错字练习 · </span>}
                 {sourceLabel} · 共 {itemCount} 字 · 错字 {wrongCount}
@@ -1203,7 +1212,7 @@ export default function ArticlePracticePage() {
           )}
           {!minimal && (
             <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
-              用电脑输入法（拼音 / 双拼 / 五笔…）直接跟打；退格 = 回退上一次上屏的字词（打词退整词），并记一次回改
+              上 = 原文对照，下 = 你的跟打（打错红字留痕）；输入框已隐藏，直接用电脑输入法打字即可；退格 = 回退上一次上屏的字词（打词退整词）
             </div>
           )}
 
