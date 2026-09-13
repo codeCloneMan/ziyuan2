@@ -8,7 +8,7 @@ describe('计数问题排查', () => {
     const allRootIds = practiceRootMappings.map(r => r.char);
     const practiceTotal = allRootIds.length;
     
-    // TablePage 使用 practiceKeyGroups.reduce
+    // 字根总表已改用官方图集（ROOT_IMAGE_POOL.length）；此诊断继续守住码表池的计数口径
     const tableTotal = practiceKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
     
     // 正确的唯一字根数（去重后）

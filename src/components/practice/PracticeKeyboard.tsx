@@ -1,7 +1,7 @@
 import { useState, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
-import { keyboardRows, keyRootsMap } from '@/data/roots';
-import { imagesByKey } from '@/data/root-images';
+import { keyboardRows } from '@/data/roots';
+import { imagesByKey, rootImagePath } from '@/data/root-images';
 import { Keyboard, Delete, CornerDownLeft } from 'lucide-react';
 
 // ====== 触觉反馈（移动端振动） ======
@@ -36,8 +36,8 @@ export interface PracticeKeyboardProps {
   isPlaying?: boolean;
   // ===== roots 模式专属 =====
   answerKey?: string;
-  /** 当前题对应的码表字根（仅部分图能对应；用于键位详情弹窗高亮） */
-  currentRootChar?: string;
+  /** 当前题的官方图文件（键位详情弹窗里高亮它） */
+  currentImageFile?: string;
   /** 每张图的掌握状态（imageFile -> correctCount），用于淡化已掌握键 */
   correctCountMap?: Record<string, number>;
   // ===== codes 模式专属 =====
@@ -60,7 +60,7 @@ export default function PracticeKeyboard({
   onKeyPress,
   isPlaying = false,
   answerKey,
-  currentRootChar,
+  currentImageFile,
   correctCountMap,
   onBackspace,
   onSpace,
@@ -131,7 +131,7 @@ export default function PracticeKeyboard({
             {row.map((key) => {
               const isFeedback = keyFeedback === key;
               const isCorrectKey = showRootsExtras && answerKey ? key === answerKey : false;
-              const rootsOnKey = keyRootsMap[key] || [];
+              const imagesOnKey = imagesByKey[key] || [];
               const isCurrentRootKey = isCorrectKey && !feedbackType;
 
               let colorClass = KEY_COLORS.default;
@@ -140,7 +140,6 @@ export default function PracticeKeyboard({
               else if (showRootsExtras && feedbackType === 'wrong' && isCorrectKey) colorClass = KEY_COLORS.highlight;
 
               // 字根模式下：该键上所有字根均已掌握则淡化
-              const imagesOnKey = imagesByKey[key] || [];
               const keyMastered = showRootsExtras && correctCountMap
                 ? imagesOnKey.length > 0 && imagesOnKey.every(img => (correctCountMap[img.file] || 0) >= 3)
                 : false;
@@ -168,27 +167,30 @@ export default function PracticeKeyboard({
                   )}>
                   <span className={cn(showRootsExtras ? "text-[11px] sm:text-xs font-bold leading-none" : "")}>{key.toUpperCase()}</span>
                   {showRootsExtras && displayMode === 'roots' && (
-                    <span className="text-[7px] sm:text-[9px] leading-tight text-center mt-0.5 line-clamp-2 text-muted-foreground/70 root-char">
-                      {rootsOnKey.slice(0, 3).map(r => r.displayChar).join('')}
+                    /* 键帽预览：官方字根图前 3 张（与练习/总表同源，不用码表文本） */
+                    <span className="flex items-center justify-center gap-px mt-0.5">
+                      {imagesOnKey.slice(0, 3).map(img => (
+                        <img key={img.file} src={rootImagePath(img.file)} alt="" loading="lazy" draggable={false}
+                          className="h-3.5 w-3.5 rounded-[3px] bg-white dark:bg-white/95 object-contain p-px" />
+                      ))}
                     </span>
                   )}
                   {showRootsExtras && displayMode === 'codes' && (
                     <span className="text-[7px] sm:text-[9px] font-mono text-muted-foreground/60 mt-0.5">
-                      {rootsOnKey.length}根
+                      {imagesOnKey.length}根
                     </span>
                   )}
-                  {/* 字根模式：点击键位展开详情 */}
+                  {/* 字根模式：点击键位展开详情（官方字根图，当前题高亮） */}
                   {showRootsExtras && selectedKeyInfo === key && (
-                    <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-36 sm:w-44 p-2 rounded-lg bg-popover border border-border/60 shadow-lg animate-fade-in">
+                    <div className="absolute top-full mt-1 left-1/2 -translate-x-1/2 z-20 w-44 sm:w-56 p-2 rounded-lg bg-popover border border-border/60 shadow-lg animate-fade-in">
                       <div className="text-[11px] font-medium text-foreground mb-1" style={{ fontFamily: "'Noto Serif SC', serif" }}>{key.toUpperCase()} 键字根</div>
-                      <div className="flex flex-wrap gap-0.5">
-                        {rootsOnKey.map(r => (
-                          <span key={r.char} className={cn(
-                            'px-1 py-0.5 rounded text-[10px]',
-                            r.char === currentRootChar ? 'bg-amber-100/60 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 font-medium' : 'bg-muted/50 text-foreground/70'
-                          )}>
-                            {r.displayChar}
-                          </span>
+                      <div className="flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                        {imagesOnKey.map(img => (
+                          <img key={img.file} src={rootImagePath(img.file)} alt="字根图" loading="lazy" draggable={false}
+                            className={cn(
+                              'h-7 w-7 rounded bg-white dark:bg-white/95 object-contain p-0.5',
+                              img.file === currentImageFile && 'ring-2 ring-amber-400 dark:ring-amber-500'
+                            )} />
                         ))}
                       </div>
                     </div>

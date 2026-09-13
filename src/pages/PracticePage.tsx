@@ -591,7 +591,7 @@ export default function PracticePage() {
             <PracticeKeyboard
               mode="roots"
               answerKey={currentImage.key}
-              currentRootChar={rootByFile.get(currentImage.file)}
+              currentImageFile={currentImage.file}
               keyFeedback={keyFeedback}
               feedbackType={feedbackType}
               isPlaying={isPlaying}

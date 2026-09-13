@@ -1,81 +1,76 @@
-import { useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { practiceKeyGroups, keyboardRows } from '@/data/roots';
+import { keyboardRows, ROOT_IMAGE_MANIFEST, rootMappings } from '@/data/roots';
+import { imagesByKey, rootImagePath, ROOT_IMAGE_POOL, type RootImage } from '@/data/root-images';
 import { getExamplesByRoot } from '@/data/rootExamples';
-import { useCharCodeData, type CharCodeItem } from '@/lib/data-loader';
-import RootCharDisplay from '@/components/RootCharDisplay';
-import { Search, Keyboard, X, BookOpen, LayoutGrid, List, Hash } from 'lucide-react';
-import type { RootMapping } from '@/data/roots';
+import { Search, Keyboard, X, BookOpen, LayoutGrid, List } from 'lucide-react';
 
 /** 显示模式：紧凑/详细 */
 type DisplayMode = 'compact' | 'detailed';
 
-/** 从 charCodeData 中提取包含指定字根的汉字 */
-function findCharsContainingRoot(rootChar: string, charCodeData: CharCodeItem[], maxCount: number = 12): { char: string; code: string }[] {
-  const results: { char: string; code: string }[] = [];
-  const seen = new Set<string>();
-  for (const item of charCodeData) {
-    if (results.length >= maxCount) break;
-    if (!seen.has(item.char)) {
-      seen.add(item.char);
-      if (item.char.includes(rootChar)) {
-        results.push({ char: item.char, code: item.code });
-      }
-    }
+/**
+ * 图文件 → 已核验的字根身份描述（如 "走变"）。
+ * 官方图集里只有部分变体字根做过图↔码点的人工核验（ROOT_IMAGE_MANIFEST），
+ * 其余图不标身份——宁缺毋错：没有身份的图只展示图与键位，不猜描述。
+ */
+const descsByFile: Map<string, string[]> = (() => {
+  const map = new Map<string, string[]>();
+  for (const [cpHex, file] of Object.entries(ROOT_IMAGE_MANIFEST)) {
+    const root = rootMappings.find(r => r.codePoint === Number(cpHex));
+    if (!root?.desc) continue;
+    const arr = map.get(file) ?? [];
+    if (!arr.includes(root.desc)) arr.push(root.desc);
+    map.set(file, arr);
   }
-  return results;
-}
+  return map;
+})();
 
 export default function TablePage() {
-  const { data: charCodeData } = useCharCodeData();
-
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [selectedRoot, setSelectedRoot] = useState<RootMapping | null>(null);
+  const [selectedImage, setSelectedImage] = useState<RootImage | null>(null);
   const [displayMode, setDisplayMode] = useState<DisplayMode>('detailed');
 
+  // Esc 关闭详情弹窗
+  useEffect(() => {
+    if (!selectedImage) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setSelectedImage(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedImage]);
+
+  const totalImages = ROOT_IMAGE_POOL.length;
+
+  /** 键位分组（数据源 = 官方字根图集，与字根练习完全同源） */
   const filteredGroups = useMemo(() => {
-    if (selectedKey) {
-      return practiceKeyGroups.filter((g) => g.key === selectedKey);
-    }
-    if (searchQuery.trim()) {
-      const query = searchQuery.trim().toLowerCase();
-      return practiceKeyGroups
-        .map((g) => ({
-          ...g,
-          roots: g.roots.filter(
-            (r) =>
-              r.char.includes(query) ||
-              r.key === query ||
-              r.key.toUpperCase() === query.toUpperCase() ||
-              (r.desc && r.desc.includes(query))
-          ),
-        }))
-        .filter((g) => g.roots.length > 0);
-    }
-    return practiceKeyGroups;
+    const query = searchQuery.trim().toLowerCase();
+    return keyboardRows
+      .flat()
+      .map(key => {
+        let images = imagesByKey[key] ?? [];
+        if (selectedKey) {
+          if (key !== selectedKey) images = [];
+        } else if (query) {
+          if (/^[a-z]$/.test(query)) {
+            // 单个字母：按键位筛选
+            images = key === query ? images : [];
+          } else {
+            // 其它文本：只匹配已核验的变体身份描述（如 "走变"）
+            images = images.filter(img =>
+              (descsByFile.get(img.file) ?? []).some(desc => desc.toLowerCase().includes(query))
+            );
+          }
+        }
+        return { key, images };
+      })
+      .filter(g => g.images.length > 0);
   }, [searchQuery, selectedKey]);
 
-  const totalRoots = practiceKeyGroups.reduce((sum, g) => sum + g.roots.length, 0);
-
-  const renderableRootCountBykey = useMemo(() => {
-    const map: Record<string, number> = {};
-    practiceKeyGroups.forEach((g) => {
-      map[g.key] = g.roots.length;
-    });
-    return map;
-  }, []);
-
-  // 弹窗数据：避免重复调用昂贵函数
-  const exampleChars = useMemo(
-    () => selectedRoot ? getExamplesByRoot(selectedRoot.char).slice(0, 8) : [],
-    [selectedRoot]
-  );
-  const matchingChars = useMemo(
-    () => selectedRoot && charCodeData ? findCharsContainingRoot(selectedRoot.char, charCodeData) : [],
-    [selectedRoot, charCodeData]
-  );
+  // 弹窗数据：已核验身份描述 + 该字根家族的例字
+  const selectedDescs = selectedImage ? descsByFile.get(selectedImage.file) ?? [] : [];
+  const exampleBase = selectedDescs[0] ? [...selectedDescs[0]][0] : '';
+  const exampleChars = exampleBase ? getExamplesByRoot(exampleBase).slice(0, 8) : [];
 
   return (
     <div className="min-h-screen bg-background">
@@ -84,23 +79,23 @@ export default function TablePage() {
         <div className="container-page text-center">
           <Badge variant="secondary" className="mb-3 px-3 py-1 text-xs font-medium bg-primary/8 text-primary">
             <BookOpen className="h-3.5 w-3.5 mr-1" />
-            v1.32版完整字根表
+            官方 1.32 字根图集
           </Badge>
-          
+
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight mb-3 animate-slide-in-up" style={{ fontFamily: "'Noto Serif SC', serif" }}>
             字根总表
           </h1>
-          
+
           <p className="text-sm text-muted-foreground/70 max-w-2xl mx-auto animate-fade-in" style={{ animationDelay: '0.1s', fontFamily: "'Noto Serif SC', serif" }}>
-            共 <span className="font-mono-stat font-bold text-foreground">{totalRoots}</span> 个字根，
+            共 <span className="font-mono-stat font-bold text-foreground">{totalImages}</span> 张官方字根图（与字根练习完全同源），
             分布在 <span className="font-mono-stat font-bold text-primary">26</span> 个键位上
           </p>
 
           {/* 快速统计 */}
           <div className="mt-6 sm:mt-10 flex items-center justify-center gap-4 sm:gap-12 animate-fade-in" style={{ animationDelay: '0.2s' }}>
             <div className="text-center">
-              <div className="stat-number font-mono-stat text-primary">{totalRoots}</div>
-              <div className="stat-label">总字根数</div>
+              <div className="stat-number font-mono-stat text-primary">{totalImages}</div>
+              <div className="stat-label">字根图</div>
             </div>
             <div className="w-px h-8 sm:h-12 bg-border/50"></div>
             <div className="text-center">
@@ -109,7 +104,7 @@ export default function TablePage() {
             </div>
             <div className="w-px h-8 sm:h-12 bg-border/50"></div>
             <div className="text-center">
-              <div className="stat-number font-mono-stat">{Math.round(totalRoots / 26)}</div>
+              <div className="stat-number font-mono-stat">{Math.round(totalImages / 26)}</div>
               <div className="stat-label">平均每键</div>
             </div>
           </div>
@@ -125,7 +120,7 @@ export default function TablePage() {
               <Search className="icon" />
               <input
                 type="text"
-                placeholder="搜索字根、键位或描述..."
+                placeholder="搜索键位字母（如 d）或变体字根（如 走变）..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -168,7 +163,7 @@ export default function TablePage() {
               {keyboardRows.map((row, rowIndex) => (
                 <div key={rowIndex} className="flex gap-0.5 sm:gap-1.5 w-full" style={{ paddingLeft: `${rowIndex * 4}px` }}>
                   {row.map((key) => {
-                    const rootCount = renderableRootCountBykey[key] || 0;
+                    const rootCount = imagesByKey[key]?.length ?? 0;
                     const isSelected = selectedKey === key;
                     return (
                       <button
@@ -236,29 +231,40 @@ export default function TablePage() {
                       键位 {group.key.toUpperCase()}
                     </h3>
                     <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5">
-                      包含 {group.roots.length} 个字根
+                      包含 {group.images.length} 个字根
                     </p>
                   </div>
 
                   <Badge variant="secondary" className="bg-primary/10 text-primary font-semibold text-[11px] sm:text-xs shrink-0">
-                    {group.roots.length}
+                    {group.images.length}
                   </Badge>
                 </div>
 
-                {/* 字根列表 */}
+                {/* 字根图列表（官方裁剪图，与字根练习同源） */}
                 <div className={cn(
-                  "flex flex-wrap gap-2",
-                  displayMode === 'compact' && "gap-1.5"
+                  "grid",
+                  displayMode === 'compact'
+                    ? "grid-cols-4 sm:grid-cols-5 gap-1.5"
+                    : "grid-cols-6 sm:grid-cols-8 gap-2"
                 )}>
-                  {group.roots.map((root, rootIdx) => (
-                    <RootCharDisplay
-                      key={`${root.char}-${root.key}-${rootIdx}`}
-                      root={root}
-                      size={displayMode === 'compact' ? 'sm' : 'md'}
-                      showDesc={displayMode === 'detailed'}
-                      className="cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all duration-200"
-                      onClick={() => setSelectedRoot(root)}
-                    />
+                  {group.images.map((img) => (
+                    <button
+                      key={img.file}
+                      onClick={() => setSelectedImage(img)}
+                      title="查看字根详情"
+                      className="group flex items-center justify-center aspect-square rounded-lg border border-border/70 bg-white dark:bg-white/95 shadow-xs hover:border-primary/40 hover:ring-2 hover:ring-primary/40 transition-all duration-150 cursor-pointer overflow-hidden select-none"
+                    >
+                      <img
+                        src={rootImagePath(img.file)}
+                        alt="字根图"
+                        loading="lazy"
+                        draggable={false}
+                        className={cn(
+                          'object-contain transition-transform duration-150 group-hover:scale-105',
+                          displayMode === 'compact' ? 'h-[80%] w-[80%]' : 'h-[85%] w-[85%]'
+                        )}
+                      />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -269,17 +275,17 @@ export default function TablePage() {
             <div className="empty-state">
               <Keyboard className="empty-state-icon" />
               <h3 className="empty-state-title">没有找到匹配的字根</h3>
-              <p className="empty-state-desc">尝试使用其他关键词或清除筛选条件</p>
+              <p className="empty-state-desc">试试单个键位字母（如 d），或清除筛选条件</p>
             </div>
           )}
         </div>
       </section>
 
       {/* 字根详情弹窗 */}
-      {selectedRoot && (
+      {selectedImage && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in"
-          onClick={() => setSelectedRoot(null)}
+          onClick={() => setSelectedImage(null)}
         >
           <div
             className="w-full max-w-md bg-card rounded-lg shadow-2xl border border-border/50 overflow-hidden animate-slide-in-up"
@@ -288,23 +294,23 @@ export default function TablePage() {
             {/* 弹窗头部 */}
             <div className="relative p-6 pb-4 bg-primary/5 border-b border-border/40">
               <button
-                onClick={() => setSelectedRoot(null)}
+                onClick={() => setSelectedImage(null)}
                 className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full hover:bg-secondary transition-colors btn-icon"
               >
                 <X className="h-5 w-5" />
               </button>
-              
+
               <div className="flex items-center gap-4">
                 <div className="flex h-16 w-16 sm:h-20 sm:w-20 items-center justify-center rounded-lg bg-primary text-3xl font-bold text-primary-foreground shadow-lg">
-                  {selectedRoot.key.toUpperCase()}
+                  {selectedImage.key.toUpperCase()}
                 </div>
-                
+
                 <div>
                   <h3 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
                     字根详情
                   </h3>
                   <Badge variant="outline" className="border-primary/30 text-primary bg-primary/10">
-                    键位 {selectedRoot.key.toUpperCase()}
+                    键位 {selectedImage.key.toUpperCase()}
                   </Badge>
                 </div>
               </div>
@@ -312,64 +318,43 @@ export default function TablePage() {
 
             {/* 弹窗内容 */}
             <div className="p-6 space-y-4">
-              {/* 字根展示 */}
+              {/* 字根官方图 */}
               <div className="flex items-center justify-center py-4">
-                <div className="flex h-24 w-24 sm:h-32 sm:w-32 items-center justify-center rounded-lg border-2 border-border bg-card">
-                  <RootCharDisplay
-                    root={selectedRoot}
-                    size="xl"
-                    showDesc={false}
-                    className="text-4xl sm:text-5xl"
+                <div className="flex h-36 w-36 sm:h-44 sm:w-44 items-center justify-center rounded-xl border border-border/60 bg-white dark:bg-white/95 shadow-sm overflow-hidden">
+                  <img
+                    src={rootImagePath(selectedImage.file)}
+                    alt="字根图"
+                    draggable={false}
+                    className="h-[88%] w-[88%] object-contain select-none"
                   />
                 </div>
               </div>
-              
-              {/* 字根描述 */}
-              {selectedRoot.desc && (
-                <div className="text-center">
-                  <Badge variant="secondary" className="bg-secondary text-secondary-foreground text-sm">
-                    {selectedRoot.desc}
-                  </Badge>
+
+              {/* 已核验的字根身份描述（如 "走变"） */}
+              {selectedDescs.length > 0 && (
+                <div className="flex flex-wrap justify-center gap-1.5">
+                  {selectedDescs.map((desc) => (
+                    <Badge key={desc} variant="secondary" className="bg-secondary text-secondary-foreground text-sm">
+                      {desc}
+                    </Badge>
+                  ))}
                 </div>
               )}
 
-              {/* 例字展示 */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <BookOpen className="h-4 w-4" />
-                  常见例字
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {exampleChars.length > 0 ? (
-                    exampleChars.map((char, idx) => (
+              {/* 例字展示（仅已核验身份的字根图有） */}
+              {exampleChars.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <BookOpen className="h-4 w-4" />
+                    常见例字
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {exampleChars.map((char, idx) => (
                       <div
                         key={idx}
                         className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-lg border border-border bg-card text-lg sm:text-xl font-medium text-foreground hover:border-primary/50 hover:bg-accent/10 transition-colors cursor-default"
                       >
                         {char}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm text-muted-foreground">暂无例字数据</p>
-                  )}
-                </div>
-              </div>
-
-              {/* 包含该字根的汉字（从码表提取） */}
-              {matchingChars.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <Hash className="h-4 w-4" />
-                    码表中的汉字
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {matchingChars.map((item, idx) => (
-                      <div
-                        key={idx}
-                        className="flex items-center gap-1.5 px-2 py-1 rounded-lg border border-border bg-card text-sm hover:border-primary/50 hover:bg-accent/10 transition-colors cursor-default"
-                      >
-                        <span className="root-char text-lg font-medium text-foreground">{item.char}</span>
-                        <span className="font-mono text-[10px] text-primary uppercase">{item.code}</span>
                       </div>
                     ))}
                   </div>

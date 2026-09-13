@@ -6,11 +6,10 @@ import {
   Image as ImageIcon, HelpCircle, HardDrive, MessageCircle, Layers,
 } from 'lucide-react';
 import {
-  keyboardRows, keyRootsMap, practiceRootMappings, getRootImageUrl,
+  keyboardRows,
 } from '@/data/roots';
-import RootGlyph from '@/components/RootGlyph';
-import { ROOT_IMAGE_POOL } from '@/data/root-images';
-import { practiceChars5000 } from '@/data/practice-pools.generated';
+import { ROOT_IMAGE_POOL, imagesByKey, rootImagePath } from '@/data/root-images';
+import { practiceChars5000, practicePhrases5000 } from '@/data/practice-pools.generated';
 import { useLearningProgress } from '@/hooks/use-learning-progress';
 import { cn } from '@/lib/utils';
 
@@ -145,10 +144,10 @@ export default function HomePage() {
             {/* 数据条：站内可用内容规模（大站门面） */}
             <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-5 max-w-2xl mx-auto">
               {[
-                { n: practiceRootMappings.length, label: '官方字根', sub: '全部可练' },
-                { n: ROOT_IMAGE_POOL.length, label: '字根图', sub: '官方裁剪图' },
+                { n: ROOT_IMAGE_POOL.length, label: '字根图', sub: '官方 1.32 裁剪图' },
                 { n: 26, label: '键位', sub: '全键盘覆盖' },
                 { n: practiceChars5000.length, label: '常用字题库', sub: '含前 500 字专项' },
+                { n: practicePhrases5000.length, label: '词组题库', sub: '四码上屏实战' },
               ].map(item => (
                 <div key={item.label} className="text-center">
                   <dt className="text-2xl sm:text-3xl font-bold font-mono-stat text-gradient-primary leading-none">
@@ -280,7 +279,7 @@ export default function HomePage() {
               <div>
                 <h2 className="text-lg font-bold font-serif mb-1">键位分布</h2>
                 <p className="text-sm text-muted-foreground/70">
-                  {practiceRootMappings.length} 个字根分布在 26 键上——点击按键探索
+                  {ROOT_IMAGE_POOL.length} 张官方字根图分布在 26 键上（与字根练习同源）——点击按键探索
                 </p>
               </div>
               {selectedKey && (
@@ -302,12 +301,8 @@ export default function HomePage() {
                   style={{ paddingLeft: `clamp(0px, ${rowIdx * 1.2}rem, ${rowIdx * 1.2}rem)` }}
                 >
                   {row.map((key) => {
-                    const roots = keyRootsMap[key] || [];
+                    const keyImages = imagesByKey[key] || [];
                     const isSelected = selectedKey === key;
-                    // 键帽预览：优先展示「有官方字根图」或「单字形」的字根，每个用官方裁剪图
-                    const previewRoots = roots
-                      .filter(r => getRootImageUrl(r) || [...r.displayChar].length === 1)
-                      .slice(0, 3);
                     return (
                       <button
                         key={key}
@@ -322,13 +317,15 @@ export default function HomePage() {
                         )}
                       >
                         <span className="text-[11px] sm:text-xs font-bold uppercase text-foreground/80">{key}</span>
+                        {/* 键帽预览：官方字根图前 3 张（与练习/总表同源） */}
                         <span className="flex items-center justify-center gap-[1px] leading-none">
-                          {previewRoots.map((r, i) => (
-                            <RootGlyph key={i} char={r.char} box="h-2.5 w-2.5 sm:h-3 sm:w-3" text="text-[7px] sm:text-[8px]" />
+                          {keyImages.slice(0, 3).map(img => (
+                            <img key={img.file} src={rootImagePath(img.file)} alt="" loading="lazy" draggable={false}
+                              className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-[2px] bg-white dark:bg-white/95 object-contain p-px" />
                           ))}
                         </span>
                         <span className="absolute -top-1 -right-1 text-[8px] bg-primary text-primary-foreground rounded-full min-w-3.5 h-3.5 px-0.5 flex items-center justify-center font-bold font-mono-stat shadow-xs">
-                          {roots.length}
+                          {keyImages.length}
                         </span>
                       </button>
                     );
@@ -344,18 +341,19 @@ export default function HomePage() {
                   <div className="flex items-center gap-2 mb-3">
                     <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground text-sm font-bold uppercase">{selectedKey}</span>
                     <span className="text-sm text-muted-foreground">
-                      <span className="font-mono-stat text-foreground">{keyRootsMap[selectedKey]?.length || 0}</span> 个字根
+                      <span className="font-mono-stat text-foreground">{imagesByKey[selectedKey]?.length || 0}</span> 个字根
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1">
-                    {(keyRootsMap[selectedKey] || []).map((root, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-2 p-1.5 rounded-md hover:bg-primary/[0.05] transition-colors"
-                      >
-                        <RootGlyph char={root.char} box="h-8 w-8" text="text-lg" markFallback />
-                        <span className="font-mono text-xs text-muted-foreground">{root.key}</span>
-                      </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(imagesByKey[selectedKey] || []).map(img => (
+                      <img
+                        key={img.file}
+                        src={rootImagePath(img.file)}
+                        alt="字根图"
+                        loading="lazy"
+                        draggable={false}
+                        className="h-9 w-9 rounded-md border border-border/60 bg-white dark:bg-white/95 object-contain p-0.5"
+                      />
                     ))}
                   </div>
                 </div>
