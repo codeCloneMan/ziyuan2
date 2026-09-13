@@ -732,7 +732,7 @@ export default function ArticlePracticePage() {
         else pausePractice();
         return;
       }
-      if (paused) return;
+      // 跟打器快捷键在暂停态也可用（genda 口径）:切段/重打/打乱会顺带唤醒
       if (e.ctrlKey && e.key.toLowerCase() === 'u') { e.preventDefault(); goToSegment(Math.max(0, segIndex - 1)); return; }
       if (e.ctrlKey && e.key.toLowerCase() === 'j' && !(segResult && !segResult.pass)) { e.preventDefault(); goToSegment(Math.min(segments.length - 1, segIndex + 1)); return; }
       if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); goToSegment(segIndex, true); return; }
@@ -740,6 +740,9 @@ export default function ArticlePracticePage() {
       // F 键快捷键（跟打器口径:F3 重打本段 / F4 打乱本段)
       if (e.key === 'F3') { e.preventDefault(); goToSegment(segIndex); return; }
       if (e.key === 'F4') { e.preventDefault(); goToSegment(segIndex, true); return; }
+      // 暂停中按任意打字键 = 直接唤醒打字板继续（不丢状态）
+      if (paused && e.key.length === 1) { e.preventDefault(); resumePractice(); return; }
+      if (paused) return;
       if (e.key === 'Backspace') {
         // 输入框里还有内容 → 让输入框自己删；空了 → 回退上一个已打出的字
         if (imeInputRef.current && document.activeElement === imeInputRef.current && imeInputRef.current.value.length > 0) return;
