@@ -328,7 +328,8 @@ export default function ArticlePracticePage() {
       startedAtRef.current = startedAtRef.current === 0 ? 0 : Date.now() - elapsedMsRef.current;
       return false;
     });
-    setTimeout(() => imeInputRef.current?.focus(), 0);
+    // 延迟聚焦:等 React 提交「输入框从禁用恢复可用」的渲染后再聚焦,避免静默失败
+    setTimeout(() => imeInputRef.current?.focus(), 30);
   }, []);
 
   /** 暂停（genda「光标离开输入区自动暂停」）；还没开始打字时失焦不暂停,免得没打字就被锁住 */
@@ -337,6 +338,8 @@ export default function ArticlePracticePage() {
       if (p || !isPlayingRef.current || blockedRef.current || startedAtRef.current === 0) return p;
       return true;
     });
+    // 让光标真正离开打字板:之后点击打字板(重新聚焦)即可恢复
+    if (document.activeElement === imeInputRef.current) imeInputRef.current?.blur();
   }, []);
 
   /**
@@ -1049,6 +1052,15 @@ export default function ArticlePracticePage() {
               title="按当前文章与乱序设置重新开始">
               <RotateCcw className="h-3.5 w-3.5" />重新开始
             </button>
+            {/* 极简切换常驻工具条:极简开启后左右栏隐藏,这里是唯一出口 */}
+            <button onClick={() => updateSettings({ minimal: !minimal })}
+              className={cn(toolBtn, 'shrink-0',
+                minimal
+                  ? 'border-primary/50 bg-primary/10 text-primary font-medium'
+                  : 'border-border/60 bg-card text-muted-foreground hover:text-foreground')}
+              title="极简模式:隐藏左右两栏,只留打字面板">
+              极简
+            </button>
           </div>
 
           {/* 细进度条 */}
@@ -1069,7 +1081,8 @@ export default function ArticlePracticePage() {
               autoCorrect="off"
               autoCapitalize="off"
               spellCheck={false}
-              disabled={!!segResult || !!articleDone || paused}
+              // 暂停时保持可聚焦:点击打字板即恢复（禁用会导致无法点回,恢复后聚焦也会静默失败）
+              disabled={!!segResult || !!articleDone}
               onChange={e => {
                 imeValueRef.current = e.target.value;
                 if (!composingRef.current) consumeInput();
@@ -1187,12 +1200,16 @@ export default function ArticlePracticePage() {
           {segResultPanel}
           {articleDonePanel}
 
-          {/* 暂停覆盖层（计时停、输入无效） */}
+          {/* 暂停覆盖层（计时停、输入无效）;点击任意处恢复 */}
           {paused && !segResult && !articleDone && (
-            <div className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4 text-center">
+            <div
+              onClick={() => resumePractice()}
+              className="mt-3 rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4 text-center cursor-pointer select-none"
+              title="点击继续"
+            >
               <div className="text-base font-semibold text-amber-600 dark:text-amber-400">已暂停 · 计时停止</div>
               <div className="mt-1 text-xs text-muted-foreground">
-                按 <kbd className="px-1 rounded bg-amber-500/10 border border-amber-500/30 font-mono">Esc</kbd> 继续
+                按 <kbd className="px-1 rounded bg-amber-500/10 border border-amber-500/30 font-mono">Esc</kbd> 继续 · 或点击这里 / 直接开始打字
               </div>
             </div>
           )}
