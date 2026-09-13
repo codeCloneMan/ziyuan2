@@ -6,3 +6,5 @@ export { default as RoundCompleteToast } from './RoundCompleteToast';
 export { PracticeStatsLine } from './PracticeStatsLine';
 export { ErrorItemsPanel } from './ErrorItemsPanel';
 export type { ErrorItem } from './ErrorItemsPanel';
+export { KeyHeatmap } from './KeyHeatmap';
+export { ArticleHistoryTable } from './ArticleHistoryTable';
