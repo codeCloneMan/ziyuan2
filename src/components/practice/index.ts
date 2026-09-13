@@ -8,3 +8,4 @@ export { ErrorItemsPanel } from './ErrorItemsPanel';
 export type { ErrorItem } from './ErrorItemsPanel';
 export { KeyHeatmap } from './KeyHeatmap';
 export { ArticleHistoryTable } from './ArticleHistoryTable';
+export { SwitchRow } from './SwitchRow';
