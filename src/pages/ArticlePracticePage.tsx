@@ -206,7 +206,7 @@ export default function ArticlePracticePage() {
 
   // ============ 题目序列 ============
   const items = useMemo(
-    () => (charCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex) : []),
+    () => (charCodeData && practiceText ? buildArticleItems(practiceText, charCodeIndex, { acceptAllHan: true }) : []),
     [charCodeData, practiceText, charCodeIndex],
   );
   const itemIndexByTextIndex = useMemo(() => {
@@ -954,9 +954,16 @@ export default function ArticlePracticePage() {
               className="h-[26px] max-w-44 text-xs rounded-lg border border-border/60 bg-card px-2 focus:outline-none focus:border-primary/40"
               title="选择文章"
             >
-              {DEFAULT_ARTICLES.map(a => (
-                <option key={a.id} value={a.id}>{a.title}</option>
-              ))}
+              <optgroup label="文章">
+                {DEFAULT_ARTICLES.filter(a => a.group !== 'char').map(a => (
+                  <option key={a.id} value={a.id}>{a.title}</option>
+                ))}
+              </optgroup>
+              <optgroup label="单字">
+                {DEFAULT_ARTICLES.filter(a => a.group === 'char').map(a => (
+                  <option key={a.id} value={a.id}>{a.title}</option>
+                ))}
+              </optgroup>
               {customText.trim() && <option value="custom">自定义文本</option>}
               {reviewChars.length > 0 && <option value="__review">易错字练习</option>}
             </select>

@@ -1,38 +1,36 @@
 import { describe, it, expect } from 'vitest';
-import {
-  DEFAULT_ARTICLES, COMMON500_ARTICLE, COMMON500_ARTICLE_ID, shuffledCommon500Text,
-} from './articles';
-import { practiceChars500 } from './practice-pools.generated';
+import { DEFAULT_ARTICLES } from './articles';
+import { GENDA_ARTICLES } from './genda-articles.generated';
 
 /**
- * 前 500 常用字练习文章：必须与整字/词组练习的 500 池完全同序，
- * 乱序版只能是同一批字的不同排列（不能丢字/加字）。
+ * 默认文章列表:自有文章 + genda 文章库(单字池/宇浩文章),
+ * 每篇 id 唯一、正文非空、分组正确。
  */
-describe('常用字 500 练习文章', () => {
-  it('已进入默认文章列表，且标记为可乱序', () => {
-    const found = DEFAULT_ARTICLES.find(a => a.id === COMMON500_ARTICLE_ID);
-    expect(found).toBeDefined();
-    expect(found?.shufflable).toBe(true);
-    expect(found?.text).toBe(COMMON500_ARTICLE.text);
+describe('默认文章列表', () => {
+  it('包含 genda 文章库的全部单字池与文章', () => {
+    for (const g of GENDA_ARTICLES) {
+      const found = DEFAULT_ARTICLES.find(a => a.id === `genda:${g.id}`);
+      expect(found, g.id).toBeDefined();
+      expect(found?.text).toBe(g.text);
+      expect(found?.group).toBe(g.type === 'character' ? 'char' : 'article');
+    }
   });
 
-  it('正文 = 500 池按字频序、每行 20 字', () => {
-    const lines = COMMON500_ARTICLE.text.split('\n');
-    expect(lines).toHaveLength(Math.ceil(practiceChars500.length / 20));
-    expect(lines.every(l => l.length === 20)).toBe(true);
-    expect([...COMMON500_ARTICLE.text.replace(/\n/g, '')]).toEqual([...practiceChars500]);
+  it('包含自有文章(实践论/矛盾论/常用字练习文段)', () => {
+    for (const id of ['shijianlun', 'maodunlun', 'common']) {
+      expect(DEFAULT_ARTICLES.find(a => a.id === id)).toBeDefined();
+    }
   });
 
-  it('乱序版字集与顺序版完全相同，且顺序被打乱', () => {
-    const shuffled = shuffledCommon500Text();
-    const flat = [...shuffled.replace(/\n/g, '')];
-    expect(flat).toHaveLength(practiceChars500.length);
-    expect([...flat].sort().join('')).toBe([...practiceChars500].sort().join(''));
-    expect(shuffled).not.toBe(COMMON500_ARTICLE.text);
+  it('id 唯一且正文非空', () => {
+    const ids = DEFAULT_ARTICLES.map(a => a.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(DEFAULT_ARTICLES.every(a => a.text.trim().length > 0)).toBe(true);
   });
 
-  it('每行都是 GB2312 常用字（可直接练习，无需跳过标点）', () => {
-    // 换行是排版用的行分隔，剩下的内容里不应该出现标点或空白
-    expect(COMMON500_ARTICLE.text.replace(/\n/g, '')).not.toMatch(/[\s，。、；：？！“”（）《》—…]/);
+  it('单字池分组正确且无标点', () => {
+    const charPools = DEFAULT_ARTICLES.filter(a => a.group === 'char');
+    expect(charPools.length).toBeGreaterThanOrEqual(8);
+    expect(charPools.every(a => !/[\s，。、；：？！“”（）《》—…]/.test(a.text))).toBe(true);
   });
 });

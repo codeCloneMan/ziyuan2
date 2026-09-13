@@ -29,8 +29,8 @@ describe('文章练习题目序列', () => {
     expect(items.map(i => i.textIndex)).toEqual([1, 2, 3]);
   });
 
-  it('标点映射覆盖默认文章里出现的全部标点', () => {
-    for (const article of DEFAULT_ARTICLES) {
+  it('标点映射覆盖自有文章里出现的全部标点（genda 文章含繁体等,走宽容模式）', () => {
+    for (const article of DEFAULT_ARTICLES.filter(a => !a.id.startsWith('genda:'))) {
       for (const ch of article.text) {
         if (isHan(ch) || ch === '\n' || ch === ' ' || index.has(ch)) continue;
         expect(Object.keys(PUNCT_KEYS)).toContain(ch);
@@ -38,11 +38,11 @@ describe('文章练习题目序列', () => {
     }
   });
 
-  it('默认文章：汉字与标点都在题目里，只有换行/空白被跳过', () => {
+  it('默认文章：宽容模式下汉字与标点都在题目里，只有换行/空白被跳过', () => {
     expect(DEFAULT_ARTICLES.length).toBeGreaterThanOrEqual(3);
     for (const article of DEFAULT_ARTICLES) {
       const text = [...article.text];
-      const items = buildArticleItems(article.text, index);
+      const items = buildArticleItems(article.text, index, { acceptAllHan: true });
       const itemCharIdx = new Set(items.map(it => it.textIndex));
       const skipped = text.filter((ch, i) => !itemCharIdx.has(i) && ch !== '\n' && ch !== ' ');
       expect(skipped).toEqual([]);

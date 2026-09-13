@@ -54,12 +54,20 @@ export function punctKeyOf(ch: string): string | null {
 export function buildArticleItems(
   text: string,
   index: Map<string, FullCodeInfo>,
+  /** 宽容模式：码表外的汉字也进题目（codes 为空,配合「判字对错」的输入法直打模式） */
+  options?: { acceptAllHan?: boolean },
 ): ArticleItem[] {
+  const acceptAllHan = options?.acceptAllHan === true;
   const items: ArticleItem[] = [];
   [...text].forEach((ch, i) => {
     const info = index.get(ch);
     if (info && info.accepted.length > 0) {
       items.push({ kind: 'char', textIndex: i, char: ch, codes: info.accepted });
+      return;
+    }
+    if (acceptAllHan && !/\s/.test(ch)) {
+      // 宽容模式（输入法直打,判字对错）:除空白外一切可见字符都是题目
+      items.push({ kind: 'char', textIndex: i, char: ch, codes: [] });
       return;
     }
     const key = PUNCT_KEYS[ch];
