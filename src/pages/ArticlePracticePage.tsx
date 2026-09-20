@@ -10,7 +10,8 @@ import {
 import {
   loadHistory, saveRecord, clearHistory, aggregateKeys, type SegmentRecord,
 } from '@/lib/article-history';
-import { RoundCompleteToast, ErrorItemsPanel, KeyHeatmap, ArticleHistoryTable, SwitchRow } from '@/components/practice';
+import { isAccPassed, canAdvanceSegment, isResultBlocked } from '@/lib/article-gate';
+import { RoundCompleteToast, ErrorItemsPanel, KeyHeatmap, ArticleHistoryTable, SwitchRow, ChipGroup } from '@/components/practice';
 import { usePracticeRound } from '@/hooks/use-practice-round';
 import { useArticleProgress } from '@/store/progress-store';
 import {
@@ -18,7 +19,7 @@ import {
 } from '@/data/articles';
 import {
   RotateCcw, ArrowLeft, ArrowRight, Trash2, FileText,
-  Shuffle, Repeat, Gauge, Pause,
+  Shuffle, Repeat, Gauge, Pause, Settings,
 } from 'lucide-react';
 
 /** 跟打器式固定窗口显示的行数（每行 = 原文一行 + 紧跟其下的跟打行，当前字固定在第 ARTICLE_ROWS-1 行） */
@@ -44,7 +45,16 @@ const SEG_LEN_OPTIONS: { value: SegmentLength; label: string }[] = [
 ];
 
 /** 准度门槛可选项：0 = 不设门槛，其余 = 准度达标才能进入下一段 */
-const ACC_GATE_OPTIONS = [0, 90, 95, 98, 100];
+const ACC_GATE_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: '关' },
+  { value: 90, label: '90%' },
+  { value: 95, label: '95%' },
+  { value: 98, label: '98%' },
+  { value: 100, label: '100%' },
+];
+
+/** 自定义文本超过这个字数后打字板（每个字两个 span）会明显卡顿，仅提示不阻断 */
+const MAX_CUSTOM_CHARS = 20_000;
 
 /** 乱序模式：关 / 打乱本段 / 打乱全文 */
 type ShuffleMode = 'off' | 'seg' | 'full';
@@ -90,7 +100,7 @@ function loadSettings(): ArticleSettings {
       segLen: SEG_LEN_OPTIONS.some(o => o.value === saved.segLen) ? (saved.segLen as SegmentLength) : 'all',
       shuffleMode: saved.shuffleMode === 'seg' || saved.shuffleMode === 'full' ? saved.shuffleMode : 'off',
       afterSeg,
-      accGate: ACC_GATE_OPTIONS.includes(saved.accGate ?? 0) ? (saved.accGate ?? 0) : 0,
+      accGate: ACC_GATE_OPTIONS.some(o => o.value === (saved.accGate ?? 0)) ? (saved.accGate ?? 0) : 0,
       minimal: saved.minimal === true,
     };
   } catch { return fallback; }
@@ -153,11 +163,18 @@ export default function ArticlePracticePage() {
       if (text.trim()) localStorage.setItem(CUSTOM_ARTICLE_KEY, text);
       else localStorage.removeItem(CUSTOM_ARTICLE_KEY);
     } catch { /* 隐私模式等场景忽略 */ }
-    if (text.trim()) selectArticleRef.current?.('custom');
+    if (text.trim()) {
+      selectArticleRef.current?.('custom');
+    } else if (selectedId === 'custom') {
+      // 自定义文本被清空：切回默认文章，否则会停在「没有内容」的空白打字板上
+      selectArticleRef.current?.(DEFAULT_ARTICLES[0]?.id ?? 'common');
+    }
     setShowEditor(false);
-  }, []);
+  }, [selectedId]);
 
   const [reviewMode, setReviewMode] = useState(false);
+  /** 工具条「设置」浮层（极简模式下调段长 / 门槛的入口） */
+  const [showSettings, setShowSettings] = useState(false);
 
   // ============ 练习方式设置（分段 / 乱序 / 自动发文 / 准度门槛） ============
   const [settings, setSettings] = useState<ArticleSettings>(loadSettings);
@@ -250,14 +267,30 @@ export default function ArticlePracticePage() {
   const [undoCount, setUndoCount] = useState(0);
   const [segResult, setSegResult] = useState<SegmentResult | null>(null);
   const [articleDone, setArticleDone] = useState<ArticleDoneStats | null>(null);
+  /**
+   * 已「达标」的段号集合。
+   * 门槛只能靠 segResult 这种瞬时状态拦是不够的：切到上一段再切回来会把它清掉，
+   * 于是「上一段 → 下一段 → 下一段」就能绕过门槛。这里按段号持久记录达标结果。
+   */
+  const [passedSegs, setPassedSegs] = useState<ReadonlySet<number>>(() => new Set<number>());
+  /** 被门槛拦下时的即时提示（Ctrl+J 等键盘操作没有按钮可点，需要文字反馈） */
+  const [gateHint, setGateHint] = useState<string | null>(null);
   /** 全文累计（跨段累加） */
   const totalsRef = useRef({ chars: 0, correct: 0, wrong: 0, keys: 0, ideal: 0, ms: 0, segs: 0, speeds: [] as number[] });
   const [wrongFlash, setWrongFlash] = useState<string | null>(null);
   const [roundToast, setRoundToast] = useState<number | null>(null);
   const [keyStrokes, setKeyStrokes] = useState(0);
   const [elapsedMs, setElapsedMs] = useState(0);
+  /**
+   * 按键统计数据源（全部跟打历史的按键聚合）。
+   * 注意：所有 hook 必须留在下面那个「数据未加载」早退 return 之前，
+   * 否则两次渲染的 hook 数量不一致，React 直接抛
+   * "Rendered more hooks than during the previous render" 把整页打崩。
+   */
+  const keyCounts = useMemo(() => aggregateKeys(history), [history]);
   const autoNextTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wrongFlashTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const gateHintTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const startedAtRef = useRef(0);
   const currentCellRef = useRef<HTMLSpanElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -292,9 +325,22 @@ export default function ArticlePracticePage() {
   /** 计时从第一个键开始：还没敲键时显示 00:00 且不走表 */
   const timerStarted = startedAtRef.current > 0;
 
+  /**
+   * 门槛开启时，只有本段已达标才允许往后走。
+   * 判定规则统一走 article-gate（有单测覆盖），这里不再依赖 segResult 瞬时状态，
+   * 「上一段 → 下一段」也绕不过去。
+   */
+  const canGoForward = canAdvanceSegment(accGate, passedSegs, segIndex);
+  /**
+   * 结算面板是否被门槛锁住：在渲染时按当前 accGate 重新判定，
+   * 这样用户把门槛调低（或关掉）后能立刻解锁，不必重打。
+   */
+  const segBlocked = !!segResult && isResultBlocked(accGate, segResult.accuracy);
+
   useEffect(() => () => {
     if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
     if (wrongFlashTimerRef.current) clearTimeout(wrongFlashTimerRef.current);
+    if (gateHintTimerRef.current) clearTimeout(gateHintTimerRef.current);
   }, []);
 
   // 渲染后同步镜像（供输入消费循环读取最新值）
@@ -352,6 +398,12 @@ export default function ArticlePracticePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [segIndex, segNonce, practiceText, isPlaying, segLen]);
 
+  // 段结构变了（改段长 / 打乱本段）→ 旧段号的达标记录作废，必须重新打
+  useEffect(() => { setPassedSegs(new Set<number>()); }, [segLen, practiceText]);
+
+  /** 没有可练内容时的空态兜底（自定义文本被清空等场景） */
+  const hasContent = items.length > 0;
+
   // 跟打器式固定窗口：面板高度 = 4 行，当前字固定在窗口内第 3 行，上下自动滚。
   useLayoutEffect(() => {
     const board = boardRef.current;
@@ -389,6 +441,13 @@ export default function ArticlePracticePage() {
     if (wrongFlashTimerRef.current) clearTimeout(wrongFlashTimerRef.current);
   }, []);
 
+  /** 门槛拦人时给一句明确反馈（键盘操作没有按钮态可看） */
+  const notifyGateBlocked = useCallback(() => {
+    setGateHint(`第 ${segIndex + 1} 段还没达到 ${accGate}% 准度 · 请先重打本段达标，或把门槛调低`);
+    if (gateHintTimerRef.current) clearTimeout(gateHintTimerRef.current);
+    gateHintTimerRef.current = setTimeout(() => setGateHint(null), 2800);
+  }, [accGate, segIndex]);
+
   /** 跳到第 i 段；reshuffle = 进入前先把该段字符打乱 */
   const goToSegment = useCallback((i: number, reshuffle = false) => {
     const target = segments[i];
@@ -401,6 +460,18 @@ export default function ArticlePracticePage() {
     resetSegmentStats();
     setTimeout(() => imeInputRef.current?.focus(), 30);
   }, [segments, resetSegmentStats]);
+
+  /**
+   * 段数变少时 segIndex 会越界（例：100 字/段切到「全」，段数 10 → 1，而人在第 6 段）。
+   * 越界后 currentSeg 为 undefined → 段内题目边界算成 -1 → 敲什么都被吞掉、打字彻底失效。
+   * 这里把段号钳回有效范围并重置本段统计。
+   */
+  useEffect(() => {
+    if (!segments.length || segIndex < segments.length) return;
+    setSegIndex(Math.min(segIndex, segments.length - 1));
+    setSegNonce(n => n + 1);
+    resetSegmentStats();
+  }, [segments.length, segIndex, resetSegmentStats]);
 
   /** 段结算：记成绩 → 判准度门槛 → 按「完成段策略」走向（参数显式传入，避免读到未刷新的 state） */
   const completeSegment = useCallback((segCorrect: number, segWrong: number, segKeys: number, segUndo: number) => {
@@ -425,9 +496,18 @@ export default function ArticlePracticePage() {
       wrong: segWrong,
       acc: segAcc,
       keyAcc,
-      pass: !(accGate > 0 && segAcc < accGate),
+      pass: isAccPassed(accGate, segAcc),
       keysMap: { ...keyStatsRef.current },
     }));
+    const gated = !isAccPassed(accGate, segAcc);
+    if (gated) {
+      // 未达标：成绩照记（标「未达标」），但不计入全文总结算（否则重打会把字数/用时翻倍），
+      // 也不解锁下一段——必须重打本段打到门槛以上。
+      setSegResult({ pass: false, accuracy: segAcc, speed: segSpeed, seconds: elapsedSec, wrong: segWrong, keyAcc, autoLabel: '' });
+      return;
+    }
+    // 达标：记入全文累计，并把本段标记为已达标（解锁「下一段」）
+    setPassedSegs(prev => (prev.has(segIndex) ? prev : new Set(prev).add(segIndex)));
     totalsRef.current = {
       chars: totalsRef.current.chars + segCommitted,
       correct: totalsRef.current.correct + segCorrect,
@@ -438,11 +518,6 @@ export default function ArticlePracticePage() {
       segs: totalsRef.current.segs + 1,
       speeds: [...totalsRef.current.speeds, segSpeed],
     };
-    const gated = accGate > 0 && segAcc < accGate;
-    if (gated) {
-      setSegResult({ pass: false, accuracy: segAcc, speed: segSpeed, seconds: elapsedSec, wrong: segWrong, keyAcc, autoLabel: '' });
-      return;
-    }
     if (isLast) {
       const totals = totalsRef.current;
       const speeds = totals.speeds;
@@ -484,11 +559,20 @@ export default function ArticlePracticePage() {
   const segResultPanel = segResult && !articleDone && (
     <div className={cn(
       'mt-3 rounded-xl border p-4 text-center',
-      segResult.pass
-        ? 'border-emerald-500/40 bg-emerald-500/[0.06]'
-        : 'border-red-500/40 bg-red-500/[0.06]',
+      segBlocked
+        ? 'border-red-500/40 bg-red-500/[0.06]'
+        : 'border-emerald-500/40 bg-emerald-500/[0.06]',
     )}>
-      {segResult.pass ? (
+      {segBlocked ? (
+        <>
+          <div className="text-lg font-semibold text-red-600 dark:text-red-400">
+            准度未达标 · {segResult.accuracy}%（要求 {accGate}%）
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            下一段已锁定：必须重打本段打到 {accGate}% 以上才能继续 · 速度 {segResult.speed} 字/分 · 键准 {segResult.keyAcc}% · 错 {segResult.wrong} 字
+          </div>
+        </>
+      ) : (
         <>
           <div className="text-lg font-semibold text-emerald-600 dark:text-emerald-400">
             本段完成 · 准度 {segResult.accuracy}%
@@ -498,24 +582,15 @@ export default function ArticlePracticePage() {
             {segResult.autoLabel && <span className="text-primary"> · {segResult.autoLabel}</span>}
           </div>
         </>
-      ) : (
-        <>
-          <div className="text-lg font-semibold text-red-600 dark:text-red-400">
-            准度未达标 · {segResult.accuracy}%（要求 {accGate}%）
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            需要达到 {accGate}% 的准度才能进入下一段 · 速度 {segResult.speed} 字/分 · 键准 {segResult.keyAcc}% · 错 {segResult.wrong} 字
-          </div>
-        </>
       )}
       <div className="mt-3 flex items-center justify-center gap-2 flex-wrap">
         <Button size="sm" className="gap-1.5 text-xs" onClick={() => goToSegment(segIndex)}>
-          <Repeat className="h-3.5 w-3.5" />重打本段
+          <Repeat className="h-3.5 w-3.5" />{segBlocked ? '重打本段（必须先达标）' : '重打本段'}
         </Button>
         <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => goToSegment(segIndex, true)}>
           <Shuffle className="h-3.5 w-3.5" />打乱重打
         </Button>
-        {segResult.pass && segIndex < segments.length - 1 && (
+        {!segBlocked && segIndex < segments.length - 1 && (
           <Button size="sm" variant="outline" className="gap-1.5 text-xs" onClick={() => goToSegment(segIndex + 1)}>
             下一段<ArrowRight className="h-3.5 w-3.5" />
           </Button>
@@ -682,6 +757,7 @@ export default function ArticlePracticePage() {
     if (!t.trim()) return;
     if (autoNextTimerRef.current) clearTimeout(autoNextTimerRef.current);
     if (wrongFlashTimerRef.current) clearTimeout(wrongFlashTimerRef.current);
+    if (gateHintTimerRef.current) clearTimeout(gateHintTimerRef.current);
     totalsRef.current = { chars: 0, correct: 0, wrong: 0, keys: 0, ideal: 0, ms: 0, segs: 0, speeds: [] };
     keyStatsRef.current = {};
     idealKeysRef.current = 0;
@@ -691,6 +767,8 @@ export default function ArticlePracticePage() {
     setSegNonce(n => n + 1);
     setArticleDone(null);
     setSegResult(null);
+    setPassedSegs(new Set<number>());
+    setGateHint(null);
     setProducedChars({});
     setCorrectCount(0);
     setWrongCount(0);
@@ -733,7 +811,13 @@ export default function ArticlePracticePage() {
       }
       // 跟打器快捷键在暂停态也可用（genda 口径）:切段/重打/打乱会顺带唤醒
       if (e.ctrlKey && e.key.toLowerCase() === 'u') { e.preventDefault(); goToSegment(Math.max(0, segIndex - 1)); return; }
-      if (e.ctrlKey && e.key.toLowerCase() === 'j' && !(segResult && !segResult.pass)) { e.preventDefault(); goToSegment(Math.min(segments.length - 1, segIndex + 1)); return; }
+      // Ctrl+J 下一段：门槛开启且本段未达标时拒绝（否则「上一段→下一段」就能绕过门槛）
+      if (e.ctrlKey && e.key.toLowerCase() === 'j') {
+        e.preventDefault();
+        if (canGoForward) goToSegment(Math.min(segments.length - 1, segIndex + 1));
+        else notifyGateBlocked();
+        return;
+      }
       if (e.ctrlKey && e.key.toLowerCase() === 'k') { e.preventDefault(); goToSegment(segIndex, true); return; }
       if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); goToSegment(segIndex); return; }
       // F 键快捷键（跟打器口径:F3 重打本段 / F4 打乱本段)
@@ -760,7 +844,7 @@ export default function ArticlePracticePage() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPlaying, paused, elapsedMs, segIndex, segments.length, segResult, articleDone, goToSegment, undoLastChar, startPractice, startTimerIfNeeded, resumePractice, pausePractice]);
+  }, [isPlaying, paused, elapsedMs, segIndex, segments.length, segResult, articleDone, goToSegment, undoLastChar, startPractice, startTimerIfNeeded, resumePractice, pausePractice, canGoForward, notifyGateBlocked]);
 
   if (dataLoading || !charCodeData) {
     return (
@@ -776,6 +860,11 @@ export default function ArticlePracticePage() {
   const chars = [...practiceText];
   const itemCount = items.length;
   const segTotal = segments.length;
+  /** 全文进度（跨段累计）：前面已过的段 + 本段已打字数，不再每段归零 */
+  const segDoneBefore = Math.max(0, segFirstItem);
+  const overallProgress = itemCount > 0
+    ? Math.min(100, Math.round(((segDoneBefore + committed) / itemCount) * 100))
+    : 0;
 
   /** 左栏：速度仪表 + 计时 + 开关组（木易 / 玫枫跟打器样式） */
   // 今日统计（木易「今日错/对」口径）；数据量小,直接算,不用 hook（避免放在早退 return 之后）
@@ -855,36 +944,23 @@ export default function ArticlePracticePage() {
 
       {/* 准度门槛 */}
       <div className="rounded-xl border border-border/50 bg-card p-3">
-        <div className="text-[10px] text-muted-foreground mb-1.5 flex items-center gap-1">
-          <Gauge className="h-3 w-3" />最低准度 · 不达标不能进下一段
-        </div>
-        <div className="flex gap-1 flex-wrap">
-          {ACC_GATE_OPTIONS.map(v => (
-            <button key={v} onClick={() => updateSettings({ accGate: v })}
-              className={cn('px-2 py-0.5 rounded-md border text-[11px] transition-colors',
-                accGate === v
-                  ? 'border-amber-500/60 bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium'
-                  : 'border-border/60 text-muted-foreground hover:border-amber-500/40')}>
-              {v === 0 ? '关' : `${v}%`}
-            </button>
-          ))}
-        </div>
+        <ChipGroup
+          tone="amber"
+          label={<span className="flex items-center gap-1"><Gauge className="h-3 w-3" />最低准度 · 不达标锁定下一段</span>}
+          options={ACC_GATE_OPTIONS}
+          value={accGate}
+          onChange={v => updateSettings({ accGate: v })}
+        />
       </div>
 
       {/* 段长 */}
       <div className="rounded-xl border border-border/50 bg-card p-3">
-        <div className="text-[10px] text-muted-foreground mb-1.5">每段字数 · 全 = 文章模式</div>
-        <div className="flex gap-1 flex-wrap">
-          {SEG_LEN_OPTIONS.map(o => (
-            <button key={String(o.value)} onClick={() => updateSettings({ segLen: o.value })}
-              className={cn('px-2 py-0.5 rounded-md border text-[11px] transition-colors',
-                segLen === o.value
-                  ? 'border-primary/60 bg-primary/10 text-primary font-medium'
-                  : 'border-border/60 text-muted-foreground hover:border-primary/40')}>
-              {o.label}
-            </button>
-          ))}
-        </div>
+        <ChipGroup
+          label="每段字数 · 全 = 文章模式"
+          options={SEG_LEN_OPTIONS}
+          value={segLen}
+          onChange={v => updateSettings({ segLen: v })}
+        />
       </div>
 
       <p className="text-[10px] text-muted-foreground/60 leading-relaxed px-1">
@@ -925,7 +1001,9 @@ export default function ArticlePracticePage() {
               className="w-full text-xs p-2 rounded-lg border border-border bg-muted/40 focus:outline-none focus:border-primary/40 resize-y"
             />
             <div className="flex items-center justify-between mt-1.5">
-              <span className="text-[11px] text-muted-foreground">{[...draftText].length} 字</span>
+              <span className={cn('text-[11px]', [...draftText].length > MAX_CUSTOM_CHARS ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground')}>
+                {[...draftText].length} 字{[...draftText].length > MAX_CUSTOM_CHARS && ` · 超过 ${MAX_CUSTOM_CHARS} 字会明显卡顿`}
+              </span>
               <div className="flex items-center gap-1.5">
                 {customText.trim() && (
                   <Button variant="ghost" size="sm" className="gap-1 text-xs text-red-400 hover:text-red-600"
@@ -953,13 +1031,9 @@ export default function ArticlePracticePage() {
         title="易错字（答错次数）"
       />
 
-      {/* 按键统计 */}
-      <div className="rounded-xl border border-border/50 bg-card p-3">
-        <h3 className="text-xs font-semibold text-muted-foreground mb-2 font-serif">按键统计</h3>
-        <div className="overflow-x-auto pb-1">
-          <KeyHeatmap counts={aggregateKeys(history)} />
-        </div>
-      </div>
+      <p className="text-[10px] text-muted-foreground/60 leading-relaxed px-1">
+        打了错的字会自动进「易错字」，点「练易错项」可集中重练。按键统计在页面下方。
+      </p>
     </div>
   );
 
@@ -979,7 +1053,7 @@ export default function ArticlePracticePage() {
         {/* 中栏：工具条 + 打字区 + 成绩表 */}
         <main className="flex-1 min-w-0">
           {/* 工具条：操作 / 段导航 / 文章下拉 */}
-          <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <div className="relative flex flex-wrap items-center gap-1.5 mb-3">
             <button
               onClick={() => { if (paused) resumePractice(); else pausePractice(); }}
               disabled={!!segResult || !!articleDone}
@@ -1022,9 +1096,9 @@ export default function ArticlePracticePage() {
               第 {Math.min(segIndex + 1, segTotal || 1)}/{segTotal || 1} 段
             </span>
             <button onClick={() => goToSegment(Math.min(segTotal - 1, segIndex + 1))}
-              disabled={segIndex >= segTotal - 1 || (segResult !== null && !segResult.pass)}
+              disabled={segIndex >= segTotal - 1 || !canGoForward}
               className={cn(toolBtn, 'px-2 border-border/60 bg-card text-muted-foreground hover:text-foreground disabled:opacity-40')}
-              title="下一段（Ctrl+J）">
+              title={canGoForward ? '下一段（Ctrl+J）' : `本段需先打到 ${accGate}% 准度才能继续 · 可重打本段或调低门槛`}>
               <ArrowRight className="h-3.5 w-3.5" />
             </button>
             <span className="w-px h-5 bg-border/60 mx-0.5" />
@@ -1061,18 +1135,63 @@ export default function ArticlePracticePage() {
               title="极简模式:隐藏左右两栏,只留打字面板">
               极简
             </button>
+            {/* 设置浮层：极简模式下左右栏被隐藏，这里是调段长 / 门槛的唯一入口 */}
+            <button onClick={() => setShowSettings(v => !v)}
+              className={cn(toolBtn, 'px-2 shrink-0',
+                showSettings
+                  ? 'border-primary/50 bg-primary/10 text-primary'
+                  : 'border-border/60 bg-card text-muted-foreground hover:text-foreground')}
+              title="练习设置：段长 / 最低准度" aria-expanded={showSettings}>
+              <Settings className="h-3.5 w-3.5" />
+            </button>
+
+            {showSettings && (
+              <>
+                <div className="fixed inset-0 z-20" onClick={() => setShowSettings(false)} />
+                <div className="absolute right-0 top-full mt-1 z-30 w-60 rounded-xl border border-border/60 bg-card shadow-lg p-3 space-y-3">
+                  <div className="text-xs font-semibold text-foreground">练习设置</div>
+                  <ChipGroup
+                    label="每段字数 · 全 = 文章模式"
+                    options={SEG_LEN_OPTIONS}
+                    value={segLen}
+                    onChange={v => updateSettings({ segLen: v })}
+                  />
+                  <ChipGroup
+                    tone="amber"
+                    label="最低准度 · 不达标锁定下一段"
+                    options={ACC_GATE_OPTIONS}
+                    value={accGate}
+                    onChange={v => updateSettings({ accGate: v })}
+                  />
+                  <p className="text-[10px] text-muted-foreground/70">
+                    乱序与「完成段策略」在左栏（退出极简可见）
+                  </p>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* 细进度条 */}
-          <div className="h-1 rounded-full bg-muted overflow-hidden mb-3">
+          {/* 细进度条：全文进度（跨段累计） */}
+          <div className="h-1 rounded-full bg-muted overflow-hidden mb-3" title={`全文进度 ${overallProgress}%`}>
             <div
               className="h-full rounded-full bg-primary transition-all duration-300"
-              style={{ width: `${itemCount > 0 ? Math.min(100, Math.round((committed / Math.max(1, itemCount)) * 100)) : 0}%` }}
+              style={{ width: `${overallProgress}%` }}
             />
           </div>
 
+          {/* 没有可练习内容时的空态兜底（例如自定义文本被清空） */}
+          {!hasContent && (
+            <div className="rounded-xl border border-dashed border-border/60 bg-card p-8 text-center">
+              <p className="text-sm text-foreground mb-1">当前没有可练习的内容</p>
+              <p className="text-xs text-muted-foreground mb-3">粘贴一段文章，或从上方下拉里选一篇</p>
+              <Button size="sm" className="gap-1.5 text-xs" onClick={() => setShowEditor(true)}>
+                <FileText className="h-3.5 w-3.5" />粘贴 / 编辑文本
+              </Button>
+            </div>
+          )}
+
           {/* 正文面板（跟打网站标准结构）：同一卡片内 = 对照区（上,原文随打字变色） + 跟打区（下,你打出的字实时镜像）。真实输入框隐藏,仍接收输入法 */}
-          <div className="rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden relative">
+          <div className={cn('rounded-xl border border-border/60 bg-card shadow-sm overflow-hidden relative', !hasContent && 'hidden')}>
             {/* 隐藏的真实输入框：接收系统输入法组合与上屏,视觉上不出现 */}
             <input
               ref={imeInputRef}
@@ -1191,7 +1310,13 @@ export default function ArticlePracticePage() {
                 {sourceLabel} · 共 {itemCount} 字 · 错字 {wrongCount}
                 {undoCount > 0 && <span className="text-primary"> · 回改 {undoCount}</span>}
                 {shuffleMode !== 'off' && <span className="text-primary"> · 乱序</span>}
-                {accGate > 0 && <span className="text-amber-600 dark:text-amber-400"> · 准度 {accuracy}% / {accGate}%</span>}
+                <span> · 准度 {committed > 0 ? `${accuracy}%` : '--'}</span>
+                {accGate > 0 && (
+                  <span className={canGoForward ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 font-medium'}>
+                    {` / 门槛 ${accGate}%`}
+                    {!canGoForward && ' · 未达标，下一段已锁定'}
+                  </span>
+                )}
               </span>
             </div>
           </div>
@@ -1219,21 +1344,38 @@ export default function ArticlePracticePage() {
               「{wrongFlash}」打错了 · 可退格回退改掉（也可继续往下打）
             </div>
           )}
+          {gateHint && (
+            <div className="text-center text-xs text-amber-600 dark:text-amber-400 mt-2">
+              {gateHint}
+            </div>
+          )}
           {!minimal && (
             <div className="text-center text-[11px] text-muted-foreground/60 mt-2">
               上 = 原文对照，下 = 你的跟打（打错红字留痕）；输入框已隐藏，直接用电脑输入法打字即可；退格 = 回退上一个字（逐字回退）
             </div>
           )}
 
-          {/* 跟打历史成绩表 */}
+          {/* 跟打历史成绩表（默认展开） */}
           {!minimal && (
             <div className="mt-4 rounded-xl border border-border/50 bg-card p-4">
-              <ArticleHistoryTable records={history} onClear={() => { clearHistory(); setHistory([]); }} />
+              <ArticleHistoryTable records={history} onClear={() => { clearHistory(); setHistory([]); }} defaultOpen />
+            </div>
+          )}
+
+          {/* 按键统计：放在页面正下方（全宽，历史表之下） */}
+          {!minimal && (
+            <div className="mt-4 rounded-xl border border-border/50 bg-card p-4">
+              <h3 className="text-xs font-semibold text-muted-foreground mb-2 font-serif">
+                按键统计 · 全部 {history.length} 段跟打历史的按键分布
+              </h3>
+              <div className="overflow-x-auto pb-1">
+                <KeyHeatmap counts={keyCounts} />
+              </div>
             </div>
           )}
         </main>
 
-        {/* 右栏：自定义文本 / 易错字 / 按键统计 */}
+        {/* 右栏：自定义文本 / 易错字 */}
         {!minimal && (
           <aside className="w-full lg:w-72 shrink-0 mb-3 lg:mb-0 lg:sticky lg:top-14 lg:max-h-[calc(100vh-3.5rem)] lg:overflow-y-auto">
             {rightPanel}

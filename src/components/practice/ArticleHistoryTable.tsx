@@ -16,7 +16,7 @@ interface ArticleHistoryTableProps {
   defaultOpen?: boolean;
 }
 
-export function ArticleHistoryTable({ records, onClear, defaultOpen = false }: ArticleHistoryTableProps) {
+export function ArticleHistoryTable({ records, onClear, defaultOpen = true }: ArticleHistoryTableProps) {
   const [open, setOpen] = useState(defaultOpen);
   const [copied, setCopied] = useState(false);
 
